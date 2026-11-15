@@ -63,6 +63,12 @@ for name in POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD MLFLOW_DB_PASSWORD PIPELINE_DB
 done
 fill_secret AIRFLOW_FERNET_KEY fernet_key
 
+# Load .env again so the secrets just generated are the ones used below.
+set -a
+# shellcheck source=/dev/null
+. ./.env
+set +a
+
 # ---------------------------------------------------------------- system packages
 step "Updating the system and installing basics"
 export DEBIAN_FRONTEND=noninteractive
