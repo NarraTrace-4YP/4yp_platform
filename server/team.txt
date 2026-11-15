@@ -10,3 +10,6 @@
 #   sudo /opt/dhr/server/team.sh remove <github-username>
 
 rshields2004 admin
+ks0610
+markcoding05
+TroubleBubble1
