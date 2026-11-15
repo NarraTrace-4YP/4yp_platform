@@ -1,21 +1,182 @@
 #!/usr/bin/env bash
-# One-time setup for a fresh Ubuntu 24.04 server. Run it from the repo, as root:
+# One-time setup for a fresh Ubuntu server (24.04 or newer). Run it from the repo:
 #
-#   git clone https://github.com/<org>/<repo>.git /opt/dhr
-#   cd /opt/dhr && bash server/setup.sh
+#   sudo git clone https://github.com/<org>/<repo>.git /opt/dhr
+#   cd /opt/dhr && sudo bash server/setup.sh
 #
-# The first run creates .env and stops so you can fill in your domain and repo name.
-# Run it again and it does the rest. It is safe to re-run.
+# The first time, it asks for your domain and an email address, then does everything
+# else in one go. It is safe to run again: anything already done is left alone.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_DIR"
+ENV_FILE="$REPO_DIR/.env"
 
 step() { printf '\n== %s\n' "$*"; }
-die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
+die() {
+	printf '\nERROR: %s\n' "$*" >&2
+	exit 1
+}
 
-# Waits up to 10 minutes for every service with a health check to report healthy.
-wait_until_healthy() {
+# ---------------------------------------------------------------- settings (.env)
+
+env_value() { # name -> its value in .env (empty if missing)
+	grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true
+}
+
+set_env_value() { # name value
+	local value=${2//\\/\\\\}
+	value=${value//&/\\&}
+	value=${value//|/\\|}
+	if grep -qE "^$1=" "$ENV_FILE"; then
+		sed -i "s|^$1=.*|$1=$value|" "$ENV_FILE"
+	else
+		printf '%s=%s\n' "$1" "$2" >>"$ENV_FILE"
+	fi
+}
+
+repo_from_git() { # "org/repo" from the clone's GitHub address, if there is one
+	local url
+	url=$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)
+	if [[ $url =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
+		echo "${BASH_REMATCH[1]%.git}"
+	fi
+}
+
+ask_setting() { # name question default placeholder
+	local current answer
+	current=$(env_value "$1")
+	[[ -n "$current" && "$current" != "$4" ]] && return 0
+	[[ -t 0 ]] || die "Set $1 in $ENV_FILE, then run this again."
+	while true; do
+		if [[ -n "$3" ]]; then
+			read -rp "  $2 [$3]: " answer
+			answer=${answer:-$3}
+		else
+			read -rp "  $2: " answer
+		fi
+		answer=${answer//[[:space:]]/}
+		answer=${answer#http://}
+		answer=${answer#https://}
+		answer=${answer%/}
+		[[ -n "$answer" && "$answer" != "$4" ]] && break
+	done
+	set_env_value "$1" "$answer"
+}
+
+prepare_settings() {
+	step "Settings"
+	if [[ ! -f "$ENV_FILE" ]]; then
+		cp "$REPO_DIR/.env.example" "$ENV_FILE"
+	fi
+	chmod 600 "$ENV_FILE"
+	ask_setting DOMAIN "Your domain (Airflow will be at airflow.<domain>)" "" example.com
+	ask_setting GITHUB_REPO "GitHub repo, as organisation/repo" "$(repo_from_git)" your-org/your-repo
+	ask_setting ACME_EMAIL "Email address for the HTTPS certificates" "" you@example.com
+	[[ "$(env_value ACME_EMAIL)" == *@* ]] || die "ACME_EMAIL in $ENV_FILE doesn't look like an email address."
+	echo "  Using domain $(env_value DOMAIN) and repo $(env_value GITHUB_REPO)"
+
+	local name
+	for name in POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD MLFLOW_DB_PASSWORD PIPELINE_DB_PASSWORD \
+		WIKI_DB_PASSWORD AIRFLOW_ADMIN_PASSWORD MLFLOW_ADMIN_PASSWORD MLFLOW_SECRET_KEY \
+		AIRFLOW_SECRET_KEY AIRFLOW_JWT_SECRET; do
+		if [[ -z "$(env_value "$name")" ]]; then
+			set_env_value "$name" "$(openssl rand -hex 24)"
+			echo "  generated $name"
+		fi
+	done
+	if [[ -z "$(env_value AIRFLOW_FERNET_KEY)" ]]; then
+		set_env_value AIRFLOW_FERNET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
+		echo "  generated AIRFLOW_FERNET_KEY"
+	fi
+
+	# Load the settings only now, once every value is final, so Docker gets the real ones.
+	set -a
+	# shellcheck source=/dev/null
+	. "$ENV_FILE"
+	set +a
+}
+
+# ---------------------------------------------------------------- steps
+
+fix_file_modes() {
+	# Uploading files through the GitHub website drops the "executable" mark; put it back.
+	chmod +x "$REPO_DIR"/server/*.sh "$REPO_DIR/postgres/20-project.sh" "$REPO_DIR/mlflow/start.sh"
+	if [[ -d "$REPO_DIR/.git" ]]; then
+		git -C "$REPO_DIR" config core.fileMode false
+	fi
+}
+
+install_system() {
+	step "Updating the system and installing basics"
+	export DEBIAN_FRONTEND=noninteractive
+	apt-get update -q
+	apt-get upgrade -yq
+	apt-get install -yq ca-certificates curl git openssl ufw unattended-upgrades postgresql-client
+	dpkg-reconfigure -f noninteractive unattended-upgrades
+
+	step "Adding 4 GB of swap (a safety net for the 8 GB of memory)"
+	if ! swapon --show | grep -q .; then
+		fallocate -l 4G /swapfile
+		chmod 600 /swapfile
+		mkswap /swapfile >/dev/null
+		swapon /swapfile
+		grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
+		echo "  swap added"
+	else
+		echo "  swap already present"
+	fi
+
+	step "Installing Docker"
+	if ! command -v docker >/dev/null; then
+		install -m 0755 -d /etc/apt/keyrings
+		curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+		chmod a+r /etc/apt/keyrings/docker.asc
+		local codename
+		# shellcheck source=/dev/null
+		codename=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+		echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $codename stable" \
+			>/etc/apt/sources.list.d/docker.list
+		apt-get update -q
+		apt-get install -yq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+	fi
+	systemctl enable --now docker
+	echo "  $(docker --version)"
+}
+
+secure_logins() {
+	step "Creating SSH logins for everyone in server/team.txt"
+	bash "$REPO_DIR/server/team.sh" sync || die "Fix the problem above, then run this script again."
+
+	step "Locking down SSH (keys only, no root login)"
+	cat >/etc/ssh/sshd_config.d/00-dhr.conf <<-'EOF'
+		# Set by server/setup.sh. Log in with the SSH key on your GitHub account.
+		PermitRootLogin no
+		PasswordAuthentication no
+		KbdInteractiveAuthentication no
+		PubkeyAuthentication yes
+	EOF
+	if ! sshd -t; then
+		rm -f /etc/ssh/sshd_config.d/00-dhr.conf
+		die "The SSH settings didn't validate; nothing was changed."
+	fi
+	systemctl reload ssh || systemctl restart ssh
+	cat <<-'EOF'
+
+		  Password logins are now switched off. Keep this window open, and in a NEW
+		  terminal check you can still get in:  ssh <your-github-username>@<this-server>
+	EOF
+
+	step "Turning on the firewall (SSH and web only)"
+	ufw default deny incoming >/dev/null
+	ufw default allow outgoing >/dev/null
+	ufw allow OpenSSH >/dev/null
+	ufw allow 80/tcp >/dev/null
+	ufw allow 443 >/dev/null
+	ufw --force enable >/dev/null
+	ufw status | sed 's/^/  /'
+}
+
+wait_until_healthy() { # up to 10 minutes
 	local waiting=""
 	for _ in $(seq 1 60); do
 		waiting=$(docker compose ps --format '{{.Service}} {{.Health}}' | awk '$2 != "" && $2 != "healthy" {print $1}')
@@ -25,131 +186,43 @@ wait_until_healthy() {
 	die "Still not healthy after 10 minutes: $waiting. See: docker compose logs <service>"
 }
 
-[[ $EUID -eq 0 ]] || die "Run this as root (or with sudo)."
-grep -q 'ID=ubuntu' /etc/os-release || die "This script expects Ubuntu."
+start_services() {
+	step "Starting the services (the first build takes 5 to 10 minutes)"
+	chown root:docker "$ENV_FILE"
+	chmod 640 "$ENV_FILE"
+	docker compose up -d --build || die "Services didn't start. See: docker compose ps, and docker compose logs <service>"
+	echo "  waiting for every service to report healthy..."
+	wait_until_healthy
+	docker compose ps --format 'table {{.Service}}\t{{.Status}}' | sed 's/^/  /'
 
-# ---------------------------------------------------------------- settings
-if [[ ! -f .env ]]; then
-	cp .env.example .env
-	chmod 600 .env
-	echo "Created $REPO_DIR/.env."
-	echo "Edit DOMAIN, GITHUB_REPO and ACME_EMAIL in it, then run this script again."
-	exit 0
-fi
-
-set -a
-# shellcheck source=/dev/null
-. ./.env
-set +a
-[[ "$DOMAIN" != example.com && -n "$DOMAIN" ]] || die "Set DOMAIN in .env first."
-[[ "$GITHUB_REPO" != your-org/your-repo && "$GITHUB_REPO" == */* ]] || die "Set GITHUB_REPO in .env first."
-[[ "$ACME_EMAIL" != you@example.com && -n "$ACME_EMAIL" ]] || die "Set ACME_EMAIL in .env first."
-
-step "Generating any missing secrets in .env"
-fill_secret() { # name generator
-	local current
-	current=$(grep -E "^$1=" .env | cut -d= -f2-)
-	if [[ -z "$current" ]]; then
-		sed -i "s|^$1=.*|$1=$($2)|" .env
-		echo "  generated $1"
-	fi
+	step "Creating Airflow, MLflow and database logins for the team"
+	bash "$REPO_DIR/server/team.sh" sync
 }
-random_text() { openssl rand -hex 24; }
-fernet_key() { openssl rand -base64 32 | tr '+/' '-_'; }
-for name in POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD MLFLOW_DB_PASSWORD PIPELINE_DB_PASSWORD \
-	WIKI_DB_PASSWORD AIRFLOW_ADMIN_PASSWORD MLFLOW_ADMIN_PASSWORD MLFLOW_SECRET_KEY \
-	AIRFLOW_SECRET_KEY AIRFLOW_JWT_SECRET; do
-	fill_secret "$name" random_text
-done
-fill_secret AIRFLOW_FERNET_KEY fernet_key
 
-# Load .env again so the secrets just generated are the ones used below.
-set -a
-# shellcheck source=/dev/null
-. ./.env
-set +a
+main() {
+	[[ $EUID -eq 0 ]] || die "Run this with sudo."
+	grep -q '^ID=ubuntu' /etc/os-release || die "This script expects Ubuntu."
+	cd "$REPO_DIR"
 
-# ---------------------------------------------------------------- system packages
-step "Updating the system and installing basics"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -q
-apt-get upgrade -yq
-apt-get install -yq ca-certificates curl git openssl ufw unattended-upgrades postgresql-client
-dpkg-reconfigure -f noninteractive unattended-upgrades
+	fix_file_modes
+	prepare_settings
+	install_system
+	secure_logins
+	start_services
 
-step "Adding 4 GB of swap (a safety net for the 8 GB of memory)"
-if ! swapon --show | grep -q .; then
-	fallocate -l 4G /swapfile
-	chmod 600 /swapfile
-	mkswap /swapfile >/dev/null
-	swapon /swapfile
-	grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
-	echo "  swap added"
-else
-	echo "  swap already present"
+	cat <<-EOF
+
+		Done.
+
+		  Airflow:  https://airflow.$DOMAIN   (admin login: admin / AIRFLOW_ADMIN_PASSWORD in .env)
+		  MLflow:   https://mlflow.$DOMAIN    (admin login: admin / MLFLOW_ADMIN_PASSWORD in .env)
+		  Your own logins are in ~/ACCOUNTS.txt when you SSH in as yourself.
+
+		If the web addresses don't load yet, check that airflow.$DOMAIN and mlflow.$DOMAIN
+		both point at this server in your DNS. HTTPS starts working once they do.
+	EOF
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
 fi
-
-step "Installing Docker"
-if ! command -v docker >/dev/null; then
-	install -m 0755 -d /etc/apt/keyrings
-	curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-	chmod a+r /etc/apt/keyrings/docker.asc
-	# shellcheck source=/dev/null
-	codename=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-	echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $codename stable" \
-		>/etc/apt/sources.list.d/docker.list
-	apt-get update -q
-	apt-get install -yq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-fi
-systemctl enable --now docker
-echo "  $(docker --version)"
-
-# ---------------------------------------------------------------- people
-step "Creating SSH logins for everyone in server/team.txt"
-bash server/team.sh sync || die "Fix the problem above, then run this script again."
-
-step "Locking down SSH (keys only, no root login)"
-cat >/etc/ssh/sshd_config.d/00-dhr.conf <<-'EOF'
-	# Set by server/setup.sh. Log in with the SSH key on your GitHub account.
-	PermitRootLogin no
-	PasswordAuthentication no
-	KbdInteractiveAuthentication no
-	PubkeyAuthentication yes
-EOF
-sshd -t || { rm -f /etc/ssh/sshd_config.d/00-dhr.conf; die "The SSH settings didn't validate; nothing was changed."; }
-systemctl reload ssh || systemctl restart ssh
-
-step "Turning on the firewall (SSH and web only)"
-ufw default deny incoming >/dev/null
-ufw default allow outgoing >/dev/null
-ufw allow OpenSSH >/dev/null
-ufw allow 80/tcp >/dev/null
-ufw allow 443 >/dev/null
-ufw --force enable >/dev/null
-ufw status | sed 's/^/  /'
-
-# ---------------------------------------------------------------- services
-step "Starting the services (the first build takes a few minutes)"
-chown root:docker .env
-chmod 640 .env
-docker compose up -d --build || die "Services didn't start. See: docker compose ps, and docker compose logs <service>"
-wait_until_healthy
-docker compose ps --format 'table {{.Service}}\t{{.Status}}' | sed 's/^/  /'
-
-step "Creating Airflow, MLflow and database logins for the team"
-bash server/team.sh sync
-
-cat <<-EOF
-
-	Done.
-
-	  Airflow:  https://airflow.$DOMAIN   (admin login: admin / AIRFLOW_ADMIN_PASSWORD in .env)
-	  MLflow:   https://mlflow.$DOMAIN    (admin login: admin / MLFLOW_ADMIN_PASSWORD in .env)
-
-	Before closing this session, open a NEW terminal and check you can log in as yourself:
-	  ssh <your-github-username>@<this-server>
-	Root login and passwords are now switched off.
-
-	If the web addresses don't load yet, check that airflow.$DOMAIN and mlflow.$DOMAIN
-	both point at this server in your DNS. HTTPS starts working once they do.
-EOF
