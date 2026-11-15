@@ -64,9 +64,9 @@ cd /opt/dhr
 bash server/setup.sh
 ```
 
-The first run creates `/opt/dhr/.env` and stops. Fill in `DOMAIN`, `GITHUB_REPO` and
-`ACME_EMAIL`. Leave the secrets blank, because the script generates them. Then run
-`bash server/setup.sh` again. It:
+It asks for three things: your domain, the GitHub repo (it suggests the one you cloned)
+and an email address that Let's Encrypt uses only to warn about expiring certificates.
+They're saved in `/opt/dhr/.env`, so running the script again doesn't ask again. Then it:
 
 1. generates the passwords and keys,
 2. updates Ubuntu, turns on automatic security updates and adds 4 GB of swap,
@@ -80,9 +80,11 @@ The first run creates `/opt/dhr/.env` and stops. Fill in `DOMAIN`, `GITHUB_REPO`
 **Before closing the root session**, open a new terminal and check you can get in:
 
 ```
-ssh <your-github-username>@<server-address>
+ssh <your-username>@<server-address>
 cat ~/ACCOUNTS.txt
 ```
+
+Your username is your GitHub username in lower case.
 
 ## 5. Check everything works
 

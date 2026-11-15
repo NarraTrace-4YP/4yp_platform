@@ -30,9 +30,13 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
 3. Once they've done it, log in to the server and read your passwords:
 
    ```
-   ssh <your-github-username>@<server-address>
+   ssh <your-username>@<server-address>
    cat ~/ACCOUNTS.txt
    ```
+
+   Your username is your GitHub username in **lower case** (GitHub's `TroubleBubble1` is
+   `troublebubble1` here). Capitals give a "Permission denied (publickey)" error. If you
+   have more than one SSH key, pick the one on GitHub with `ssh -i ~/.ssh/<key-file> ...`.
 
    One password covers Airflow, MLflow and the database.
 4. Open Airflow at `https://airflow.<domain>` and MLflow at `https://mlflow.<domain>`.
@@ -58,7 +62,7 @@ The database isn't open to the internet. Reach it through SSH instead. Leave thi
 one terminal:
 
 ```
-ssh -N -L 5432:127.0.0.1:5432 <your-github-username>@<server-address>
+ssh -N -L 5432:127.0.0.1:5432 <your-username>@<server-address>
 ```
 
 Then connect any database tool (DBeaver, VS Code, `psql`) to `localhost`, port `5432`,
@@ -77,7 +81,7 @@ Set these before running code that logs to MLflow:
 
 ```
 export MLFLOW_TRACKING_URI=https://mlflow.<domain>
-export MLFLOW_TRACKING_USERNAME=<your-github-username>
+export MLFLOW_TRACKING_USERNAME=<your-username>
 export MLFLOW_TRACKING_PASSWORD=<your password>
 ```
 
@@ -112,8 +116,17 @@ into the database.
   `corpus.documents`, recording which version of the dataset it came from.
 - **Reading it:** `corpus.current_documents` always shows the latest version loaded. The
   review's original JSON is in the `raw` column.
+- **Case metadata:** the `collect_case_metadata` pipeline asks the Home Office's
+  [DHR Library](https://homicide-review.homeoffice.gov.uk/) which reviews match each of its
+  search filters (victim's age, method of killing, relationship, ...), since the library
+  has no download. It stores the answers in the `evaluation` schema, where the wiki agent
+  can't see them. `evaluation.case_metadata` has one row per review of ours, with every
+  detail as JSON; `evaluation.case_attributes` has one row per detail. A missing detail
+  means "not returned", which can be "no" or "not recorded". The library is
+  [Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
+  data, checked by people, but it warns that it may contain mistakes.
 - **Changing the database:** add a new numbered file to `sql/migrations/` (e.g.
-  `002_blocks.sql`). Pipelines apply new files automatically the next time they run. Never
+  `003_blocks.sql`). Pipelines apply new files automatically the next time they run. Never
   edit a file that's already been merged; add a new one instead.
 
 ## The LLM wiki

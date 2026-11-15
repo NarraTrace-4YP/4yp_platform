@@ -37,6 +37,8 @@ def load_dhrc():
             "DHR_GIT_COMMIT": "{{ ti.bundle_instance.version or 'unknown' }}",
             "DHRC_REVISION": "{{ params.revision }}",
             "DHRC_EXPECTED": "{{ params.expected_documents }}",
+            "HF_HUB_DISABLE_PROGRESS_BARS": "1",  # progress bars just clutter the log
+            "PYTHONUNBUFFERED": "1",  # show each line in the log as it happens, in order
         },
         append_env=True,
     )
