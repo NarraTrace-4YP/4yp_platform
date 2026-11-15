@@ -111,6 +111,12 @@ wm_exists() { # path -> 0 if the API answers "true" for it
 	[[ "$(wm_api "$@")" == "true" ]]
 }
 
+# Windmill names people itself, from the part of their email before the @ (adding a number
+# if that name is taken), and refuses names given to it. This looks up the name it chose.
+wm_member_username() { # email -> their username in the workspace (empty if not a member)
+	wm_api GET "/w/$WM_WORKSPACE/users/list" | jq -r --arg e "$1" '.[] | select(.email == $e) | .username'
+}
+
 wm_variable() { # path value is_secret description
 	local body
 	body=$(jq -n --arg path "$1" --arg value "$2" --argjson secret "$3" --arg d "$4" \
@@ -127,7 +133,7 @@ wm_variable() { # path value is_secret description
 wm_user_email() { echo "$1@$DOMAIN"; } # windmill username -> login email
 
 wm_set_user() { # username password is-admin(yes/no) github-name
-	local username=$1 email admin=false
+	local email admin=false
 	email=$(wm_user_email "$1")
 	[[ "$3" == yes ]] && admin=true
 	if ! wm_call POST /users/create "$(jq -n --arg e "$email" --arg p "$2" --argjson a "$admin" --arg n "$4" \
@@ -136,9 +142,9 @@ wm_set_user() { # username password is-admin(yes/no) github-name
 		wm_api POST "/users/set_password_of/$email" "$(jq -n --arg p "$2" '{password: $p}')" >/dev/null
 		wm_api POST "/users/update/$email" "$(jq -n --argjson a "$admin" '{is_super_admin: $a, disabled: false}')" >/dev/null
 	fi
-	if ! wm_call GET "/w/$WM_WORKSPACE/users/get/$username" >/dev/null 2>&1; then
-		wm_api POST "/w/$WM_WORKSPACE/workspaces/add_user" "$(jq -n --arg e "$email" --arg u "$username" \
-			--argjson a "$admin" '{email: $e, username: $u, is_admin: $a}')" >/dev/null
+	if [[ -z "$(wm_member_username "$email")" ]]; then
+		wm_api POST "/w/$WM_WORKSPACE/workspaces/add_user" \
+			"$(jq -n --arg e "$email" --argjson a "$admin" '{email: $e, is_admin: $a}')" >/dev/null
 	fi
 }
 
@@ -157,9 +163,12 @@ wm_configure() {
 	echo "  web address: https://windmill.$DOMAIN"
 
 	if ! wm_exists POST /workspaces/exists "{\"id\": \"$WM_WORKSPACE\"}"; then
-		wm_api POST /workspaces/create "{\"id\": \"$WM_WORKSPACE\", \"name\": \"DHR project\", \"username\": \"admin\"}" >/dev/null
+		wm_api POST /workspaces/create "{\"id\": \"$WM_WORKSPACE\", \"name\": \"DHR project\"}" >/dev/null
 		echo "  created the workspace \"$WM_WORKSPACE\""
 	fi
+	local admin_username
+	admin_username=$(wm_api GET "/w/$WM_WORKSPACE/users/whoami" | jq -r .username)
+	[[ -n "$admin_username" && "$admin_username" != null ]] || wm_die "Can't find the admin account's name in the $WM_WORKSPACE workspace."
 
 	# The "deploy" account pushes the pipelines from GitHub. It's an admin of this
 	# workspace only, not of the whole of Windmill.
@@ -168,16 +177,16 @@ wm_configure() {
 		'{email: $e, password: $p, super_admin: false, name: "GitHub deploys", skip_email: true}')" >/dev/null 2>&1; then
 		echo "  created the deploy account ($deploy_email)"
 	fi
-	if ! wm_call GET "/w/$WM_WORKSPACE/users/get/deploy" >/dev/null 2>&1; then
+	if [[ -z "$(wm_member_username "$deploy_email")" ]]; then
 		wm_api POST "/w/$WM_WORKSPACE/workspaces/add_user" \
-			"$(jq -n --arg e "$deploy_email" '{email: $e, username: "deploy", is_admin: true}')" >/dev/null
+			"$(jq -n --arg e "$deploy_email" '{email: $e, is_admin: true}')" >/dev/null
 	fi
 
 	# f/dhr holds the team's pipelines. Everyone can see and run them ("g/all": false
 	# means read-only); only workspace admins, and so the deploys, can change them.
 	local folder
-	folder=$(jq -n '{summary: "The team pipelines. They come from GitHub: change them with a pull request, not here.",
-		owners: ["u/admin"], extra_perms: {"g/all": false}}')
+	folder=$(jq -n --arg owner "u/$admin_username" '{summary: "The team pipelines. They come from GitHub: change them with a pull request, not here.",
+		owners: [$owner], extra_perms: {"g/all": false}}')
 	if wm_exists GET "/w/$WM_WORKSPACE/folders/exists/dhr"; then
 		wm_api POST "/w/$WM_WORKSPACE/folders/update/dhr" "$folder" >/dev/null
 	else
