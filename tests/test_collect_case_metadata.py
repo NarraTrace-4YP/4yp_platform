@@ -5,7 +5,9 @@ so no real DHR content goes in the repo. If the real site changes its markup, up
 markup here to match, then fix the script until these pass again.
 """
 
+import sys
 import threading
+import types
 import urllib.parse
 from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -13,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from f.dhr import collect_case_metadata as library
+from f.dhr import settings
 
 BASE = "https://library.example/"
 SEX = "Victim-Specific Information.Victims.Sex of victim[]"
@@ -294,6 +297,30 @@ def test_collects_every_review_and_detail(small_pages):
     }  # fmt: skip
     # Female has 4 results at 2 a page, so it needed a second page.
     assert any("pageNumber%5D=1" in url and "Female" in url for url in site.urls)
+
+
+def test_progress_only_moves_forward_and_stops_short_of_100():
+    seen = []
+    library.collect(FakeSite().get, base_url=BASE, progress=seen.append)
+    assert seen[0] == 2 and seen[-1] == 98
+    assert seen == sorted(seen)
+
+
+def test_progress_bar_is_silent_outside_windmill(monkeypatch):
+    monkeypatch.delenv("WM_JOB_ID", raising=False)
+    bar = settings.ProgressBar()
+    bar(50)  # would need Windmill; must just do nothing
+    assert bar.shown == -1
+
+
+def test_progress_bar_sends_whole_percentages_once(monkeypatch):
+    sent = []
+    monkeypatch.setenv("WM_JOB_ID", "job")
+    monkeypatch.setitem(sys.modules, "wmill", types.SimpleNamespace(set_progress=sent.append))
+    bar = settings.ProgressBar()
+    for percent in (2, 2.4, 2.9, 3.1, 1, 150):
+        bar(percent)
+    assert sent == [2, 3, 99]
 
 
 def test_test_run_searches_only_some_filters():

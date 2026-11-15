@@ -49,7 +49,7 @@ from html.parser import HTMLParser
 from http.cookiejar import CookieJar
 
 from .db import apply_migrations, connect
-from .settings import use_mlflow
+from .settings import ProgressBar, use_mlflow
 from .version import GIT_COMMIT
 
 BASE_URL = "https://homicide-review.homeoffice.gov.uk/"
@@ -464,8 +464,12 @@ def filters_to_search(form: SearchForm) -> list[FilterOption]:
 
 
 def collect(
-    get: Callable[[str], str], max_filters: int = 0, base_url: str = BASE_URL
+    get: Callable[[str], str],
+    max_filters: int = 0,
+    base_url: str = BASE_URL,
+    progress: Callable[[float], None] = lambda percent: None,
 ) -> Collection:
+    """Asks the site everything. progress is told how far through it is, as a percentage."""
     form = parse_form(get(base_url))
     options = filters_to_search(form)
     print(f"OK    Read the search form: {len(options)} filter options to search", flush=True)
@@ -475,6 +479,7 @@ def collect(
         raise SiteChanged("the library lists no reviews at all")
     reviews = {r.library_id: r for r in listing}
     print(f"OK    The library lists {total} reviews", flush=True)
+    progress(2)
 
     todo = options[:max_filters] if max_filters else options
     n_checks = sum(1 for o in options[: len(CHECK_FIRST)] if o.field in CHECK_FIRST)
@@ -490,6 +495,7 @@ def collect(
                 " the site ignored the filter. Nothing was stored."
             )
         searched.append((option, count))
+        progress(2 + 96 * number / len(todo))
         for review in found:
             reviews.setdefault(review.library_id, review)
             tags.append((review.library_id, option))
@@ -639,9 +645,10 @@ def run(
     """Collects everything, checks it, and stores it as a new snapshot (unless dry_run).
     Returns a summary. Raises CollectionError if the site didn't behave as expected."""
     fetcher = Fetcher(delay=delay)
+    progress = ProgressBar()
     started = time.monotonic()
     try:
-        collection = collect(get or fetcher.get, max_filters, base_url)
+        collection = collect(get or fetcher.get, max_filters, base_url, progress)
     except SiteChanged as error:
         raise CollectionError(
             f"The library didn't behave as expected: {error}. Open the site in a browser to"
@@ -675,6 +682,7 @@ def run(
         summary["counts"] = {f"{o.group} / {o.label}": n for o, n in collection.searched}
         return summary
 
+    progress(99)  # storing; Windmill shows 100% once the run ends
     with connect() as conn:
         ran = apply_migrations(conn)
         if ran:
