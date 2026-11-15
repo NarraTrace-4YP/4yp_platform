@@ -105,6 +105,17 @@ If you changed the Python packages (`pyproject.toml` / `uv.lock`), ask an admin 
 Never commit data or passwords. DHRC-100 comes from Hugging Face, and the pipeline loads it
 into the database.
 
+## The data
+
+- **Loading DHRC-100:** the `load_dhrc` pipeline downloads the dataset from Hugging Face,
+  checks every file against the dataset's checksums, and stores each review untouched in
+  `corpus.documents`, recording which version of the dataset it came from.
+- **Reading it:** `corpus.current_documents` always shows the latest version loaded. The
+  review's original JSON is in the `raw` column.
+- **Changing the database:** add a new numbered file to `sql/migrations/` (e.g.
+  `002_blocks.sql`). Pipelines apply new files automatically the next time they run. Never
+  edit a file that's already been merged; add a new one instead.
+
 ## The LLM wiki
 
 The wiki lives in its own private GitHub repo as Markdown files. Open that folder as a
