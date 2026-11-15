@@ -1,0 +1,675 @@
+"""Collects the case details the Home Office's DHR Library holds for every review.
+
+    python -m dhr.library                              # everything (about half an hour)
+    python -m dhr.library --max-filters 10 --dry-run   # a quick look; stores nothing
+
+The library (https://homicide-review.homeoffice.gov.uk/) lists each review with its title,
+CSP, region, upload month and date of death. Everything else it knows about a case (the
+victim's age, the method of killing, the relationship, ...) only exists as search filters,
+and there is no download or API. So this asks the site one question per filter option
+("which reviews have Sex of victim: Female?") and records the answers. A review that
+comes back for "Female" is tagged Female; one that doesn't come back is simply not
+tagged, which can mean "no" or "not recorded", and the site doesn't say which.
+
+The questions are sent exactly as the site's own search form sends them, one request a
+second, with a User-Agent saying who we are. Before trusting the answers it checks the
+site is really filtering (a filter must return fewer reviews than the whole library) and
+that every page of results adds new reviews. Nothing is written until everything has
+been collected, and then it is written in one go, as a new snapshot in the evaluation
+schema (the wiki agent can't read it). The library's own data is checked by people but
+the site warns it may contain mistakes, so treat it as good, not perfect.
+
+Needs: DHR_DATABASE_URL (except with --dry-run). If MLFLOW_TRACKING_URI is set, the
+result is logged to MLflow too.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from html.parser import HTMLParser
+from http.cookiejar import CookieJar
+
+BASE_URL = "https://homicide-review.homeoffice.gov.uk/"
+USER_AGENT = (
+    "NarraTrace-4YP case-metadata collector (University of Warwick student project; "
+    "+https://github.com/NarraTrace-4YP/4yp_platform)"
+)
+PAGE_SIZE = 100  # the largest page the site offers
+
+# Filters not searched, because every review's listing already shows the answer.
+SKIP_FIELDS = {
+    "internal.upload-date[]",
+    "Basic Case Details.Date of death - year[]",
+    "Basic Case Details.Name of Community Safety Partnership[]",
+}
+# Searched first, to check the site really filters before spending half an hour on it.
+CHECK_FIRST = ("Victim-Specific Information.Victims.Sex of victim[]", "Keywords[]")
+
+RESULT_PREFIX = "DHR result "
+DOWNLOAD_ID = re.compile(r"/download/([0-9A-Za-z]+)")
+RESULTS_COUNT = re.compile(r"Showing results\s+([\d,]+)\s+to\s+([\d,]+)\s+of\s+([\d,]+)")
+CARD_DETAILS = {
+    "CSP": "csp",
+    "CSP Region": "csp_region",
+    "Uploaded on": "uploaded",
+    "Date of death": "date_of_death",
+}
+
+
+class SiteChanged(RuntimeError):
+    """The site didn't behave as expected, so its answers can't be trusted."""
+
+
+# ----------------------------------------------------------------- reading HTML
+
+
+@dataclass
+class Element:
+    tag: str
+    attrs: dict[str, str]
+    parent: Element | None = None
+    children: list[Element | str] = field(default_factory=list)
+
+    def classes(self) -> set[str]:
+        return set(self.attrs.get("class", "").split())
+
+    def text(self) -> str:
+        """All the text inside, with runs of whitespace collapsed to one space."""
+        parts = []
+
+        def walk(element: Element) -> None:
+            for child in element.children:
+                if isinstance(child, str):
+                    parts.append(child)
+                else:
+                    walk(child)
+
+        walk(self)
+        return " ".join("".join(parts).split())
+
+    def iter(self, tag: str | None = None) -> Iterator[Element]:
+        """Every element inside this one (not itself), in page order."""
+        for child in self.children:
+            if isinstance(child, Element):
+                if tag is None or child.tag == tag:
+                    yield child
+                yield from child.iter(tag)
+
+    def ancestors(self) -> Iterator[Element]:
+        element = self.parent
+        while element is not None:
+            yield element
+            element = element.parent
+
+
+# Tags that never have a closing tag.
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "wbr"}
+# Tags a browser closes by itself when the same tag opens again (<option>a<option>b).
+SELF_CLOSING_SIBLINGS = {"option", "li", "p"}
+
+
+class _TreeBuilder(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.root = Element("document", {})
+        self.current = self.root
+
+    def handle_starttag(self, tag, attrs):
+        if tag in SELF_CLOSING_SIBLINGS and self.current.tag == tag:
+            self.current = self.current.parent or self.root
+        element = Element(tag, {k: v or "" for k, v in attrs}, parent=self.current)
+        self.current.children.append(element)
+        if tag not in VOID_TAGS:
+            self.current = element
+
+    def handle_startendtag(self, tag, attrs):
+        self.current.children.append(
+            Element(tag, {k: v or "" for k, v in attrs}, parent=self.current)
+        )
+
+    def handle_endtag(self, tag):
+        # Close the nearest open element with this tag; ignore stray closing tags.
+        element = self.current
+        while element is not None and element.tag != tag:
+            element = element.parent
+        if element is not None and element.parent is not None:
+            self.current = element.parent
+
+    def handle_data(self, data):
+        self.current.children.append(data)
+
+
+def parse_html(html: str) -> Element:
+    builder = _TreeBuilder()
+    builder.feed(html)
+    builder.close()
+    return builder.root
+
+
+# ----------------------------------------------------------------- the search form
+
+
+@dataclass(frozen=True)
+class FilterOption:
+    field: str  # the form field, e.g. "Victim-Specific Information.Victims.Sex of victim[]"
+    value: str  # what the form sends, e.g. "Female" or "16,19"
+    label: str  # what the page shows next to it, e.g. "Female" or "16 - 19"
+    group: str  # where it sits on the page, e.g. "About the victim / Sex"
+
+
+@dataclass
+class SearchForm:
+    # Every field the form submits, in page order, so a search can be sent exactly as a
+    # browser sends it: ("checkbox", name, value), ("select", name, default value) or
+    # ("hidden", name, value).
+    controls: list[tuple[str, str, str]]
+    options: list[FilterOption]  # every checkbox and drop-down choice, in page order
+
+
+def _find_search_form(page: Element) -> Element | None:
+    for form in page.iter("form"):
+        if form.attrs.get("method", "get").lower() == "get":
+            return form
+    return None
+
+
+def _group_of(element: Element, page_label: str = "") -> str:
+    """Where a field sits on the page: its accordion section, then its fieldset headings."""
+    parts = [page_label] if page_label else []
+    for ancestor in element.ancestors():
+        if ancestor.tag == "fieldset":
+            legend = next(
+                (c for c in ancestor.children if isinstance(c, Element) and c.tag == "legend"),
+                None,
+            )
+            if legend is not None and legend.text():
+                parts.append(legend.text())
+        elif "govuk-accordion__section" in ancestor.classes():
+            heading = next(
+                (e for e in ancestor.iter() if e.attrs.get("id", "").endswith("--heading")), None
+            )
+            if heading is not None and heading.text():
+                parts.append(heading.text())
+    return " / ".join(reversed(parts))
+
+
+def parse_form(html: str) -> SearchForm:
+    page = parse_html(html)
+    form = _find_search_form(page)
+    if form is None:
+        raise SiteChanged("couldn't find the search form on the library's front page")
+    labels_for = {e.attrs["for"]: e.text() for e in page.iter("label") if e.attrs.get("for")}
+    texts_by_id = {e.attrs["id"]: e.text() for e in page.iter() if e.attrs.get("id")}
+
+    controls: list[tuple[str, str, str]] = []
+    options: list[FilterOption] = []
+    for element in form.iter():
+        name = element.attrs.get("name")
+        if not name:
+            continue
+        if element.tag == "input" and element.attrs.get("type") == "checkbox":
+            value = element.attrs.get("value", "on")
+            controls.append(("checkbox", name, value))
+            label = labels_for.get(element.attrs.get("id", ""), "") or value
+            options.append(FilterOption(name, value, label, _group_of(element)))
+        elif element.tag == "input" and element.attrs.get("type") == "hidden":
+            controls.append(("hidden", name, element.attrs.get("value", "")))
+        elif element.tag == "select":
+            choices = [
+                (o.attrs.get("value", o.text()), o.text(), "selected" in o.attrs)
+                for o in element.iter("option")
+            ]
+            default = next(
+                (v for v, _, chosen in choices if chosen), choices[0][0] if choices else ""
+            )
+            controls.append(("select", name, default))
+            label_id = element.attrs.get("aria-labelledby", "")
+            heading = texts_by_id.get(label_id) or labels_for.get(element.attrs.get("id", ""), "")
+            group = _group_of(element, heading)
+            options.extend(FilterOption(name, v, text, group) for v, text, _ in choices if v)
+    if not options:
+        raise SiteChanged("the search form has no filters on it")
+    return SearchForm(controls, options)
+
+
+def search_url(
+    form: SearchForm, option: FilterOption | None, page: int, base_url: str = BASE_URL
+) -> str:
+    """The address a browser asks for when this one filter is ticked (None: no filter)."""
+    params = []
+    for kind, name, value in form.controls:
+        if kind == "checkbox":
+            if option is not None and (name, value) == (option.field, option.value):
+                params.append((name, value))
+        elif kind == "select":
+            params.append((name, option.value if option and option.field == name else value))
+        elif name == "pagination[pageSize]":
+            params.append((name, str(PAGE_SIZE)))
+        else:
+            params.append((name, value))
+    if not any(name == "pagination[pageSize]" for _, name, _ in form.controls):
+        params.append(("pagination[pageSize]", str(PAGE_SIZE)))
+    if page:  # the site counts pages from 0, and leaves the number off the first page
+        params.append(("pagination[pageNumber]", str(page)))
+    return base_url + "?" + urllib.parse.urlencode(params)
+
+
+# ----------------------------------------------------------------- the results
+
+
+@dataclass(frozen=True)
+class Review:
+    library_id: str  # the id in its download link, e.g. 6af5ab5f97cddc1cd42a5658
+    full_name: str  # e.g. "Debbie - Havering - 2023/a - DHR"
+    title: str  # e.g. "Debbie"
+    csp: str | None
+    csp_region: str | None
+    uploaded: str | None  # as the site shows it, e.g. "November 2026"
+    date_of_death: str | None  # likewise, e.g. "May 2023"
+
+
+@dataclass
+class ResultsPage:
+    reviews: list[Review]
+    first: int  # "Showing results <first> to <last> of <total>"; all 0 when nothing matched
+    last: int
+    total: int
+
+
+def _number(text: str) -> int:
+    return int(text.replace(",", ""))
+
+
+def _read_card(card: Element) -> Review:
+    full_name = card.attrs["aria-label"][len(RESULT_PREFIX) :].strip()
+    library_id = None
+    for link in card.iter("a"):
+        match = DOWNLOAD_ID.search(link.attrs.get("href", ""))
+        if match:
+            library_id = match.group(1)
+            break
+    if library_id is None:
+        raise SiteChanged(f"the result {full_name!r} has no download link")
+
+    title = full_name
+    heading = next(card.iter("h3"), None)
+    if heading is not None:
+        caption = " ".join(
+            e.text() for e in heading.iter("span") if "govuk-caption-m" in e.classes()
+        )
+        title = heading.text().removeprefix(caption).strip() or full_name
+
+    details: dict[str, str | None] = dict.fromkeys(CARD_DETAILS.values())
+    for value in card.iter("span"):
+        if "dhrr-results-card--detail-value" not in value.classes() or value.parent is None:
+            continue
+        caption = next(
+            (e.text() for e in value.parent.iter("span") if "govuk-caption-m" in e.classes()), ""
+        )
+        if caption in CARD_DETAILS:
+            details[CARD_DETAILS[caption]] = value.text() or None
+    return Review(library_id=library_id, full_name=full_name, title=title, **details)
+
+
+def parse_results(html: str) -> ResultsPage:
+    page = parse_html(html)
+    if _find_search_form(page) is None:
+        # Every real results page has the filters beside it; anything else is an error page.
+        raise SiteChanged("got a page without the search form, so not a results page")
+    cards = [
+        s for s in page.iter("section") if s.attrs.get("aria-label", "").startswith(RESULT_PREFIX)
+    ]
+    reviews = [_read_card(card) for card in cards]
+    match = RESULTS_COUNT.search(page.text())
+    if match:
+        first, last, total = (_number(g) for g in match.groups())
+    elif not reviews:
+        first = last = total = 0  # nothing matched, so there's no count to show
+    else:
+        raise SiteChanged("the page has results but no 'Showing results ... of ...' line")
+    if reviews and last - first + 1 != len(reviews):
+        raise SiteChanged(f"the page says results {first} to {last} but shows {len(reviews)}")
+    return ResultsPage(reviews, first, last, total)
+
+
+# ----------------------------------------------------------------- asking the site
+
+
+class Fetcher:
+    """Gets pages politely: one request per `delay` seconds, retrying short outages."""
+
+    def __init__(self, delay: float = 1.0, timeout: float = 60, waits=(10, 30, 90)) -> None:
+        self.delay = delay
+        self.timeout = timeout
+        self.waits = waits
+        self.requests = 0
+        self._last = 0.0
+        # Keeps any cookies the site sets, as a browser would.
+        self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+
+    def get(self, url: str) -> str:
+        for attempt, wait in enumerate([*self.waits, None], start=1):
+            pause = self._last + self.delay - time.monotonic()
+            if pause > 0:
+                time.sleep(pause)
+            self._last = time.monotonic()
+            self.requests += 1
+            request = urllib.request.Request(
+                url, headers={"User-Agent": USER_AGENT, "Accept": "text/html"}
+            )
+            try:
+                with self._opener.open(request, timeout=self.timeout) as response:
+                    charset = response.headers.get_content_charset() or "utf-8"
+                    return response.read().decode(charset, errors="replace")
+            except urllib.error.HTTPError as error:
+                if error.code != 429 and error.code < 500:
+                    raise RuntimeError(f"the library answered {error.code} for {url}") from error
+                problem = f"HTTP {error.code}"
+                retry_after = error.headers.get("Retry-After", "")
+                if wait is not None and retry_after.isdigit():
+                    wait = max(wait, int(retry_after))
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                problem = str(getattr(error, "reason", error))
+            if wait is None:
+                raise RuntimeError(f"gave up on {url} after {attempt} tries ({problem})")
+            print(f"        {problem}; trying again in {wait}s", flush=True)
+            time.sleep(wait)
+        raise AssertionError("unreachable")
+
+
+def search(
+    get: Callable[[str], str],
+    form: SearchForm,
+    option: FilterOption | None,
+    base_url: str = BASE_URL,
+) -> tuple[int, list[Review]]:
+    """Every review the site returns for one filter (None: the whole library), all pages."""
+    found: dict[str, Review] = {}
+    total = None
+    page = 0
+    while True:
+        result = parse_results(get(search_url(form, option, page, base_url)))
+        what = f"'{option.group} / {option.label}'" if option else "the full list"
+        if total is None:
+            total = result.total
+        elif result.total != total:
+            raise SiteChanged(f"{what}: page {page + 1} says {result.total} results, not {total}")
+        if result.reviews and result.first != len(found) + 1:
+            raise SiteChanged(
+                f"{what}: page {page + 1} starts at result {result.first}, expected {len(found) + 1}"
+            )
+        new = [r for r in result.reviews if r.library_id not in found]
+        if result.reviews and not new:
+            raise SiteChanged(f"{what}: page {page + 1} repeated reviews already seen")
+        found.update((r.library_id, r) for r in new)
+        if len(found) >= total or not result.reviews:
+            break
+        page += 1
+    if len(found) != total:
+        raise SiteChanged(f"{what}: the site says {total} results but gave {len(found)}")
+    return total, list(found.values())
+
+
+@dataclass
+class Collection:
+    total: int  # how many reviews the library says it has
+    reviews: dict[str, Review]  # every review seen, by library id
+    searched: list[tuple[FilterOption, int]]  # each filter option asked, and its result count
+    tags: list[tuple[str, FilterOption]]  # (library id, option) for every review returned
+    complete: bool  # every filter option was asked (False for a --max-filters test run)
+    requests: int = 0
+
+
+def filters_to_search(form: SearchForm) -> list[FilterOption]:
+    """The filter options to ask about, starting with one of each CHECK_FIRST field."""
+    options = [o for o in form.options if o.field not in SKIP_FIELDS]
+    first = []
+    for name in CHECK_FIRST:
+        match = next((o for o in options if o.field == name), None)
+        if match is not None:
+            first.append(match)
+    return first + [o for o in options if o not in first]
+
+
+def collect(
+    get: Callable[[str], str], max_filters: int = 0, base_url: str = BASE_URL
+) -> Collection:
+    form = parse_form(get(base_url))
+    options = filters_to_search(form)
+    print(f"OK    Read the search form: {len(options)} filter options to search", flush=True)
+
+    total, listing = search(get, form, None, base_url)
+    if total == 0:
+        raise SiteChanged("the library lists no reviews at all")
+    reviews = {r.library_id: r for r in listing}
+    print(f"OK    The library lists {total} reviews", flush=True)
+
+    todo = options[:max_filters] if max_filters else options
+    n_checks = sum(1 for o in options[: len(CHECK_FIRST)] if o.field in CHECK_FIRST)
+    searched: list[tuple[FilterOption, int]] = []
+    tags: list[tuple[str, FilterOption]] = []
+    started = time.monotonic()
+    for number, option in enumerate(todo, start=1):
+        count, found = search(get, form, option, base_url)
+        if count >= total:
+            # No real filter matches every review, so the site must have ignored it.
+            raise SiteChanged(
+                f"'{option.group} / {option.label}' returned all {total} reviews, which means"
+                " the site ignored the filter. Nothing was stored."
+            )
+        searched.append((option, count))
+        for review in found:
+            reviews.setdefault(review.library_id, review)
+            tags.append((review.library_id, option))
+        if number == n_checks:
+            print("OK    The site is filtering properly", flush=True)
+        if number % 50 == 0 or number == len(todo):
+            left = (time.monotonic() - started) / number * (len(todo) - number)
+            print(
+                f"      {number}/{len(todo)} filters searched, about {left / 60:.0f} min left",
+                flush=True,
+            )
+    complete = len(todo) == len(options)
+    print(f"OK    Searched {len(searched)} filters: {len(tags)} case details found", flush=True)
+    return Collection(total, reviews, searched, tags, complete)
+
+
+# ----------------------------------------------------------------- storing it
+
+
+def store(conn, collection: Collection, git_commit: str, base_url: str = BASE_URL) -> int:
+    """Writes the collection as a new snapshot, all or nothing. Returns its snapshot id."""
+    with conn.transaction():
+        snapshot_id = conn.execute(
+            "INSERT INTO evaluation.library_snapshots"
+            " (source_url, git_commit, n_reviews, n_filters, complete)"
+            " VALUES (%s, %s, %s, %s, %s) RETURNING snapshot_id",
+            (base_url, git_commit, collection.total, len(collection.searched), collection.complete),
+        ).fetchone()[0]
+        with conn.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO evaluation.library_reviews (snapshot_id, library_id, full_name,"
+                " title, csp, csp_region, uploaded, date_of_death)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                [
+                    (
+                        snapshot_id,
+                        r.library_id,
+                        r.full_name,
+                        r.title,
+                        r.csp,
+                        r.csp_region,
+                        r.uploaded,
+                        r.date_of_death,
+                    )
+                    for r in collection.reviews.values()
+                ],
+            )
+            cursor.executemany(
+                "INSERT INTO evaluation.library_filters"
+                " (snapshot_id, field, value, label, group_label, n_results)"
+                " VALUES (%s, %s, %s, %s, %s, %s)",
+                [
+                    (snapshot_id, o.field, o.value, o.label, o.group, count)
+                    for o, count in collection.searched
+                ],
+            )
+            cursor.executemany(
+                "INSERT INTO evaluation.library_attributes (snapshot_id, library_id, field, value)"
+                " VALUES (%s, %s, %s, %s)",
+                [(snapshot_id, library_id, o.field, o.value) for library_id, o in collection.tags],
+            )
+    return snapshot_id
+
+
+def our_documents(conn) -> dict[str, str | None]:
+    """Our reviews (the latest DHRC version loaded) and their library ids, from the dataset's
+    own METADATA.json. Empty if no version has been loaded yet."""
+    rows = conn.execute(
+        "SELECT doc->>'document_id', doc->>'source_url'"
+        " FROM corpus.dataset_versions AS v,"
+        "  jsonb_array_elements(CASE WHEN jsonb_typeof(v.dataset_metadata->'documents') = 'array'"
+        "   THEN v.dataset_metadata->'documents' ELSE '[]'::jsonb END) AS doc"
+        " WHERE v.revision = (SELECT revision FROM corpus.dataset_versions"
+        "  ORDER BY loaded_at DESC LIMIT 1)"
+    ).fetchall()
+    documents = {}
+    for doc_id, source_url in rows:
+        match = DOWNLOAD_ID.search(source_url or "")
+        documents[doc_id] = match.group(1) if match else None
+    return documents
+
+
+def report_matches(
+    collection: Collection, documents: dict[str, str | None], partial: bool = False
+) -> dict[str, int]:
+    """Prints how many of our reviews the library has, and has details for."""
+    if not documents:
+        print("NOTE  No DHRC version is loaded yet, so there's nothing to match against")
+        return {"n_documents": 0, "n_in_library": 0, "n_with_details": 0}
+    tagged = {library_id for library_id, _ in collection.tags}
+    missing = sorted(d for d, lib in documents.items() if lib not in collection.reviews)
+    in_library = len(documents) - len(missing)
+    with_details = sum(1 for lib in documents.values() if lib in tagged)
+    print(f"OK    {in_library} of our {len(documents)} reviews are in the library listing")
+    if collection.complete and not partial:
+        print(f"OK    {with_details} of them have at least one case detail")
+    for doc_id in missing[:10]:
+        print(f"        not found in the library: {doc_id}")
+    return {
+        "n_documents": len(documents),
+        "n_in_library": in_library,
+        "n_with_details": with_details,
+    }
+
+
+def log_to_mlflow(summary: dict) -> str | None:
+    """Records the run in MLflow's 'case-metadata' experiment, if MLflow is set up."""
+    if not os.environ.get("MLFLOW_TRACKING_URI"):
+        return None
+    import mlflow
+
+    mlflow.set_experiment("case-metadata")
+    with mlflow.start_run(run_name=f"snapshot {summary['snapshot_id']}") as run:
+        mlflow.log_params({k: summary[k] for k in ("snapshot_id", "git_commit", "complete")})
+        metrics = (
+            "n_reviews",
+            "n_filters",
+            "n_details",
+            "n_documents",
+            "n_in_library",
+            "n_with_details",
+            "minutes",
+        )
+        mlflow.log_metrics({k: summary[k] for k in metrics})
+        mlflow.set_tag("git_commit", summary["git_commit"])
+    return run.info.run_id
+
+
+# ----------------------------------------------------------------- the whole run
+
+
+def run(args: argparse.Namespace, get: Callable[[str], str] | None = None) -> int:
+    git_commit = os.environ.get("DHR_GIT_COMMIT", "unknown")
+    fetcher = Fetcher(delay=args.delay)
+    started = time.monotonic()
+    try:
+        collection = collect(get or fetcher.get, args.max_filters, args.base_url)
+    except SiteChanged as error:
+        print(f"FAIL  The library didn't behave as expected: {error}")
+        print("      Open the site in a browser to see what changed, then update dhr/library.py.")
+        return 1
+    except RuntimeError as error:
+        print(f"FAIL  Couldn't get a page from the library: {error}")
+        print("      Nothing was stored. If the site is down, try again later.")
+        return 1
+    minutes = (time.monotonic() - started) / 60
+    print(f"OK    Done in {minutes:.0f} min ({fetcher.requests} requests)")
+
+    if args.dry_run:
+        for option, count in collection.searched:
+            print(f"      {count:5d}  {option.group} / {option.label}")
+        if os.environ.get("DHR_DATABASE_URL"):
+            from dhr import db
+
+            with db.connect() as conn:
+                report_matches(collection, our_documents(conn), partial=True)
+        print("Dry run: nothing was stored.")
+        return 0
+
+    from dhr import db
+
+    with db.connect() as conn:
+        ran = db.apply_migrations(conn)
+        if ran:
+            print(f"OK    Database tables updated: {', '.join(ran)}")
+        snapshot_id = store(conn, collection, git_commit, args.base_url)
+        print(f"OK    Stored as snapshot {snapshot_id} in evaluation.library_*")
+        if not collection.complete:
+            print("NOTE  Only some filters were searched, so the case_* views will ignore it")
+        matches = report_matches(collection, our_documents(conn))
+
+    summary = {
+        "snapshot_id": snapshot_id,
+        "git_commit": git_commit,
+        "complete": collection.complete,
+        "n_reviews": collection.total,
+        "n_filters": len(collection.searched),
+        "n_details": len(collection.tags),
+        "minutes": round(minutes, 1),
+        **matches,
+    }
+    run_id = log_to_mlflow(summary)
+    if run_id:
+        print(f"OK    Logged to MLflow: run {run_id} in experiment 'case-metadata'")
+    print("Done.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--delay", type=float, default=1.0, help="seconds between requests (at least 0.5)"
+    )
+    parser.add_argument(
+        "--max-filters", type=int, default=0, help="only search this many filters (0: all)"
+    )
+    parser.add_argument("--dry-run", action="store_true", help="collect and report; store nothing")
+    parser.add_argument("--base-url", default=BASE_URL, help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    if args.delay < 0.5:
+        parser.error("--delay must be at least 0.5 seconds, to be polite to the site")
+    return run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
