@@ -70,7 +70,9 @@ CHECK_FIRST = ("Victim-Specific Information.Victims.Sex of victim[]", "Keywords[
 
 RESULT_PREFIX = "DHR result "
 DOWNLOAD_ID = re.compile(r"/download/([0-9A-Za-z]+)")
+# Most searches say "Showing results 1 to 100 of 164"; theme searches say "Showing 80 results".
 RESULTS_COUNT = re.compile(r"Showing results\s+([\d,]+)\s+to\s+([\d,]+)\s+of\s+([\d,]+)")
+RESULTS_TOTAL = re.compile(r"Showing\s+([\d,]+)\s+results?\b")
 CARD_DETAILS = {
     "CSP": "csp",
     "CSP Region": "csp_region",
@@ -294,8 +296,10 @@ class Review:
 @dataclass
 class ResultsPage:
     reviews: list[Review]
-    first: int  # "Showing results <first> to <last> of <total>"; all 0 when nothing matched
-    last: int
+    # "Showing results <first> to <last> of <total>"; all 0 when nothing matched. Pages that
+    # only say "Showing <total> results" (theme searches) have first and last as None.
+    first: int | None
+    last: int | None
     total: int
 
 
@@ -343,15 +347,20 @@ def parse_results(html: str) -> ResultsPage:
         s for s in page.iter("section") if s.attrs.get("aria-label", "").startswith(RESULT_PREFIX)
     ]
     reviews = [_read_card(card) for card in cards]
-    match = RESULTS_COUNT.search(page.text())
-    if match:
+    text = page.text()
+    first = last = None
+    if match := RESULTS_COUNT.search(text):
         first, last, total = (_number(g) for g in match.groups())
+        if reviews and last - first + 1 != len(reviews):
+            raise SiteChanged(f"the page says results {first} to {last} but shows {len(reviews)}")
+    elif match := RESULTS_TOTAL.search(text):
+        total = _number(match.group(1))
+        if len(reviews) > total:
+            raise SiteChanged(f"the page says {total} results but shows {len(reviews)}")
     elif not reviews:
         first = last = total = 0  # nothing matched, so there's no count to show
     else:
-        raise SiteChanged("the page has results but no 'Showing results ... of ...' line")
-    if reviews and last - first + 1 != len(reviews):
-        raise SiteChanged(f"the page says results {first} to {last} but shows {len(reviews)}")
+        raise SiteChanged("the page has results but doesn't say how many ('Showing ...')")
     return ResultsPage(reviews, first, last, total)
 
 
@@ -417,7 +426,7 @@ def search(
             total = result.total
         elif result.total != total:
             raise SiteChanged(f"{what}: page {page + 1} says {result.total} results, not {total}")
-        if result.reviews and result.first != len(found) + 1:
+        if result.reviews and result.first is not None and result.first != len(found) + 1:
             raise SiteChanged(
                 f"{what}: page {page + 1} starts at result {result.first}, expected {len(found) + 1}"
             )

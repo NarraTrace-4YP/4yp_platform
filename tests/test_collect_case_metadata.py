@@ -123,13 +123,17 @@ def page(body):
     return f"<!DOCTYPE html><html><body><main>{FORM}{body}</main></body></html>"
 
 
-def results_page(cards, first, total):
+def results_page(cards, first, total, total_only=False):
     if not cards:
         return page("<p>No DHRs match your filters.</p>")
-    count = (
-        f'<span class="govuk-caption-m">Showing results {first}\n to '
-        f"{first + len(cards) - 1}\n of {total}</span>"
-    )
+    if total_only:  # how the real site counts theme searches
+        noun = "result" if total == 1 else "results"
+        count = f'<span class="govuk-caption-m">Showing {total} {noun}</span>'
+    else:
+        count = (
+            f'<span class="govuk-caption-m">Showing results {first}\n to '
+            f"{first + len(cards) - 1}\n of {total}</span>"
+        )
     return page(count + "".join(cards))
 
 
@@ -168,7 +172,10 @@ class FakeSite:
             r for r in REVIEWS if self.ignore_filters or chosen <= TAGS[r[0]]
         ]  # every ticked option must match, like the real site
         shown = matching[number * size : (number + 1) * size]
-        return results_page([card(*r) for r in shown], number * size + 1, len(matching))
+        theme = any(k == KEYWORDS for k, _ in chosen)
+        return results_page(
+            [card(*r) for r in shown], number * size + 1, len(matching), total_only=theme
+        )
 
 
 @pytest.fixture
@@ -235,6 +242,22 @@ def test_results_cards_and_count():
     )
 
 
+def test_theme_searches_count_without_a_range():
+    result = library.parse_results(results_page([card(*REVIEWS[1])], 1, 1, total_only=True))
+    assert (result.first, result.last, result.total) == (None, None, 1)
+    assert [r.library_id for r in result.reviews] == [REVIEWS[1][0]]
+
+
+def test_total_smaller_than_the_cards_is_caught():
+    html = page(
+        '<span class="govuk-caption-m">Showing 1 results</span>'
+        + card(*REVIEWS[0])
+        + card(*REVIEWS[1])
+    )
+    with pytest.raises(library.SiteChanged, match="says 1 results but shows 2"):
+        library.parse_results(html)
+
+
 def test_no_results_is_zero_not_an_error():
     result = library.parse_results(results_page([], 0, 0))
     assert (result.reviews, result.total) == ([], 0)
@@ -282,6 +305,15 @@ def test_test_run_searches_only_some_filters():
 def test_site_ignoring_filters_stops_the_run():
     with pytest.raises(library.SiteChanged, match="ignored the filter"):
         library.collect(FakeSite(ignore_filters=True).get, base_url=BASE)
+
+
+def test_theme_search_spanning_pages_is_collected(small_pages, monkeypatch):
+    # Three reviews match a theme, two a page: the second page must be fetched too.
+    for review in REVIEWS[2:4]:
+        monkeypatch.setitem(TAGS, review[0], TAGS[review[0]] | {(KEYWORDS, "Theme & more")})
+    collection = library.collect(FakeSite().get, base_url=BASE)
+    themed = {lib for lib, o in collection.tags if o.field == KEYWORDS}
+    assert themed == {REVIEWS[1][0], REVIEWS[2][0], REVIEWS[3][0]}
 
 
 def test_site_ignoring_page_numbers_stops_the_run(small_pages):
