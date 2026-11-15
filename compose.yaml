@@ -42,6 +42,9 @@ x-airflow: &airflow
     MLFLOW_TRACKING_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
     MLFLOW_DISABLE_TELEMETRY: "true"
     MLFLOW_DISABLE_AGENT_HINT: "true"
+    # Read access to the private DHRC-100 dataset on Hugging Face (load_dhrc uses it).
+    HF_TOKEN: ${HF_TOKEN:-}
+    HF_HUB_DISABLE_TELEMETRY: "1"
   volumes:
     - airflow-logs:/opt/airflow/logs
   depends_on: &airflow-depends-on
