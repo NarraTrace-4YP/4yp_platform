@@ -1,0 +1,15 @@
+# Caddy gets HTTPS certificates for these addresses automatically.
+# Both names must point at the server in DNS (an A record each) before it can.
+{
+	email {$ACME_EMAIL}
+}
+
+airflow.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy airflow-apiserver:8080
+}
+
+mlflow.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy mlflow:5000
+}

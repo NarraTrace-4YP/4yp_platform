@@ -1,0 +1,12 @@
+# Who can use the server: one line per person, their GitHub username, then "admin" for
+# anyone who manages the server (admins get sudo and Docker; everyone else doesn't need them).
+#
+# Everyone listed gets: an SSH login using the keys on their GitHub account, plus an
+# Airflow login, an MLflow login and a database login (one password for all three).
+#
+# To add someone: add a line here, merge it, then on the server run
+#   sudo /opt/dhr/server/team.sh sync
+# To remove someone: delete their line, merge it, then run
+#   sudo /opt/dhr/server/team.sh remove <github-username>
+
+rshields2004 admin

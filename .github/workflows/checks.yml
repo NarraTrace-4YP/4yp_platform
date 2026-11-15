@@ -1,0 +1,41 @@
+# Runs on every pull request. Make these checks required before merging into main
+# (Settings > Rules > Rulesets; see docs/server-setup.md).
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  python:
+    name: Python tests and lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  dags:
+    name: Airflow DAGs load
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the same Airflow as the server
+        run: |
+          uv venv --python 3.12 /tmp/airflow
+          uv pip install --python /tmp/airflow/bin/python "apache-airflow==3.4.0" \
+            apache-airflow-providers-git apache-airflow-providers-ssh apache-airflow-providers-postgres \
+            --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt
+      - run: /tmp/airflow/bin/python .github/check_dags.py
+
+  server-config:
+    name: Server config is valid
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: cp .env.example .env && docker compose config --quiet
+      - run: bash -n server/setup.sh server/team.sh server/update.sh postgres/20-project.sh mlflow/start.sh

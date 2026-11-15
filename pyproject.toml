@@ -1,0 +1,34 @@
+[project]
+name = "dhr"
+version = "0.1.0"
+description = "CS407 DHR project: the team's shared Python environment and pipeline code"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Add a package with:  uv add <package>   (this updates uv.lock too; commit both files)
+dependencies = [
+    "langgraph>=1.0",          # building the agents (e.g. the wiki agent)
+    "langchain-openai>=1.0",   # talking to models served by vLLM on Blythe
+    "mlflow-skinny>=3.18",     # logging runs and LLM calls to the team's MLflow server
+    "psycopg[binary]>=3.2",    # the Postgres driver
+    "pgvector>=0.4",           # vector columns from Python
+    "huggingface-hub>=0.30",   # downloading DHRC-100 from Hugging Face
+    "pandas>=2.2",
+    "pyarrow>=18",
+    "pydantic>=2.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dhr"]
+
+[tool.ruff]
+line-length = 100

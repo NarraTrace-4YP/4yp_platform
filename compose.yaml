@@ -1,0 +1,205 @@
+# Everything the project runs on the server, in one file.
+# Start or update it with:  docker compose up -d --build
+# Secrets and names come from .env (copy .env.example; server/setup.sh fills in the secrets).
+
+name: dhr
+
+x-airflow: &airflow
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: dhr-airflow:local
+  restart: unless-stopped
+  environment: &airflow-env
+    # Run tasks on this machine, at most 4 at a time (the server has 4 cores and 8 GB of memory).
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__PARALLELISM: "4"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Europe/London
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    # Each person logs in with their own username and password.
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__FAB__ENABLE_PROXY_FIX: "true"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
+    AIRFLOW__API__BASE_URL: https://airflow.${DOMAIN}
+    AIRFLOW__API__WORKERS: "2"
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # Airflow reads the pipelines straight from GitHub: the dags/ folder on the main branch,
+    # checked every 60 seconds. Every run records the commit it used.
+    AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST: >-
+      [{"name": "dhr",
+        "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+        "kwargs": {"repo_url": "https://${GITHUB_TOKEN:+x-access-token:${GITHUB_TOKEN}@}github.com/${GITHUB_REPO}.git",
+                   "tracking_ref": "main", "subdir": "dags", "refresh_interval": 60}}]
+    # Settings the team's pipeline code reads (see dhr/checks.py for an example).
+    DHR_DATABASE_URL: postgresql://pipeline:${PIPELINE_DB_PASSWORD}@postgres:5432/dhr
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    MLFLOW_TRACKING_USERNAME: admin
+    MLFLOW_TRACKING_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
+    MLFLOW_DISABLE_TELEMETRY: "true"
+    MLFLOW_DISABLE_AGENT_HINT: "true"
+  volumes:
+    - airflow-logs:/opt/airflow/logs
+  depends_on: &airflow-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  # PostgreSQL with pgvector (meaning search) and pg_search (keyword search) built in.
+  # Holds the project database "dhr" plus Airflow's and MLflow's own records.
+  postgres:
+    image: paradedb/paradedb:0.26.6-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: dhr
+      # Read once, by postgres/20-project.sh, when the database is first created.
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD}
+      PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      WIKI_DB_PASSWORD: ${WIKI_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Mounted as a single file so ParadeDB's own start-up script still runs first.
+      - ./postgres/20-project.sh:/docker-entrypoint-initdb.d/20-project.sh:ro
+    # Only reachable from the server itself (teammates use an SSH tunnel). Never public.
+    ports:
+      - "127.0.0.1:5432:5432"
+    mem_limit: 2g
+    shm_size: 256m
+    healthcheck:
+      # Checks over TCP, so it only passes once first-time setup has finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d dhr"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # One-off job: prepares Airflow's database and creates the first admin login, then exits.
+  airflow-init:
+    <<: *airflow
+    restart: "no"
+    user: "0:0"
+    entrypoint: /bin/bash
+    command: ["-c", "chown -R 50000:0 /opt/airflow/logs && exec /entrypoint airflow version"]
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+
+  airflow-apiserver:
+    <<: *airflow
+    command: api-server
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Wakes up tasks that are waiting on something slow, such as a job queued on Blythe.
+  airflow-triggerer:
+    <<: *airflow
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Records every experiment run and LLM call. Each person has their own login.
+  mlflow:
+    build: ./mlflow
+    image: dhr-mlflow:local
+    restart: unless-stopped
+    environment:
+      MLFLOW_BACKEND_URI: postgresql+psycopg2://mlflow:${MLFLOW_DB_PASSWORD}@postgres:5432/mlflow
+      MLFLOW_AUTH_DB_URI: postgresql+psycopg2://mlflow:${MLFLOW_DB_PASSWORD}@postgres:5432/mlflow_auth
+      MLFLOW_AUTH_ADMIN_USERNAME: admin
+      MLFLOW_AUTH_ADMIN_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
+      MLFLOW_FLASK_SERVER_SECRET_KEY: ${MLFLOW_SECRET_KEY}
+      MLFLOW_DISABLE_TELEMETRY: "true"
+      MLFLOW_DISABLE_AGENT_HINT: "true"
+      MLFLOW_ALLOWED_HOSTS: mlflow.${DOMAIN},mlflow,mlflow:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000
+    volumes:
+      - mlflow-artifacts:/mlflow/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # The only thing open to the internet: serves Airflow and MLflow over HTTPS,
+  # and gets and renews the certificates automatically.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - airflow-apiserver
+      - mlflow
+
+volumes:
+  postgres-data:
+  airflow-logs:
+  mlflow-artifacts:
+  caddy-data:
+  caddy-config:
