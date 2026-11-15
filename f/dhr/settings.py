@@ -43,3 +43,29 @@ def use_mlflow() -> bool:
         os.environ["MLFLOW_TRACKING_PASSWORD"] = windmill_variable("mlflow_password") or ""
     os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
     return True
+
+
+class ProgressBar:
+    """Moves the progress bar of the Windmill run this code is in (nothing happens elsewhere).
+
+    Call it with a percentage as the work goes on. Windmill takes 0 to 99 (it shows 100
+    itself when the run finishes) and the bar only moves forwards. Each update is a request
+    to Windmill, so it only sends one when the whole percentage goes up.
+    """
+
+    def __init__(self) -> None:
+        self.shown = -1
+        self.working = bool(os.environ.get("WM_JOB_ID"))  # Windmill sets this in every run
+
+    def __call__(self, percent: float) -> None:
+        value = max(0, min(99, int(percent)))
+        if not self.working or value <= self.shown:
+            return
+        self.shown = value
+        try:
+            import wmill
+
+            wmill.set_progress(value)
+        except Exception as error:  # noqa: BLE001 - a progress bar is never worth failing a run
+            print(f"NOTE  Stopped updating the progress bar: {error}", flush=True)
+            self.working = False
