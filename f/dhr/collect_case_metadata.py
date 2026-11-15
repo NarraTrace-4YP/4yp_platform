@@ -1,7 +1,17 @@
+# /// script
+# requires-python = ">=3.12,<3.13"
+# dependencies = [
+#     "psycopg[binary]==3.3.9",
+#     "mlflow-skinny==3.18.0",
+#     "wmill==1.875.0",
+# ]
+# ///
 """Collects the case details the Home Office's DHR Library holds for every review.
 
-    python -m dhr.library                              # everything (about half an hour)
-    python -m dhr.library --max-filters 10 --dry-run   # a quick look; stores nothing
+Run it in Windmill: open f/dhr/collect_case_metadata and click Run. A full run asks the
+library about 900 questions, one a second, so it takes around half an hour. For a quick
+check that the site still behaves as expected, set max_filters to 10 and tick dry_run:
+that takes under a minute and stores nothing.
 
 The library (https://homicide-review.homeoffice.gov.uk/) lists each review with its title,
 CSP, region, upload month and date of death. Everything else it knows about a case (the
@@ -19,14 +29,14 @@ been collected, and then it is written in one go, as a new snapshot in the evalu
 schema (the wiki agent can't read it). The library's own data is checked by people but
 the site warns it may contain mistakes, so treat it as good, not perfect.
 
-Needs: DHR_DATABASE_URL (except with --dry-run). If MLFLOW_TRACKING_URI is set, the
-result is logged to MLflow too.
+On a laptop, with DHR_DATABASE_URL set:
+
+    uv run python -m f.dhr.collect_case_metadata --max-filters 10 --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 import time
@@ -37,6 +47,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar
+
+from .db import apply_migrations, connect
+from .settings import use_mlflow
+from .version import GIT_COMMIT
 
 BASE_URL = "https://homicide-review.homeoffice.gov.uk/"
 USER_AGENT = (
@@ -574,7 +588,7 @@ def report_matches(
 
 def log_to_mlflow(summary: dict) -> str | None:
     """Records the run in MLflow's 'case-metadata' experiment, if MLflow is set up."""
-    if not os.environ.get("MLFLOW_TRACKING_URI"):
+    if not use_mlflow():
         return None
     import mlflow
 
@@ -598,64 +612,89 @@ def log_to_mlflow(summary: dict) -> str | None:
 # ----------------------------------------------------------------- the whole run
 
 
-def run(args: argparse.Namespace, get: Callable[[str], str] | None = None) -> int:
-    git_commit = os.environ.get("DHR_GIT_COMMIT", "unknown")
-    fetcher = Fetcher(delay=args.delay)
+class CollectionError(RuntimeError):
+    """The collection stopped part-way, so nothing was stored."""
+
+
+def say(message: str) -> None:
+    print(message, flush=True)
+
+
+def run(
+    max_filters: int = 0,
+    delay: float = 1.0,
+    dry_run: bool = False,
+    base_url: str = BASE_URL,
+    get: Callable[[str], str] | None = None,
+) -> dict:
+    """Collects everything, checks it, and stores it as a new snapshot (unless dry_run).
+    Returns a summary. Raises CollectionError if the site didn't behave as expected."""
+    fetcher = Fetcher(delay=delay)
     started = time.monotonic()
     try:
-        collection = collect(get or fetcher.get, args.max_filters, args.base_url)
+        collection = collect(get or fetcher.get, max_filters, base_url)
     except SiteChanged as error:
-        print(f"FAIL  The library didn't behave as expected: {error}")
-        print("      Open the site in a browser to see what changed, then update dhr/library.py.")
-        return 1
+        raise CollectionError(
+            f"The library didn't behave as expected: {error}. Open the site in a browser to"
+            " see what changed, then update f/dhr/collect_case_metadata.py. Nothing was stored."
+        ) from error
     except RuntimeError as error:
-        print(f"FAIL  Couldn't get a page from the library: {error}")
-        print("      Nothing was stored. If the site is down, try again later.")
-        return 1
+        raise CollectionError(
+            f"Couldn't get a page from the library: {error}. Nothing was stored; if the site"
+            " is down, try again later."
+        ) from error
     minutes = (time.monotonic() - started) / 60
-    print(f"OK    Done in {minutes:.0f} min ({fetcher.requests} requests)")
-
-    if args.dry_run:
-        for option, count in collection.searched:
-            print(f"      {count:5d}  {option.group} / {option.label}")
-        if os.environ.get("DHR_DATABASE_URL"):
-            from dhr import db
-
-            with db.connect() as conn:
-                report_matches(collection, our_documents(conn), partial=True)
-        print("Dry run: nothing was stored.")
-        return 0
-
-    from dhr import db
-
-    with db.connect() as conn:
-        ran = db.apply_migrations(conn)
-        if ran:
-            print(f"OK    Database tables updated: {', '.join(ran)}")
-        snapshot_id = store(conn, collection, git_commit, args.base_url)
-        print(f"OK    Stored as snapshot {snapshot_id} in evaluation.library_*")
-        if not collection.complete:
-            print("NOTE  Only some filters were searched, so the case_* views will ignore it")
-        matches = report_matches(collection, our_documents(conn))
+    say(f"OK    Done in {minutes:.0f} min ({fetcher.requests} requests)")
 
     summary = {
-        "snapshot_id": snapshot_id,
-        "git_commit": git_commit,
+        "git_commit": GIT_COMMIT,
         "complete": collection.complete,
         "n_reviews": collection.total,
         "n_filters": len(collection.searched),
         "n_details": len(collection.tags),
         "minutes": round(minutes, 1),
-        **matches,
     }
+    if dry_run:
+        for option, count in collection.searched:
+            say(f"      {count:5d}  {option.group} / {option.label}")
+        try:
+            with connect() as conn:
+                report_matches(collection, our_documents(conn), partial=True)
+        except RuntimeError:
+            pass  # no database configured (on a laptop): nothing to match against
+        say("Dry run: nothing was stored.")
+        summary["counts"] = {f"{o.group} / {o.label}": n for o, n in collection.searched}
+        return summary
+
+    with connect() as conn:
+        ran = apply_migrations(conn)
+        if ran:
+            say(f"OK    Database tables updated: {', '.join(ran)}")
+        snapshot_id = store(conn, collection, GIT_COMMIT, base_url)
+        say(f"OK    Stored as snapshot {snapshot_id} in evaluation.library_*")
+        if not collection.complete:
+            say("NOTE  Only some filters were searched, so the case_* views will ignore it")
+        summary.update(report_matches(collection, our_documents(conn)))
+    summary["snapshot_id"] = snapshot_id
+
     run_id = log_to_mlflow(summary)
     if run_id:
-        print(f"OK    Logged to MLflow: run {run_id} in experiment 'case-metadata'")
-    print("Done.")
-    return 0
+        say(f"OK    Logged to MLflow: run {run_id} in experiment 'case-metadata'")
+        summary["mlflow_run_id"] = run_id
+    return summary
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(max_filters: int = 0, delay_seconds: float = 1.0, dry_run: bool = False):
+    """Windmill runs this. max_filters: only search this many filters (0: all of them).
+    delay_seconds: the wait between requests to the site (at least 0.5). dry_run: collect
+    and report, but store nothing."""
+    if delay_seconds < 0.5:
+        raise ValueError("delay_seconds must be at least 0.5, to be polite to the site")
+    sys.stdout.reconfigure(line_buffering=True)  # show progress in the log as it happens
+    return run(max_filters, delay_seconds, dry_run)
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--delay", type=float, default=1.0, help="seconds between requests (at least 0.5)"
@@ -664,12 +703,6 @@ def main(argv: list[str] | None = None) -> int:
         "--max-filters", type=int, default=0, help="only search this many filters (0: all)"
     )
     parser.add_argument("--dry-run", action="store_true", help="collect and report; store nothing")
-    parser.add_argument("--base-url", default=BASE_URL, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
-    if args.delay < 0.5:
-        parser.error("--delay must be at least 0.5 seconds, to be polite to the site")
-    return run(args)
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    args = parser.parse_args()
+    main(args.max_filters, args.delay, args.dry_run)
+    say("Done.")

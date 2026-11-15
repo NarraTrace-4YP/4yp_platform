@@ -1,0 +1,60 @@
+# Deploys the team's pipelines (f/dhr) to Windmill whenever main changes, so Windmill
+# always runs what's on main. Needs two repo settings (Settings > Secrets and variables >
+# Actions), which server/setup.sh prints at the end:
+#   - secret   WINDMILL_TOKEN: the deploy token (WINDMILL_DEPLOY_TOKEN in the server's .env)
+#   - variable WINDMILL_URL:   e.g. https://windmill.example.com/
+# To deploy again by hand: Actions > deploy > Run workflow.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "f/**"
+      - "wmill.yaml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+# One deploy at a time, in order.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  windmill:
+    name: Deploy to Windmill
+    runs-on: ubuntu-24.04
+    env:
+      WINDMILL_URL: ${{ vars.WINDMILL_URL }}
+      WINDMILL_TOKEN: ${{ secrets.WINDMILL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the deploy settings are there
+        run: |
+          if [[ -z "$WINDMILL_URL" || -z "$WINDMILL_TOKEN" ]]; then
+            echo "::error::Add the WINDMILL_URL variable and the WINDMILL_TOKEN secret to this repo (see the top of this file)."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # Keep this version the same as the server's (compose.yaml).
+      - run: npm install --global --no-audit --no-fund windmill-cli@1.875.0
+
+      - name: Record which commit is being deployed
+        run: sed -i "s/^GIT_COMMIT = .*/GIT_COMMIT = \"$GITHUB_SHA\"/" f/dhr/version.py
+
+      # Works out each script's inputs, and resolves its pinned packages into a lockfile.
+      - name: Prepare the scripts for Windmill
+        run: wmill generate-metadata --yes --workspace dhr --base-url "$WINDMILL_URL" --token "$WINDMILL_TOKEN"
+
+      # Each script's version history in Windmill shows the commit it came from.
+      - name: Push to Windmill
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'deployed by hand' }}
+        run: |
+          wmill sync push --yes \
+            --workspace dhr --base-url "$WINDMILL_URL" --token "$WINDMILL_TOKEN" \
+            --message "GitHub ${GITHUB_SHA::7}: ${COMMIT_MESSAGE%%$'\n'*}"

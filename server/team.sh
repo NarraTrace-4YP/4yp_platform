@@ -6,12 +6,14 @@
 #   sudo server/team.sh remove <github>   lock someone out of everything
 #
 # Each person gets a Linux login (SSH keys pulled from github.com/<username>.keys) and,
-# once the services are running, an Airflow, MLflow and database login sharing one
+# once the services are running, a Windmill, MLflow and database login sharing one
 # password. The password is written to ~/ACCOUNTS.txt in their home folder on the server.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEAM_FILE="$REPO_DIR/server/team.txt"
+# shellcheck source=server/windmill.sh
+. "$REPO_DIR/server/windmill.sh"
 
 if [[ $EUID -ne 0 ]]; then
 	echo "Run this with sudo." >&2
@@ -28,14 +30,16 @@ set +a
 
 compose() { docker compose --project-directory "$REPO_DIR" "$@"; }
 
-# GitHub usernames become Linux usernames, lower-cased.
+# GitHub usernames become Linux usernames, lower-cased. Windmill doesn't allow hyphens in
+# usernames, so there they become underscores.
 linux_name() { tr '[:upper:]' '[:lower:]' <<<"$1"; }
+windmill_name() { tr '-' '_' <<<"$1"; }
 
 new_password() { openssl rand -base64 18 | tr '+/' '-_'; }
 
 services_running() {
 	local service
-	for service in postgres airflow-apiserver mlflow; do
+	for service in postgres windmill-server mlflow; do
 		[[ "$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q "$service" 2>/dev/null)" 2>/dev/null)" == healthy ]] || return 1
 	done
 }
@@ -50,15 +54,13 @@ set_db_login() { # user password
 		SQL
 }
 
-set_airflow_login() { # user password github-name is-admin
-	local role=User
-	[[ "$4" == yes ]] && role=Admin
-	if compose exec -T airflow-apiserver airflow users list --output plain 2>/dev/null | awk '{print $2}' | grep -qx "$1"; then
-		compose exec -T airflow-apiserver airflow users reset-password --username "$1" --password "$2" >/dev/null
-	else
-		compose exec -T airflow-apiserver airflow users create --username "$1" --password "$2" \
-			--firstname "$3" --lastname "(GitHub)" --email "$3@users.noreply.github.com" --role "$role" >/dev/null
-	fi
+set_windmill_login() { # user password github-name is-admin
+	WM_TOKEN="${WINDMILL_ADMIN_TOKEN:-}"
+	[[ -n "$WM_TOKEN" ]] || {
+		echo "  No WINDMILL_ADMIN_TOKEN in .env yet; run: sudo $REPO_DIR/server/windmill.sh configure" >&2
+		return 1
+	}
+	wm_set_user "$(windmill_name "$1")" "$2" "$4" "$3"
 }
 
 set_mlflow_login() { # user password is-admin
@@ -81,18 +83,20 @@ create_app_logins() { # user github-name is-admin
 	local user=$1 gh=$2 admin=$3 home="/home/$1" password
 	password=$(new_password)
 	set_db_login "$user" "$password"
-	set_airflow_login "$user" "$password" "$gh" "$admin"
+	set_windmill_login "$user" "$password" "$gh" "$admin"
 	set_mlflow_login "$user" "$password" "$admin"
 
 	cat >"$home/ACCOUNTS.txt" <<-EOF
 		Your logins for the DHR project server (one password for all three):
 
-		  Username:  $user
 		  Password:  $password
 
-		  Airflow:   https://airflow.$DOMAIN
-		  MLflow:    https://mlflow.$DOMAIN
-		  Database:  database "dhr" on port 5432. On the server, just type: psql
+		  Windmill:  https://windmill.$DOMAIN
+		             log in with the email $(wm_user_email "$(windmill_name "$user")")
+		             (just a login name; nothing is ever sent to it)
+		  MLflow:    https://mlflow.$DOMAIN     username: $user
+		  Database:  database "dhr" on port 5432, username: $user
+		             On the server, just type: psql
 		             From your laptop, use an SSH tunnel (see the README).
 	EOF
 	printf '127.0.0.1:5432:dhr:%s:%s\nlocalhost:5432:dhr:%s:%s\n' "$user" "$password" "$user" "$password" >"$home/.pgpass"
@@ -101,7 +105,7 @@ create_app_logins() { # user github-name is-admin
 	fi
 	chown "$user:$user" "$home/ACCOUNTS.txt" "$home/.pgpass" "$home/.bashrc"
 	chmod 600 "$home/ACCOUNTS.txt" "$home/.pgpass"
-	echo "  $user: Airflow, MLflow and database logins created (password in /home/$user/ACCOUNTS.txt)"
+	echo "  $user: Windmill, MLflow and database logins created (password in /home/$user/ACCOUNTS.txt)"
 }
 
 sync_team() {
@@ -178,7 +182,8 @@ remove_member() {
 			SELECT format('ALTER ROLE %I NOLOGIN', :'u')
 			WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'u') \gexec
 			SQL
-		compose exec -T airflow-apiserver airflow users delete --username "$user" &>/dev/null || true
+		WM_TOKEN="${WINDMILL_ADMIN_TOKEN:-}"
+		[[ -n "$WM_TOKEN" ]] && wm_disable_user "$(windmill_name "$user")"
 		compose exec -T -e MLFLOW_TRACKING_USERNAME=admin -e MLFLOW_TRACKING_PASSWORD="$MLFLOW_ADMIN_PASSWORD" mlflow \
 			python -c "import sys; from mlflow.server.auth.client import AuthServiceClient as C; C('http://localhost:5000').delete_user(sys.argv[1])" "$user" &>/dev/null || true
 	fi

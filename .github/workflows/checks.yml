@@ -18,19 +18,17 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pytest
 
-  dags:
-    name: Airflow DAGs load
+  windmill:
+    name: Windmill scripts are valid
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - name: Install the same Airflow as the server
-        run: |
-          uv venv --python 3.12 /tmp/airflow
-          uv pip install --python /tmp/airflow/bin/python "apache-airflow==3.4.0" \
-            apache-airflow-providers-git apache-airflow-providers-ssh apache-airflow-providers-postgres \
-            --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt
-      - run: /tmp/airflow/bin/python .github/check_dags.py
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # The same version as the server (compose.yaml), for the same parser Windmill uses.
+      - run: npm install --no-save --no-audit --no-fund windmill-cli@1.875.0
+      - run: node .github/check_windmill_scripts.mjs
 
   server-config:
     name: Server config is valid
@@ -38,4 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: cp .env.example .env && docker compose config --quiet
-      - run: bash -n server/setup.sh server/team.sh server/update.sh postgres/20-project.sh mlflow/start.sh
+      - name: Check the shell scripts' syntax
+        run: |
+          for script in server/*.sh postgres/20-project.sh mlflow/start.sh; do
+            bash -n "$script"
+          done

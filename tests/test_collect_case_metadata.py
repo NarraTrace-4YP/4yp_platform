@@ -1,11 +1,10 @@
-"""Tests for dhr/library.py, against a small made-up imitation of the DHR Library site.
+"""Tests for f/dhr/collect_case_metadata.py, against a made-up imitation of the DHR Library.
 
 The pages here copy the real site's markup (as of November 2026) but hold invented reviews,
 so no real DHR content goes in the repo. If the real site changes its markup, update the
-markup here to match, then fix dhr/library.py until these pass again.
+markup here to match, then fix the script until these pass again.
 """
 
-import argparse
 import threading
 import urllib.parse
 from html import escape
@@ -13,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from dhr import library
+from f.dhr import collect_case_metadata as library
 
 BASE = "https://library.example/"
 SEX = "Victim-Specific Information.Victims.Sex of victim[]"
@@ -69,19 +68,28 @@ FORM = f"""
         <option value="Theme &amp; more">Theme &amp; more</option>
     </select>
     <div class="govuk-accordion" data-module="govuk-accordion">
-        {accordion_section(
-            "dhr-categories", "Most filtered for DHRs",
-            checkbox(CATEGORY, "Intimate-partner homicide", "Intimate-partner homicide"),
-        )}
-        {accordion_section(
-            "about-the-victim", "About the victim",
-            fieldset("Sex", [checkbox(SEX, "Female", "Female"), checkbox(SEX, "Male", "Male")])
-            + fieldset("Age (years)", [checkbox(AGE, "16,19", "16 - 19")]),
-        )}
-        {accordion_section(
-            "about-the-death", "About the death",
-            fieldset("DHR upload date", [checkbox(UPLOADED, "2022,2022", "2022")]),
-        )}
+        {
+    accordion_section(
+        "dhr-categories",
+        "Most filtered for DHRs",
+        checkbox(CATEGORY, "Intimate-partner homicide", "Intimate-partner homicide"),
+    )
+}
+        {
+    accordion_section(
+        "about-the-victim",
+        "About the victim",
+        fieldset("Sex", [checkbox(SEX, "Female", "Female"), checkbox(SEX, "Male", "Male")])
+        + fieldset("Age (years)", [checkbox(AGE, "16,19", "16 - 19")]),
+    )
+}
+        {
+    accordion_section(
+        "about-the-death",
+        "About the death",
+        fieldset("DHR upload date", [checkbox(UPLOADED, "2022,2022", "2022")]),
+    )
+}
     </div>
     <input type="hidden" name="pagination[sortField]" value="uploadDate">
     <input type="hidden" name="pagination[sortDirection]" value="desc">
@@ -255,9 +263,7 @@ def test_collects_every_review_and_detail(small_pages):
     assert set(collection.reviews) == {r[0] for r in REVIEWS}
     assert collection.complete
     found = {(lib, (o.field, o.value)) for lib, o in collection.tags}
-    expected = {
-        (lib, tag) for lib, tags in TAGS.items() for tag in tags if tag[0] != UPLOADED
-    }
+    expected = {(lib, tag) for lib, tags in TAGS.items() for tag in tags if tag[0] != UPLOADED}
     assert found == expected
     counts = {o.value: n for o, n in collection.searched}
     assert counts == {
@@ -295,24 +301,24 @@ def test_match_report_counts_our_reviews():
 
 def test_dry_run_stores_nothing(monkeypatch, capsys):
     monkeypatch.delenv("DHR_DATABASE_URL", raising=False)
-    args = argparse.Namespace(delay=1.0, max_filters=2, dry_run=True, base_url=BASE)
-    code = library.run(args, get=FakeSite().get)
-    output = capsys.readouterr().out
-    assert code == 0
-    assert "Dry run: nothing was stored." in output
-    assert "FAIL" not in output
+    monkeypatch.delenv("WM_TOKEN", raising=False)
+    summary = library.run(max_filters=2, dry_run=True, base_url=BASE, get=FakeSite().get)
+    assert "Dry run: nothing was stored." in capsys.readouterr().out
+    assert summary["counts"] == {
+        "About the victim / Sex / Female": 4,
+        "Filter by theme / Theme & more": 1,
+    }
+    assert not summary["complete"]
 
 
-def test_broken_site_fails_cleanly(capsys):
-    args = argparse.Namespace(delay=1.0, max_filters=0, dry_run=True, base_url=BASE)
-    code = library.run(args, get=FakeSite(ignore_filters=True).get)
-    assert code == 1
-    assert "FAIL  The library didn't behave as expected" in capsys.readouterr().out
+def test_broken_site_fails_cleanly():
+    with pytest.raises(library.CollectionError, match="didn't behave as expected"):
+        library.run(dry_run=True, base_url=BASE, get=FakeSite(ignore_filters=True).get)
 
 
 def test_delay_below_half_a_second_is_refused():
-    with pytest.raises(SystemExit):
-        library.main(["--delay", "0.1", "--dry-run"])
+    with pytest.raises(ValueError, match="at least 0.5"):
+        library.main(delay_seconds=0.1, dry_run=True)
 
 
 # ----------------------------------------------------------------- fetching

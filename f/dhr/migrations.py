@@ -1,5 +1,55 @@
+"""The project database's tables, as a numbered list of SQL changes ("migrations").
+
+db.apply_migrations() runs, in order, every migration the database hasn't had yet, and
+records it in public.schema_migrations. To change the database, add a new entry at the
+END of the list (e.g. "003_blocks"). Never edit, rename or reorder one that has been
+merged: the server has already run it and won't run it again.
+"""
+
+MIGRATIONS: list[tuple[str, str]] = [
+    (
+        "001_corpus_documents",
+        """
+-- The DHRC-100 reviews, stored exactly as the dataset ships them.
+-- Filled by the load_dhrc script (f/dhr/load_dhrc.py). Everything later is built from here.
+
+-- One row per version of the dataset that has been loaded.
+CREATE TABLE corpus.dataset_versions (
+    revision          text PRIMARY KEY,                    -- Hugging Face commit id
+    repo_id           text NOT NULL,                       -- e.g. 4YP/dhr-corpus-100-copy
+    loaded_at         timestamptz NOT NULL DEFAULT now(),
+    git_commit        text,                                -- the pipeline code that loaded it
+    n_documents       integer NOT NULL,
+    dataset_metadata  jsonb                                -- the dataset's own METADATA.json
+);
+
+-- One row per review, per version. "raw" is the review's JSON file, untouched.
+CREATE TABLE corpus.documents (
+    revision   text NOT NULL REFERENCES corpus.dataset_versions (revision) ON DELETE CASCADE,
+    -- doc_id: the file name without .json, e.g. "AB - Sandwell - 2017_a - DHR"
+    doc_id     text NOT NULL,
+    file_path  text NOT NULL,      -- where the file sits in the dataset
+    sha256     text NOT NULL,      -- matches the dataset's CHECKSUMS.sha256
+    n_pages    integer NOT NULL,
+    n_blocks   integer NOT NULL,
+    raw        jsonb NOT NULL,
+    PRIMARY KEY (revision, doc_id)
+);
+
+-- The most recently loaded version. Read this unless you need a specific older one.
+CREATE VIEW corpus.current_documents AS
+SELECT d.*
+FROM corpus.documents AS d
+WHERE d.revision = (
+    SELECT revision FROM corpus.dataset_versions ORDER BY loaded_at DESC LIMIT 1
+);
+""",
+    ),
+    (
+        "002_library_case_metadata",
+        """
 -- Case details from the Home Office's DHR Library, for checking our pipeline's answers.
--- Filled by the collect_case_metadata pipeline (dhr/library.py). Kept in the evaluation
+-- Filled by the collect_case_metadata script. Kept in the evaluation
 -- schema so the wiki agent can never see them.
 --
 -- The library only shares case details as search filters, so each detail here means
@@ -34,7 +84,8 @@ CREATE TABLE evaluation.library_reviews (
 -- Every filter option that was searched, and how many reviews it returned.
 CREATE TABLE evaluation.library_filters (
     snapshot_id  bigint NOT NULL REFERENCES evaluation.library_snapshots ON DELETE CASCADE,
-    field        text NOT NULL,          -- the site's field, e.g. "Victim-Specific Information.Victims.Sex of victim[]"
+    -- field: the site's field, e.g. "Victim-Specific Information.Victims.Sex of victim[]"
+    field        text NOT NULL,
     value        text NOT NULL,          -- the site's value, e.g. "Female" or "16,19"
     label        text NOT NULL,          -- what the site shows, e.g. "Female" or "16 - 19"
     group_label  text NOT NULL,          -- where it sits on the site, e.g. "About the victim / Sex"
@@ -114,3 +165,6 @@ FROM evaluation.document_library_ids AS d
 LEFT JOIN evaluation.library_reviews AS r
     ON r.library_id = d.library_id
    AND r.snapshot_id = (SELECT snapshot_id FROM evaluation.library_latest);
+""",
+    ),
+]

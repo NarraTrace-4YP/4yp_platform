@@ -1,0 +1,19 @@
+# Settings for wmill, Windmill's command-line tool. The deploy on merge
+# (.github/workflows/deploy.yml) uses it to push the team's pipelines in f/dhr to Windmill.
+#
+# Only f/dhr is pushed. A pushed script replaces the one in Windmill, and a script deleted
+# here is deleted there too, so anything else people make in Windmill (in their own u/
+# folder, or in another f/ folder) is never touched.
+includes:
+  - "f/dhr/**"
+excludes: []
+
+# Folders, variables, secrets and resources are set up by server/windmill.sh, not pushed.
+skipFolders: true
+skipVariables: true
+skipSecrets: true
+skipResources: true
+skipResourceTypes: true
+skipBranchValidation: true
+
+defaultTs: bun

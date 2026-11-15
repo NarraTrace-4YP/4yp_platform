@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Brings the server up to date with the main branch. Only needed when the server setup
-# or the Python packages change (pipeline code in dags/ and dhr/ is picked up by Airflow
-# automatically). Run as an admin:  sudo /opt/dhr/server/update.sh
+# changes, or a setting in .env (such as HF_TOKEN). Pipeline code needs nothing: merging to
+# main deploys it to Windmill by itself. Run as an admin:  sudo /opt/dhr/server/update.sh
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -19,4 +19,5 @@ if [[ -n "$waiting" ]]; then
 	exit 1
 fi
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
+bash server/windmill.sh configure
 bash server/team.sh sync

@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+node_modules/
+# Windmill's generated files: the deploy creates them fresh each time, so don't commit them.
+*.script.yaml
+*.script.lock
+wmill-lock.yaml
