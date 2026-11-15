@@ -9,3 +9,4 @@ node_modules/
 *.script.yaml
 *.script.lock
 wmill-lock.yaml
+dist/
