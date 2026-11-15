@@ -4,13 +4,10 @@
 set -euo pipefail
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
-	-v airflow_pw="$AIRFLOW_DB_PASSWORD" \
 	-v mlflow_pw="$MLFLOW_DB_PASSWORD" \
 	-v pipeline_pw="$PIPELINE_DB_PASSWORD" \
 	-v wiki_pw="$WIKI_DB_PASSWORD" <<-'SQL'
-	-- Airflow's and MLflow's own records, each in their own database.
-	CREATE ROLE airflow LOGIN PASSWORD :'airflow_pw';
-	CREATE DATABASE airflow OWNER airflow;
+	-- MLflow's own records, in their own databases.
 	CREATE ROLE mlflow LOGIN PASSWORD :'mlflow_pw';
 	CREATE DATABASE mlflow OWNER mlflow;
 	CREATE DATABASE mlflow_auth OWNER mlflow;
@@ -21,7 +18,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
 	ALTER DATABASE dhr OWNER TO team;
 	REVOKE ALL ON DATABASE dhr FROM PUBLIC;
 
-	-- The login Airflow's pipeline tasks use.
+	-- The login the pipelines use when they run in Windmill.
 	CREATE ROLE pipeline LOGIN PASSWORD :'pipeline_pw' IN ROLE team;
 	ALTER ROLE pipeline SET role = 'team';
 

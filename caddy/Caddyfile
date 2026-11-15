@@ -4,9 +4,17 @@
 	email {$ACME_EMAIL}
 }
 
-airflow.{$DOMAIN} {
+windmill.{$DOMAIN} {
 	encode zstd gzip
-	reverse_proxy airflow-apiserver:8080
+	# The web editor's autocomplete talks to windmill-extra over a websocket.
+	@extra path /ws/* /ws_mp/* /ws_debug/*
+	handle @extra {
+		reverse_proxy windmill-extra:3000
+	}
+	# Everything else is Windmill itself.
+	handle {
+		reverse_proxy windmill-server:8000
+	}
 }
 
 mlflow.{$DOMAIN} {

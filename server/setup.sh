@@ -69,25 +69,26 @@ prepare_settings() {
 		cp "$REPO_DIR/.env.example" "$ENV_FILE"
 	fi
 	chmod 600 "$ENV_FILE"
-	ask_setting DOMAIN "Your domain (Airflow will be at airflow.<domain>)" "" example.com
+	ask_setting DOMAIN "Your domain (Windmill will be at windmill.<domain>)" "" example.com
 	ask_setting GITHUB_REPO "GitHub repo, as organisation/repo" "$(repo_from_git)" your-org/your-repo
 	ask_setting ACME_EMAIL "Email address for the HTTPS certificates" "" you@example.com
 	[[ "$(env_value ACME_EMAIL)" == *@* ]] || die "ACME_EMAIL in $ENV_FILE doesn't look like an email address."
 	echo "  Using domain $(env_value DOMAIN) and repo $(env_value GITHUB_REPO)"
+	if [[ -z "$(env_value HF_TOKEN)" && -t 0 ]]; then
+		local token
+		read -rp "  Hugging Face token that can read DHRC-100 (press Enter to add it later): " token
+		token=${token//[[:space:]]/}
+		[[ -n "$token" ]] && set_env_value HF_TOKEN "$token"
+	fi
 
 	local name
-	for name in POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD MLFLOW_DB_PASSWORD PIPELINE_DB_PASSWORD \
-		WIKI_DB_PASSWORD AIRFLOW_ADMIN_PASSWORD MLFLOW_ADMIN_PASSWORD MLFLOW_SECRET_KEY \
-		AIRFLOW_SECRET_KEY AIRFLOW_JWT_SECRET; do
+	for name in POSTGRES_PASSWORD WINDMILL_DB_PASSWORD MLFLOW_DB_PASSWORD PIPELINE_DB_PASSWORD \
+		WIKI_DB_PASSWORD MLFLOW_ADMIN_PASSWORD MLFLOW_SECRET_KEY WINDMILL_ADMIN_PASSWORD; do
 		if [[ -z "$(env_value "$name")" ]]; then
 			set_env_value "$name" "$(openssl rand -hex 24)"
 			echo "  generated $name"
 		fi
 	done
-	if [[ -z "$(env_value AIRFLOW_FERNET_KEY)" ]]; then
-		set_env_value AIRFLOW_FERNET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
-		echo "  generated AIRFLOW_FERNET_KEY"
-	fi
 
 	# Load the settings only now, once every value is final, so Docker gets the real ones.
 	set -a
@@ -111,7 +112,7 @@ install_system() {
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update -q
 	apt-get upgrade -yq
-	apt-get install -yq ca-certificates curl git openssl ufw unattended-upgrades postgresql-client
+	apt-get install -yq ca-certificates curl git jq openssl ufw unattended-upgrades postgresql-client
 	dpkg-reconfigure -f noninteractive unattended-upgrades
 
 	step "Adding 4 GB of swap (a safety net for the 8 GB of memory)"
@@ -163,7 +164,8 @@ secure_logins() {
 	cat <<-'EOF'
 
 		  Password logins are now switched off. Keep this window open, and in a NEW
-		  terminal check you can still get in:  ssh <your-github-username>@<this-server>
+		  terminal check you can still get in:  ssh <your-username>@<this-server>
+		  (your username is your GitHub username in lower case)
 	EOF
 
 	step "Turning on the firewall (SSH and web only)"
@@ -187,7 +189,7 @@ wait_until_healthy() { # up to 10 minutes
 }
 
 start_services() {
-	step "Starting the services (the first build takes 5 to 10 minutes)"
+	step "Starting the services (the first start downloads about 3 GB and takes 5 to 10 minutes)"
 	chown root:docker "$ENV_FILE"
 	chmod 640 "$ENV_FILE"
 	docker compose up -d --build || die "Services didn't start. See: docker compose ps, and docker compose logs <service>"
@@ -195,7 +197,10 @@ start_services() {
 	wait_until_healthy
 	docker compose ps --format 'table {{.Service}}\t{{.Status}}' | sed 's/^/  /'
 
-	step "Creating Airflow, MLflow and database logins for the team"
+	step "Setting up Windmill (admin account, workspace, pipeline settings, deploy token)"
+	bash "$REPO_DIR/server/windmill.sh" configure
+
+	step "Creating Windmill, MLflow and database logins for the team"
 	bash "$REPO_DIR/server/team.sh" sync
 }
 
@@ -210,15 +215,26 @@ main() {
 	secure_logins
 	start_services
 
+	# shellcheck source=/dev/null
+	. "$ENV_FILE"
 	cat <<-EOF
 
 		Done.
 
-		  Airflow:  https://airflow.$DOMAIN   (admin login: admin / AIRFLOW_ADMIN_PASSWORD in .env)
-		  MLflow:   https://mlflow.$DOMAIN    (admin login: admin / MLFLOW_ADMIN_PASSWORD in .env)
+		  Windmill: https://windmill.$DOMAIN
+		  MLflow:   https://mlflow.$DOMAIN
 		  Your own logins are in ~/ACCOUNTS.txt when you SSH in as yourself.
+		  Server admin logins (Windmill: admin@$DOMAIN, MLflow: admin) are in $ENV_FILE.
 
-		If the web addresses don't load yet, check that airflow.$DOMAIN and mlflow.$DOMAIN
+		One last step, so merging to main deploys the pipelines to Windmill. In GitHub, open
+		https://github.com/$GITHUB_REPO/settings/secrets/actions and add:
+		  - on the "Secrets" tab, a secret named WINDMILL_TOKEN with this value:
+		      $WINDMILL_DEPLOY_TOKEN
+		  - on the "Variables" tab, a variable named WINDMILL_URL with this value:
+		      https://windmill.$DOMAIN/
+		(The token is also kept in $ENV_FILE as WINDMILL_DEPLOY_TOKEN.)
+
+		If the web addresses don't load yet, check that windmill.$DOMAIN and mlflow.$DOMAIN
 		both point at this server in your DNS. HTTPS starts working once they do.
 	EOF
 }

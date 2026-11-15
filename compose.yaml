@@ -4,56 +4,22 @@
 
 name: dhr
 
-x-airflow: &airflow
-  build:
-    context: .
-    dockerfile: airflow/Dockerfile
-  image: dhr-airflow:local
+# Windmill's own images, all on the same version. To upgrade Windmill, change the version
+# here and wherever else it appears (tests/test_windmill_scripts.py lists them and fails
+# until they all agree), then run update.sh.
+x-windmill: &windmill
+  image: ghcr.io/windmill-labs/windmill:1.875.0
   restart: unless-stopped
-  environment: &airflow-env
-    # Run tasks on this machine, at most 4 at a time (the server has 4 cores and 8 GB of memory).
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__CORE__PARALLELISM: "4"
-    AIRFLOW__CORE__DEFAULT_TIMEZONE: Europe/London
-    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
-    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
-    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
-    # Each person logs in with their own username and password.
-    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__FAB__ENABLE_PROXY_FIX: "true"
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
-    AIRFLOW__API__BASE_URL: https://airflow.${DOMAIN}
-    AIRFLOW__API__WORKERS: "2"
-    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
-    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
-    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-    # Airflow reads the pipelines straight from GitHub: the dags/ folder on the main branch,
-    # checked every 60 seconds. Every run records the commit it used.
-    AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST: >-
-      [{"name": "dhr",
-        "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
-        "kwargs": {"repo_url": "https://${GITHUB_TOKEN:+x-access-token:${GITHUB_TOKEN}@}github.com/${GITHUB_REPO}.git",
-                   "tracking_ref": "main", "subdir": "dags", "refresh_interval": 60}}]
-    # Settings the team's pipeline code reads (see dhr/checks.py for an example).
-    DHR_DATABASE_URL: postgresql://pipeline:${PIPELINE_DB_PASSWORD}@postgres:5432/dhr
-    MLFLOW_TRACKING_URI: http://mlflow:5000
-    MLFLOW_TRACKING_USERNAME: admin
-    MLFLOW_TRACKING_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
-    MLFLOW_DISABLE_TELEMETRY: "true"
-    MLFLOW_DISABLE_AGENT_HINT: "true"
-    # Read access to the private DHRC-100 dataset on Hugging Face (load_dhrc uses it).
-    HF_TOKEN: ${HF_TOKEN:-}
-    HF_HUB_DISABLE_TELEMETRY: "1"
-  volumes:
-    - airflow-logs:/opt/airflow/logs
-  depends_on: &airflow-depends-on
-    postgres:
+  depends_on:
+    windmill-db:
       condition: service_healthy
+
+x-windmill-env: &windmill-env
+  DATABASE_URL: postgres://postgres:${WINDMILL_DB_PASSWORD}@windmill-db:5432/windmill?sslmode=disable
 
 services:
   # PostgreSQL with pgvector (meaning search) and pg_search (keyword search) built in.
-  # Holds the project database "dhr" plus Airflow's and MLflow's own records.
+  # Holds the project database "dhr" plus MLflow's own records.
   postgres:
     image: paradedb/paradedb:0.26.6-pg17
     restart: unless-stopped
@@ -62,7 +28,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: dhr
       # Read once, by postgres/20-project.sh, when the database is first created.
-      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
       MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD}
       PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
       WIKI_DB_PASSWORD: ${WIKI_DB_PASSWORD}
@@ -83,76 +48,89 @@ services:
       retries: 10
       start_period: 60s
 
-  # One-off job: prepares Airflow's database and creates the first admin login, then exits.
-  airflow-init:
-    <<: *airflow
-    restart: "no"
-    user: "0:0"
-    entrypoint: /bin/bash
-    command: ["-c", "chown -R 50000:0 /opt/airflow/logs && exec /entrypoint airflow version"]
+  # Windmill's own records (scripts, runs, users), kept apart from the project data.
+  windmill-db:
+    image: postgres:18
+    restart: unless-stopped
     environment:
-      <<: *airflow-env
-      _AIRFLOW_DB_MIGRATE: "true"
-      _AIRFLOW_WWW_USER_CREATE: "true"
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
-
-  airflow-apiserver:
-    <<: *airflow
-    command: api-server
+      POSTGRES_PASSWORD: ${WINDMILL_DB_PASSWORD}
+      POSTGRES_DB: windmill
+    volumes:
+      - windmill-db-data:/var/lib/postgresql
+    mem_limit: 1g
+    shm_size: 256m
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    depends_on:
-      <<: *airflow-depends-on
-      airflow-init:
-        condition: service_completed_successfully
+      test: ["CMD-SHELL", "pg_isready -U postgres -d windmill"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  airflow-scheduler:
-    <<: *airflow
-    command: scheduler
+  # The Windmill website and API. Reachable on the server itself at 127.0.0.1:8000 (the
+  # server scripts use that), and from outside only through Caddy over HTTPS.
+  windmill-server:
+    <<: *windmill
+    environment:
+      <<: *windmill-env
+      MODE: server
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - windmill-worker-logs:/tmp/windmill/logs
+    mem_limit: 1g
     healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    depends_on:
-      <<: *airflow-depends-on
-      airflow-init:
-        condition: service_completed_successfully
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/version"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
 
-  airflow-dag-processor:
-    <<: *airflow
-    command: dag-processor
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    depends_on:
-      <<: *airflow-depends-on
-      airflow-init:
-        condition: service_completed_successfully
+  # Runs the pipeline scripts, two at a time. Each run is limited to 2 GB of memory.
+  windmill-worker:
+    <<: *windmill
+    environment:
+      <<: *windmill-env
+      MODE: worker
+      WORKER_GROUP: default
+      # Keeps a running script from reading the worker's own settings and passwords.
+      FAVOR_UNSHARE_PID: "true"
+    privileged: true
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 2g
+    volumes:
+      - windmill-worker-cache:/tmp/windmill/cache
+      - windmill-worker-logs:/tmp/windmill/logs
 
-  # Wakes up tasks that are waiting on something slow, such as a job queued on Blythe.
-  airflow-triggerer:
-    <<: *airflow
-    command: triggerer
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+  # Runs Windmill's own small built-in jobs, so they never wait behind a long pipeline.
+  windmill-worker-native:
+    <<: *windmill
+    environment:
+      <<: *windmill-env
+      MODE: worker
+      WORKER_GROUP: native
+      NATIVE_MODE: "true"
+      SLEEP_QUEUE: "200"
+    mem_limit: 1g
+    volumes:
+      - windmill-worker-logs:/tmp/windmill/logs
+
+  # Gives the web editor its Python autocomplete and error checking.
+  windmill-extra:
+    image: ghcr.io/windmill-labs/windmill-extra:1.875.0
+    restart: unless-stopped
+    environment:
+      ENABLE_LSP: "true"
+      ENABLE_MULTIPLAYER: "false"
+      ENABLE_DEBUGGER: "false"
+      WINDMILL_BASE_URL: http://windmill-server:8000
+    volumes:
+      - windmill-lsp-cache:/pyls/.cache
+    mem_limit: 1g
     depends_on:
-      <<: *airflow-depends-on
-      airflow-init:
-        condition: service_completed_successfully
+      - windmill-server
 
   # Records every experiment run and LLM call. Each person has their own login.
   mlflow:
@@ -180,7 +158,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # The only thing open to the internet: serves Airflow and MLflow over HTTPS,
+  # The only thing open to the internet: serves Windmill and MLflow over HTTPS,
   # and gets and renews the certificates automatically.
   caddy:
     image: caddy:2
@@ -197,12 +175,15 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - airflow-apiserver
+      - windmill-server
       - mlflow
 
 volumes:
   postgres-data:
-  airflow-logs:
+  windmill-db-data:
+  windmill-worker-cache:
+  windmill-worker-logs:
+  windmill-lsp-cache:
   mlflow-artifacts:
   caddy-data:
   caddy-config:
