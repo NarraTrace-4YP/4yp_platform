@@ -185,8 +185,9 @@ wm_configure() {
 	# f/dhr holds the team's pipelines. Everyone can see and run them ("g/all": false
 	# means read-only); only workspace admins, and so the deploys, can change them.
 	local folder
+	# (Windmill insists that every owner can also write.)
 	folder=$(jq -n --arg owner "u/$admin_username" '{summary: "The team pipelines. They come from GitHub: change them with a pull request, not here.",
-		owners: [$owner], extra_perms: {"g/all": false}}')
+		owners: [$owner], extra_perms: {($owner): true, "g/all": false}}')
 	if wm_exists GET "/w/$WM_WORKSPACE/folders/exists/dhr"; then
 		wm_api POST "/w/$WM_WORKSPACE/folders/update/dhr" "$folder" >/dev/null
 	else
