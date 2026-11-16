@@ -5,8 +5,8 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Every case detail the DHR Library holds for one of our reviews, grouped for display.
-Used by the case viewer app.
+"""Every case detail the DHR Library holds for one review in a dataset, grouped for
+display. Used by the case viewer app.
 
 The library files each detail under a heading path such as "About the victim / Sex", or
 "About the victim / Ethnicity / White" where the site has a sub-heading. Here that becomes
@@ -14,6 +14,9 @@ a section ("About the victim"), an attribute ("Ethnicity") and a value ("White: 
 Themes ("Victim - alcohol misuse") are grouped by who they're about ("Victim").
 """
 
+from typing import Literal
+
+from .datasets import check_dataset
 from .db import apply_migrations, connect
 
 # The order the library's search page shows its sections in.
@@ -30,15 +33,38 @@ SECTION_NAMES = {"Most filtered for DHRs": "Categories", "Filter by theme": "The
 DETAILS_SQL = """
 SELECT group_label, label
 FROM evaluation.case_attributes
-WHERE doc_id = %s
+WHERE dataset = %s AND doc_id = %s
 ORDER BY group_label, label
 """
 REVIEW_SQL = """
-SELECT doc_id, library_id, title, csp, csp_region, date_of_death, uploaded
-FROM evaluation.case_metadata
-WHERE doc_id = %s
+SELECT d.doc_id, d.library_id,
+       COALESCE(r.title, d.dataset_title, d.doc_id),
+       COALESCE(r.csp, d.dataset_csp),
+       COALESCE(r.csp_region, d.dataset_csp_region),
+       COALESCE(r.date_of_death, d.dataset_date_of_death),
+       r.uploaded,
+       r.library_id IS NOT NULL,
+       d.source_url,
+       d.loaded,
+       d.source
+FROM evaluation.document_library_ids AS d
+LEFT JOIN evaluation.library_reviews AS r ON r.library_id = d.library_id
+    AND r.snapshot_id = (SELECT snapshot_id FROM evaluation.library_latest)
+WHERE d.dataset = %s AND d.doc_id = %s
 """
-REVIEW_COLUMNS = ("doc_id", "library_id", "title", "csp", "csp_region", "date_of_death", "uploaded")
+REVIEW_COLUMNS = (
+    "doc_id",
+    "library_id",
+    "title",
+    "csp",
+    "csp_region",
+    "date_of_death",
+    "uploaded",
+    "in_library",
+    "source_url",
+    "loaded",
+    "source",
+)
 
 
 def split_detail(group_label: str, label: str) -> tuple[str, str, str]:
@@ -77,11 +103,13 @@ def group_details(rows: list[tuple[str, str]]) -> list[dict]:
     ]
 
 
-def main(doc_id: str = ""):
+def main(dataset: Literal["DHRC-100", "DHRC-RAW"] = "DHRC-100", doc_id: str = ""):
+    """dataset: DHRC-100 or DHRC-RAW. doc_id: the review's file name without .json."""
+    check_dataset(dataset)
     with connect() as conn:
         apply_migrations(conn)  # so the tables exist even before any pipeline has run
-        review = conn.execute(REVIEW_SQL, (doc_id,)).fetchone()
+        review = conn.execute(REVIEW_SQL, (dataset, doc_id)).fetchone()
         if review is None:
-            raise ValueError(f"No review called {doc_id!r} in the latest DHRC version")
-        rows = conn.execute(DETAILS_SQL, (doc_id,)).fetchall()
+            raise ValueError(f"No review called {doc_id!r} in the latest {dataset} version")
+        rows = conn.execute(DETAILS_SQL, (dataset, doc_id)).fetchall()
     return {**dict(zip(REVIEW_COLUMNS, review, strict=True)), "sections": group_details(rows)}

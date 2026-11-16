@@ -10,3 +10,5 @@ node_modules/
 *.script.lock
 wmill-lock.yaml
 dist/
+# made when an app is linted or bundled
+*.raw_app/package-lock.json

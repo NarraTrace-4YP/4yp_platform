@@ -7,41 +7,55 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Loads the DHRC-100 dataset from Hugging Face into the database, untouched.
+"""Loads a DHR dataset from Hugging Face into the database, untouched.
 
-Run it in Windmill: open f/dhr/load_dhrc, leave "revision" as main to load the latest
-version of the dataset (or give a commit id to load an exact older one), and click Run.
-Loading the same version again replaces what was there, so it is always safe to re-run.
+Run it in Windmill: open f/dhr/load_dhrc, pick the dataset (DHRC-100 or DHRC-RAW), leave
+"revision" as main to load its latest version (or give a commit id to load an exact older
+one), and click Run. Loading the same version again replaces what was there, so it is
+always safe to re-run. The datasets are kept apart: each load is labelled with its dataset,
+and corpus.current_documents has a dataset column to choose by.
 
 Every review goes into corpus.documents exactly as the dataset has it, next to the dataset
-version (the Hugging Face commit) it came from. Nothing is written until every file has
-passed two checks: it matches the dataset's own CHECKSUMS.sha256, and it reads as a
-document (pages containing blocks).
+version (the Hugging Face commit) it came from. First every file must match the dataset's
+own checksums file, or nothing is stored. Then each review must read as a document (pages
+containing blocks). For DHRC-100 one that doesn't stops the load; DHRC-RAW is raw,
+unvalidated output, so there a review that doesn't read is skipped and listed instead.
 
 On a laptop, with DHR_DATABASE_URL set (and HF_TOKEN unless --local-path is used):
 
-    uv run python -m f.dhr.load_dhrc                        # latest version
+    uv run python -m f.dhr.load_dhrc --dataset DHRC-RAW
     uv run python -m f.dhr.load_dhrc --local-path <folder>  # a copy already on disk
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import os
 import re
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+from .datasets import DATASETS, check_dataset
 from .db import apply_migrations, connect
-from .settings import use_hugging_face_token, use_mlflow
+from .settings import ProgressBar, use_hugging_face_token, use_mlflow
 from .version import GIT_COMMIT
 
-DEFAULT_REPO_ID = "4YP/dhr-corpus-100-copy"
 CHECKSUM_LINE = re.compile(r"^([0-9a-fA-F]{64}) [ *](.+)$")
+
+# How far through the load each stage ends, for the progress bar (download is the first 25%).
+Progress = Callable[[float], None]
+DOWNLOADED, CHECKED, READ = 25, 45, 60
+
+
+def no_progress(percent: float) -> None:
+    pass
 
 
 class LoadError(RuntimeError):
@@ -59,7 +73,6 @@ class Document:
     sha256: str
     n_pages: int
     n_blocks: int
-    raw: dict
 
 
 # ----------------------------------------------------------------- checking the files
@@ -73,41 +86,56 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def checksums_file(root: Path) -> Path:
+    """The dataset's checksums file: CHECKSUMS.sha256 (DHRC-100) or checksums.sha256."""
+    for path in sorted(root.iterdir()):
+        if path.is_file() and path.name.lower() == "checksums.sha256":
+            return path
+    raise LoadError("the dataset has no CHECKSUMS.sha256 file, so its files can't be checked")
+
+
 def read_checksums(root: Path) -> dict[str, str]:
-    """The dataset's CHECKSUMS.sha256, as {path inside the dataset: hash}."""
+    """The dataset's checksums file, as {path inside the dataset: hash}."""
     checksums = {}
-    lines = (root / "CHECKSUMS.sha256").read_text(encoding="utf-8").splitlines()
-    for number, line in enumerate(lines, start=1):
+    path = checksums_file(root)
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip() or line.startswith("#"):
             continue
         match = CHECKSUM_LINE.match(line.rstrip())
         if not match:
-            raise ValueError(f"CHECKSUMS.sha256 line {number} isn't 'hash  path': {line!r}")
+            raise ValueError(f"{path.name} line {number} isn't 'hash  path': {line!r}")
         checksums[match.group(2).removeprefix("./")] = match.group(1).lower()
     return checksums
 
 
 def locate(root: Path, listed: str) -> Path:
-    """Where a file named in CHECKSUMS.sha256 is (paths may or may not include data/)."""
+    """Where a file named in the checksums file is (paths may or may not include data/)."""
     path = root / listed
     return path if path.exists() else root / "data" / listed
 
 
-def verify_checksums(root: Path) -> list[str]:
+def verify_checksums(root: Path, progress: Progress = no_progress) -> list[str]:
     """Every problem found: listed files missing or changed, and review files not listed."""
     problems = []
     listed_paths = set()
-    for listed, expected in read_checksums(root).items():
+    name = checksums_file(root).name
+    checksums = read_checksums(root)
+    for number, (listed, expected) in enumerate(checksums.items(), start=1):
+        progress(DOWNLOADED + (CHECKED - DOWNLOADED) * number / len(checksums))
         path = locate(root, listed)
         listed_paths.add(path.resolve())
         if not path.is_file():
             problems.append(f"missing: {listed}")
         elif sha256_of(path) != expected:
             problems.append(f"doesn't match its checksum: {listed}")
-    for path in sorted((root / "data").rglob("*.json")):
+    for path in review_files(root):
         if path.resolve() not in listed_paths:
-            problems.append(f"not in CHECKSUMS.sha256: {path.relative_to(root).as_posix()}")
+            problems.append(f"not in {name}: {path.relative_to(root).as_posix()}")
     return problems
+
+
+def review_files(root: Path) -> list[Path]:
+    return sorted((root / "data").rglob("*.json"))
 
 
 def count_blocks(block: dict) -> int:
@@ -115,13 +143,18 @@ def count_blocks(block: dict) -> int:
     return sum(1 + count_blocks(child) for child in block.get("children") or [])
 
 
-def read_document(path: Path, root: Path) -> Document:
-    """Reads one review file and checks it has the expected shape: a list of pages."""
+def load_review(path: Path) -> dict:
+    """One review file's JSON, refusing what the database can't store."""
     text = path.read_text(encoding="utf-8")
     if "\\u0000" in text:
         # The database can't store this character inside JSON; better to stop and look.
         raise ValueError(f"{path.name}: contains a \\u0000 character")
-    raw = json.loads(text)
+    return json.loads(text)
+
+
+def read_document(path: Path, root: Path) -> Document:
+    """Reads one review file and checks it has the expected shape: a list of pages."""
+    raw = load_review(path)
     pages = raw.get("children") if isinstance(raw, dict) else None
     if not isinstance(pages, list) or not pages:
         raise ValueError(f"{path.name}: has no pages")
@@ -133,14 +166,45 @@ def read_document(path: Path, root: Path) -> Document:
         sha256=sha256_of(path),
         n_pages=len(pages),
         n_blocks=sum(count_blocks(page) for page in pages),
-        raw=raw,
     )
 
 
+def read_documents(
+    root: Path, strict: bool, progress: Progress = no_progress
+) -> tuple[list[Document], list[str]]:
+    """Checks every review reads as a document. Returns those that do, and the problems.
+    In strict mode any problem stops everything. Reviews are read one at a time and then
+    let go, so even a large dataset needs little memory."""
+    documents, problems = [], []
+    paths = review_files(root)
+    for number, path in enumerate(paths, start=1):
+        progress(CHECKED + (READ - CHECKED) * number / len(paths))
+        try:
+            documents.append(read_document(path, root))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as error:
+            problems.append(str(error) if path.name in str(error) else f"{path.name}: {error}")
+    if strict and problems:
+        raise LoadError(
+            f"{len(problems)} review(s) couldn't be read:\n  " + "\n  ".join(problems[:20])
+        )
+    return documents, problems
+
+
 def read_dataset_metadata(root: Path) -> dict | list | None:
-    """The dataset's own METADATA.json at the top level, if it has one."""
+    """The dataset's own description of its reviews: METADATA.json (DHRC-100) or
+    manifest.csv (DHRC-RAW), both stored as {"documents": [one entry per review]}."""
     candidates = sorted(root.glob("*METADATA.json"))
-    return json.loads(candidates[0].read_text(encoding="utf-8")) if candidates else None
+    if candidates:
+        return json.loads(candidates[0].read_text(encoding="utf-8"))
+    manifest = root / "manifest.csv"
+    if manifest.is_file():
+        with manifest.open(encoding="utf-8-sig", newline="") as handle:
+            rows = [
+                {k: v if v != "" else None for k, v in row.items()}
+                for row in csv.DictReader(handle)
+            ]
+        return {"source": "manifest.csv", "documents": rows}
+    return None
 
 
 # ----------------------------------------------------------------- getting and storing it
@@ -163,8 +227,19 @@ def download(repo_id: str, revision: str, target: Path) -> str:
     return commit
 
 
-def store(conn, repo_id, revision, documents, dataset_metadata, git_commit) -> None:
-    """Writes one dataset version, replacing it if it was loaded before. All or nothing."""
+def store(
+    conn,
+    dataset,
+    repo_id,
+    revision,
+    documents,
+    root,
+    dataset_metadata,
+    git_commit,
+    progress: Progress = no_progress,
+) -> None:
+    """Writes one dataset version, replacing it if it was loaded before. All or nothing.
+    Each review is read from disk again as it's written, so only one is in memory."""
     from psycopg.types.json import Jsonb
 
     with conn.transaction():
@@ -172,20 +247,23 @@ def store(conn, repo_id, revision, documents, dataset_metadata, git_commit) -> N
         conn.execute("DELETE FROM corpus.dataset_versions WHERE revision = %s", (revision,))
         conn.execute(
             "INSERT INTO corpus.dataset_versions"
-            " (revision, repo_id, git_commit, n_documents, dataset_metadata)"
-            " VALUES (%s, %s, %s, %s, %s)",
-            (revision, repo_id, git_commit, len(documents), Jsonb(dataset_metadata)),
+            " (revision, repo_id, dataset, git_commit, n_documents, dataset_metadata)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (revision, repo_id, dataset, git_commit, len(documents), Jsonb(dataset_metadata)),
         )
-        with conn.cursor() as cursor:
-            cursor.executemany(
+        for number, d in enumerate(documents, start=1):
+            conn.execute(
                 "INSERT INTO corpus.documents"
                 " (revision, doc_id, file_path, sha256, n_pages, n_blocks, raw)"
                 " VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                [
-                    (revision, d.doc_id, d.file_path, d.sha256, d.n_pages, d.n_blocks, Jsonb(d.raw))
-                    for d in documents
-                ],
-            )
+                (
+                    revision, d.doc_id, d.file_path, d.sha256, d.n_pages, d.n_blocks,
+                    Jsonb(load_review(root / d.file_path)),
+                ),
+            )  # fmt: skip
+            progress(READ + (99 - READ) * number / len(documents))
+            if number % 100 == 0:
+                say(f"      stored {number}/{len(documents)}")
 
 
 def log_to_mlflow(summary: dict) -> str | None:
@@ -195,12 +273,15 @@ def log_to_mlflow(summary: dict) -> str | None:
     import mlflow
 
     mlflow.set_experiment("corpus-ingest")
-    with mlflow.start_run(run_name=f"load {summary['revision'][:8]}") as run:
+    with mlflow.start_run(run_name=f"{summary['dataset']} {summary['revision'][:8]}") as run:
         mlflow.log_params(
-            {k: summary[k] for k in ("repo_id", "revision", "git_commit", "n_documents")}
+            {k: summary[k] for k in ("dataset", "repo_id", "revision", "git_commit", "n_documents")}
         )
-        mlflow.log_metrics({k: summary[k] for k in ("n_documents", "n_pages", "n_blocks")})
+        mlflow.log_metrics(
+            {k: summary[k] for k in ("n_documents", "n_pages", "n_blocks", "n_skipped")}
+        )
         mlflow.set_tag("git_commit", summary["git_commit"])
+        mlflow.set_tag("dataset", summary["dataset"])
     return run.info.run_id
 
 
@@ -208,61 +289,71 @@ def log_to_mlflow(summary: dict) -> str | None:
 
 
 def run(
-    repo_id: str = DEFAULT_REPO_ID,
+    dataset: str = "DHRC-100",
     revision: str = "main",
-    expected_documents: int = 100,
+    expected_documents: int | None = None,
     local_path: Path | None = None,
     workdir: Path | None = None,
 ) -> dict:
-    """Checks one version of the dataset and stores it. Returns a summary of the load."""
+    """Checks one version of a dataset and stores it. Returns a summary of the load.
+    expected_documents: how many review files there must be (None: the usual number for
+    this dataset; 0: don't check)."""
+    settings = check_dataset(dataset)
+    repo_id = settings["repo_id"]
+    progress = ProgressBar()  # the run's progress bar in Windmill (does nothing elsewhere)
+    if expected_documents is None:
+        expected_documents = settings["reviews"]
+
     if local_path:
         root = local_path
-        revision = "local-" + sha256_of(root / "CHECKSUMS.sha256")[:12]
-        say(f"Using the copy in {root} (recorded as version {revision})")
+        revision = "local-" + sha256_of(checksums_file(root))[:12]
+        say(f"Using the copy in {root} (recorded as {dataset} version {revision})")
     else:
         use_hugging_face_token()
-        say(f"Downloading {repo_id} at {revision!r}...")
+        say(f"Downloading {dataset} ({repo_id}) at {revision!r}...")
         root = workdir or Path(tempfile.mkdtemp(prefix="dhrc-"))
+        progress(1)
         revision = download(repo_id, revision, root)
         say(f"OK    Downloaded version {revision}")
 
-    problems = verify_checksums(root)
+    progress(DOWNLOADED)
+    problems = verify_checksums(root, progress)
     if problems:
         raise LoadError(
             f"{len(problems)} file(s) failed the checksum check:\n  " + "\n  ".join(problems[:20])
         )
-    say("OK    Every file matches CHECKSUMS.sha256")
+    say(f"OK    Every file matches {checksums_file(root).name}")
 
-    documents, problems = [], []
-    for path in sorted((root / "data").rglob("*.json")):
-        try:
-            documents.append(read_document(path, root))
-        except (ValueError, json.JSONDecodeError) as error:
-            problems.append(str(error))
-    if problems:
-        raise LoadError(
-            f"{len(problems)} review(s) couldn't be read:\n  " + "\n  ".join(problems[:20])
-        )
-    if expected_documents and len(documents) != expected_documents:
-        raise LoadError(f"found {len(documents)} reviews, expected {expected_documents}")
+    n_files = len(review_files(root))
+    if expected_documents and n_files != expected_documents:
+        raise LoadError(f"found {n_files} reviews, expected {expected_documents}")
+    documents, skipped = read_documents(root, strict=settings["strict"], progress=progress)
     n_pages = sum(d.n_pages for d in documents)
     n_blocks = sum(d.n_blocks for d in documents)
     say(f"OK    Read {len(documents)} reviews: {n_pages} pages, {n_blocks} blocks")
+    if skipped:
+        say(f"NOTE  Skipped {len(skipped)} review(s) that don't read as documents:")
+        for problem in skipped[:50]:
+            say(f"        {problem}")
 
     with connect() as conn:
         ran = apply_migrations(conn)
         if ran:
             say(f"OK    Database tables updated: {', '.join(ran)}")
-        store(conn, repo_id, revision, documents, read_dataset_metadata(root), GIT_COMMIT)
-    say(f"OK    Stored in corpus.documents as version {revision}")
+        metadata = read_dataset_metadata(root)
+        store(conn, dataset, repo_id, revision, documents, root, metadata, GIT_COMMIT, progress)
+    say(f"OK    Stored in corpus.documents as {dataset} version {revision}")
 
     summary = {
+        "dataset": dataset,
         "repo_id": repo_id,
         "revision": revision,
         "git_commit": GIT_COMMIT,
         "n_documents": len(documents),
         "n_pages": n_pages,
         "n_blocks": n_blocks,
+        "n_skipped": len(skipped),
+        "skipped": skipped,
     }
     run_id = log_to_mlflow(summary)
     if run_id:
@@ -271,31 +362,27 @@ def run(
     return summary
 
 
-def main(
-    revision: str = "main",
-    expected_documents: int = 100,
-    repo_id: str = "4YP/dhr-corpus-100-copy",  # written out, so Windmill's form shows it
-):
-    """Windmill runs this. revision: a dataset branch, tag or commit. expected_documents:
-    stop if the dataset doesn't have exactly this many reviews (0 to skip the check)."""
+def main(dataset: Literal["DHRC-100", "DHRC-RAW"] = "DHRC-100", revision: str = "main"):
+    """Windmill runs this. dataset: DHRC-100 or DHRC-RAW. revision: a branch, tag or
+    commit of that dataset on Hugging Face (main is the latest)."""
     sys.stdout.reconfigure(line_buffering=True)  # show progress in the log as it happens
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")  # they only clutter the log
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     with tempfile.TemporaryDirectory() as workdir:
-        return run(repo_id, revision, expected_documents, workdir=Path(workdir))
+        return run(dataset, revision, workdir=Path(workdir))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--repo-id", default=DEFAULT_REPO_ID)
+    parser.add_argument("--dataset", default="DHRC-100", choices=sorted(DATASETS))
     parser.add_argument("--revision", default="main", help="dataset branch, tag or commit")
     parser.add_argument("--local-path", type=Path, help="load a copy already on disk")
     parser.add_argument(
-        "--expected-documents", type=int, default=100, help="fail if the count differs (0: skip)"
+        "--expected-documents", type=int, help="fail if the count differs (0: don't check)"
     )
     args = parser.parse_args()
     if args.local_path:
-        run(args.repo_id, args.revision, args.expected_documents, local_path=args.local_path)
+        run(args.dataset, args.revision, args.expected_documents, local_path=args.local_path)
     else:
-        main(args.revision, args.expected_documents, args.repo_id)
+        main(args.dataset, args.revision)
     say("Done.")
