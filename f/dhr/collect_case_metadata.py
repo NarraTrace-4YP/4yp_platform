@@ -32,6 +32,8 @@ the site warns it may contain mistakes, so treat it as good, not perfect.
 On a laptop, with DHR_DATABASE_URL set:
 
     uv run python -m f.dhr.collect_case_metadata --max-filters 10 --dry-run
+    
+    Add a comment
 """
 
 from __future__ import annotations
