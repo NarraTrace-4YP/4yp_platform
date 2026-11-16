@@ -49,6 +49,9 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
   and every past run is kept under **Runs**. Everyone can run these, but no one can edit
   them in Windmill: they come from GitHub (see below), so GitHub always has the real
   version.
+- **The case viewer** (`f/dhr/case_viewer`, under **Apps**) shows every case detail the
+  DHR Library holds for each of our reviews, with a search for reviews and for details.
+  It's a small React app in `f/dhr/case_viewer.raw_app`, deployed like everything else.
 - **Your own space** is the folder `u/<your-username>`. Write and run anything there in
   the web editor (**+ Script**, choose Python). Your scripts can use the team's code:
   `from f.dhr.db import connect` gives you the project database.

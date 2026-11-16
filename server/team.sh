@@ -44,6 +44,12 @@ services_running() {
 	done
 }
 
+windmill_ready() { # Windmill is running AND server/windmill.sh configure has set it up
+	WM_TOKEN="${WINDMILL_ADMIN_TOKEN:-}"
+	[[ -n "$WM_TOKEN" ]] || return 1
+	[[ "$(wm_call POST /workspaces/exists "{\"id\": \"$WM_WORKSPACE\"}" 2>/dev/null)" == "true" ]]
+}
+
 set_db_login() { # user password
 	compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U postgres -d dhr \
 		-v u="$1" -v p="$2" <<-'SQL'
@@ -113,6 +119,9 @@ sync_team() {
 	if ! services_running; then
 		app_logins=no
 		echo "Services aren't running yet, so only SSH logins will be set up this time."
+	elif ! windmill_ready; then
+		app_logins=no
+		echo "Windmill isn't set up yet (server/windmill.sh configure), so only SSH logins this time."
 	fi
 
 	# team.txt is read on file descriptor 3 so the docker commands below can't swallow it.
