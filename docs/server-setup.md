@@ -60,7 +60,7 @@ bash server/setup.sh
 
 It asks for your domain, the GitHub repo (it suggests the one you cloned), an email
 address that Let's Encrypt uses only to warn about expiring certificates, and a Hugging
-Face token that can read DHRC-100 (press Enter to add it later). They're saved in
+Face token that can read the DHRC datasets (press Enter to add it later). They're saved in
 `/opt/dhr/.env`, so running the script again doesn't ask again. Then it:
 
 1. generates the passwords,

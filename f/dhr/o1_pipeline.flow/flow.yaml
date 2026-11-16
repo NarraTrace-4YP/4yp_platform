@@ -1,0 +1,94 @@
+summary: "O1: corpus preparation"
+description: >-
+  Builds O1 (a hierarchical, standardised DHR corpus linked to the Home Office DHR
+  Library's case metadata) from scratch, one step after another: load DHRC-100, load
+  DHRC-RAW, collect the case metadata, then report where O1 stands. Each step can be
+  switched off. Later O1 steps (grouping blocks by section, matching sections to the 2016
+  template) will be added here as they are built. The O1 app (f/dhr/o1) explains each
+  step and can start this.
+value:
+  modules:
+    - id: load_dhrc_100
+      summary: Load DHRC-100 (the 100 checked reviews)
+      skip_if:
+        expr: flow_input.load_dhrc_100 === false
+      value:
+        type: script
+        path: f/dhr/load_dhrc
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-100
+          revision:
+            type: javascript
+            expr: flow_input.dhrc_100_revision || "main"
+    - id: load_dhrc_raw
+      summary: Load DHRC-RAW (all 702 reviews, unchecked)
+      skip_if:
+        expr: flow_input.load_dhrc_raw === false
+      value:
+        type: script
+        path: f/dhr/load_dhrc
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-RAW
+          revision:
+            type: javascript
+            expr: flow_input.dhrc_raw_revision || "main"
+    - id: collect_case_metadata
+      summary: Collect the case metadata from the DHR Library (about 20 minutes)
+      skip_if:
+        expr: flow_input.collect_case_metadata === false
+      value:
+        type: script
+        path: f/dhr/collect_case_metadata
+        input_transforms:
+          max_filters:
+            type: static
+            value: 0
+          delay_seconds:
+            type: static
+            value: 1
+          dry_run:
+            type: static
+            value: false
+    - id: status
+      summary: Report where O1 stands
+      value:
+        type: script
+        path: f/dhr/o1_status
+        input_transforms: {}
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - load_dhrc_100
+    - dhrc_100_revision
+    - load_dhrc_raw
+    - dhrc_raw_revision
+    - collect_case_metadata
+  properties:
+    load_dhrc_100:
+      type: boolean
+      default: true
+      description: Load DHRC-100 from Hugging Face.
+    dhrc_100_revision:
+      type: string
+      default: main
+      description: Which version of DHRC-100 (main is the latest, or give a commit id).
+    load_dhrc_raw:
+      type: boolean
+      default: true
+      description: Load DHRC-RAW from Hugging Face.
+    dhrc_raw_revision:
+      type: string
+      default: main
+      description: Which version of DHRC-RAW (main is the latest, or give a commit id).
+    collect_case_metadata:
+      type: boolean
+      default: true
+      description: >-
+        Collect a fresh snapshot of the case metadata from the DHR Library (about 20
+        minutes). Not needed after loading a dataset: one snapshot covers every dataset.
+  required: []

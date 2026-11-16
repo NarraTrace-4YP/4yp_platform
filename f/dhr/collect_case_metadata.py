@@ -29,6 +29,12 @@ been collected, and then it is written in one go, as a new snapshot in the evalu
 schema (the wiki agent can't read it). The library's own data is checked by people but
 the site warns it may contain mistakes, so treat it as good, not perfect.
 
+It collects the whole library, not just our reviews, so one snapshot covers every dataset
+(DHRC-100 and DHRC-RAW alike): the evaluation.case_* views match each review to the
+library through the library link in its dataset's metadata. Loading another dataset
+doesn't need a new collection. Reviews published somewhere other than the library (some
+in DHRC-RAW) have no link, so they have no case details.
+
 On a laptop, with DHR_DATABASE_URL set:
 
     uv run python -m f.dhr.collect_case_metadata --max-filters 10 --dry-run
@@ -560,44 +566,61 @@ def store(conn, collection: Collection, git_commit: str, base_url: str = BASE_UR
     return snapshot_id
 
 
-def our_documents(conn) -> dict[str, str | None]:
-    """Our reviews (the latest DHRC version loaded) and their library ids, from the dataset's
-    own METADATA.json. Empty if no version has been loaded yet."""
+def our_documents(conn) -> dict[str, dict[str, str | None]]:
+    """Our reviews and their library ids, for the latest version of each dataset loaded:
+    {"DHRC-100": {doc_id: library_id or None}, ...}, where None means it was published
+    somewhere other than the library (HALT, a council's website, ...). Empty if nothing is
+    loaded yet."""
+    documents: dict[str, dict[str, str | None]] = {}
     rows = conn.execute(
-        "SELECT doc->>'document_id', doc->>'source_url'"
-        " FROM corpus.dataset_versions AS v,"
-        "  jsonb_array_elements(CASE WHEN jsonb_typeof(v.dataset_metadata->'documents') = 'array'"
-        "   THEN v.dataset_metadata->'documents' ELSE '[]'::jsonb END) AS doc"
-        " WHERE v.revision = (SELECT revision FROM corpus.dataset_versions"
-        "  ORDER BY loaded_at DESC LIMIT 1)"
+        "SELECT dataset, doc_id,"
+        " CASE WHEN source = 'Home Office website' THEN library_id END"
+        " FROM evaluation.document_library_ids ORDER BY dataset, doc_id"
     ).fetchall()
-    documents = {}
-    for doc_id, source_url in rows:
-        match = DOWNLOAD_ID.search(source_url or "")
-        documents[doc_id] = match.group(1) if match else None
+    for dataset, doc_id, library_id in rows:
+        documents.setdefault(dataset, {})[doc_id] = library_id
     return documents
 
 
 def report_matches(
-    collection: Collection, documents: dict[str, str | None], partial: bool = False
+    collection: Collection,
+    documents: dict[str, str | None],
+    partial: bool = False,
+    dataset: str = "our",
 ) -> dict[str, int]:
-    """Prints how many of our reviews the library has, and has details for."""
-    if not documents:
-        print("NOTE  No DHRC version is loaded yet, so there's nothing to match against")
-        return {"n_documents": 0, "n_in_library": 0, "n_with_details": 0}
+    """Prints how many of one dataset's reviews the library has, and has details for.
+    Reviews with no library link (published somewhere else) are counted apart."""
     tagged = {library_id for library_id, _ in collection.tags}
-    missing = sorted(d for d, lib in documents.items() if lib not in collection.reviews)
-    in_library = len(documents) - len(missing)
+    elsewhere = sorted(d for d, lib in documents.items() if lib is None)
+    missing = sorted(
+        d for d, lib in documents.items() if lib is not None and lib not in collection.reviews
+    )
+    in_library = len(documents) - len(elsewhere) - len(missing)
     with_details = sum(1 for lib in documents.values() if lib in tagged)
-    print(f"OK    {in_library} of our {len(documents)} reviews are in the library listing")
+    say(f"OK    {in_library} of the {len(documents)} {dataset} reviews are in the library listing")
+    if elsewhere:
+        say(f"NOTE  {len(elsewhere)} were published elsewhere (HALT, councils): no case details")
     if collection.complete and not partial:
-        print(f"OK    {with_details} of them have at least one case detail")
+        say(f"OK    {with_details} of them have at least one case detail")
     for doc_id in missing[:10]:
-        print(f"        not found in the library: {doc_id}")
+        say(f"        has a library link but isn't in the listing: {doc_id}")
     return {
         "n_documents": len(documents),
         "n_in_library": in_library,
+        "n_elsewhere": len(elsewhere),
         "n_with_details": with_details,
+    }
+
+
+def report_all_matches(
+    collection: Collection, datasets: dict[str, dict[str, str | None]], partial: bool = False
+) -> dict[str, dict[str, int]]:
+    """report_matches for every dataset loaded."""
+    if not datasets:
+        say("NOTE  No dataset is loaded yet, so there's nothing to match against")
+    return {
+        name: report_matches(collection, documents, partial, dataset=name)
+        for name, documents in datasets.items()
     }
 
 
@@ -610,16 +633,10 @@ def log_to_mlflow(summary: dict) -> str | None:
     mlflow.set_experiment("case-metadata")
     with mlflow.start_run(run_name=f"snapshot {summary['snapshot_id']}") as run:
         mlflow.log_params({k: summary[k] for k in ("snapshot_id", "git_commit", "complete")})
-        metrics = (
-            "n_reviews",
-            "n_filters",
-            "n_details",
-            "n_documents",
-            "n_in_library",
-            "n_with_details",
-            "minutes",
-        )
-        mlflow.log_metrics({k: summary[k] for k in metrics})
+        metrics = {k: summary[k] for k in ("n_reviews", "n_filters", "n_details", "minutes")}
+        for name, counts in summary.get("datasets", {}).items():
+            metrics.update({f"{name}/{k}": v for k, v in counts.items()})
+        mlflow.log_metrics(metrics)
         mlflow.set_tag("git_commit", summary["git_commit"])
     return run.info.run_id
 
@@ -675,7 +692,8 @@ def run(
             say(f"      {count:5d}  {option.group} / {option.label}")
         try:
             with connect() as conn:
-                report_matches(collection, our_documents(conn), partial=True)
+                apply_migrations(conn)
+                report_all_matches(collection, our_documents(conn), partial=True)
         except RuntimeError:
             pass  # no database configured (on a laptop): nothing to match against
         say("Dry run: nothing was stored.")
@@ -691,7 +709,7 @@ def run(
         say(f"OK    Stored as snapshot {snapshot_id} in evaluation.library_*")
         if not collection.complete:
             say("NOTE  Only some filters were searched, so the case_* views will ignore it")
-        summary.update(report_matches(collection, our_documents(conn)))
+        summary["datasets"] = report_all_matches(collection, our_documents(conn))
     summary["snapshot_id"] = snapshot_id
 
     run_id = log_to_mlflow(summary)

@@ -117,3 +117,86 @@ def test_wrong_number_of_reviews_stops_the_load(tmp_path, monkeypatch):
     monkeypatch.delenv("DHR_DATABASE_URL", raising=False)
     with pytest.raises(ingest.LoadError, match="expected 100"):
         ingest.run(local_path=root, expected_documents=100)
+
+
+# ----------------------------------------------------------------- DHRC-RAW's layout
+
+
+def test_lower_case_checksums_file_is_found(tmp_path):
+    # DHRC-RAW calls it checksums.sha256; problems name the file it really has.
+    root = make_dataset(tmp_path, {"A": make_review([[TEXT]])})
+    (root / "CHECKSUMS.sha256").rename(root / "checksums.sha256")
+    assert ingest.verify_checksums(root) == []
+    (root / "data" / "B.json").write_text("{}", encoding="utf-8")
+    assert ingest.verify_checksums(root) == ["not in checksums.sha256: data/B.json"]
+
+
+def test_no_checksums_file_stops_the_load(tmp_path):
+    root = make_dataset(tmp_path, {"A": make_review([[TEXT]])})
+    (root / "CHECKSUMS.sha256").unlink()
+    with pytest.raises(ingest.LoadError, match="no CHECKSUMS.sha256"):
+        ingest.verify_checksums(root)
+
+
+def test_manifest_is_the_metadata_when_there_is_no_metadata_json(tmp_path):
+    (tmp_path / "manifest.csv").write_text(
+        "document_id,dhr_title,source_url,dhrc100_member\n"
+        "A,Alex,https://example.org/download/abc123,true\n"
+        "B,Sam,,false\n",
+        encoding="utf-8",
+    )
+    assert ingest.read_dataset_metadata(tmp_path) == {
+        "source": "manifest.csv",
+        "documents": [
+            {
+                "document_id": "A",
+                "dhr_title": "Alex",
+                "source_url": "https://example.org/download/abc123",
+                "dhrc100_member": "true",
+            },
+            {"document_id": "B", "dhr_title": "Sam", "source_url": None, "dhrc100_member": "false"},
+        ],
+    }
+
+
+def test_metadata_json_wins_over_the_manifest(tmp_path):
+    (tmp_path / "DHRC_METADATA.json").write_text('{"documents": []}', encoding="utf-8")
+    (tmp_path / "manifest.csv").write_text("document_id\nA\n", encoding="utf-8")
+    assert ingest.read_dataset_metadata(tmp_path) == {"documents": []}
+
+
+def test_lenient_reading_skips_and_lists_bad_reviews(tmp_path):
+    root = make_dataset(
+        tmp_path, {"A": make_review([[TEXT]]), "B": {"children": []}, "C": make_review([[NESTED]])}
+    )
+    (root / "data" / "D.json").write_text("not json", encoding="utf-8")
+    documents, skipped = ingest.read_documents(root, strict=False)
+    assert [d.doc_id for d in documents] == ["A", "C"]
+    assert len(skipped) == 2
+    assert skipped[0] == "B.json: has no pages"
+    assert skipped[1].startswith("D.json: ")
+
+
+def test_strict_reading_stops_at_a_bad_review(tmp_path):
+    root = make_dataset(tmp_path, {"A": make_review([[TEXT]]), "B": {"children": []}})
+    with pytest.raises(ingest.LoadError, match="1 review\\(s\\) couldn't be read"):
+        ingest.read_documents(root, strict=True)
+
+
+def test_bad_review_in_dhrc_100_stops_before_the_database(tmp_path, monkeypatch):
+    root = make_dataset(tmp_path, {"A": make_review([[TEXT]]), "B": {"children": []}})
+    monkeypatch.delenv("DHR_DATABASE_URL", raising=False)
+    with pytest.raises(ingest.LoadError, match="B.json: has no pages"):
+        ingest.run("DHRC-100", local_path=root, expected_documents=2)
+
+
+def test_unknown_dataset_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="DHRC-100, DHRC-RAW"):
+        ingest.run("DHRC-200", local_path=tmp_path)
+
+
+def test_each_dataset_has_its_usual_review_count(tmp_path, monkeypatch):
+    root = make_dataset(tmp_path, {"A": make_review([[TEXT]])})
+    monkeypatch.delenv("DHR_DATABASE_URL", raising=False)
+    with pytest.raises(ingest.LoadError, match="expected 702"):
+        ingest.run("DHRC-RAW", local_path=root)

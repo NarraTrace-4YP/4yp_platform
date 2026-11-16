@@ -41,6 +41,34 @@ body {
   padding: 0;
 }
 
+.datasets {
+  display: flex;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.datasets button {
+  flex: 1;
+  border: 0;
+  background: #fff;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.datasets button + button {
+  border-left: 1px solid var(--line);
+}
+
+.datasets button.selected {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
 input[type='search'] {
   width: 100%;
   padding: 8px 10px;
@@ -178,6 +206,15 @@ td {
 .message {
   padding: 24px;
   color: var(--muted);
+}
+
+.warning {
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  max-width: 720px;
 }
 
 .message.error {
