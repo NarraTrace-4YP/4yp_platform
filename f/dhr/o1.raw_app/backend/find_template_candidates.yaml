@@ -1,2 +1,4 @@
 type: script
+name: find_template_candidates
+fields: {}
 path: f/dhr/find_template_candidates

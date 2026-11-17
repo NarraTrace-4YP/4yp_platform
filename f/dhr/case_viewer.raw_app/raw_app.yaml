@@ -1,2 +1,4 @@
-summary: DHR case viewer - every case detail the DHR Library holds for each of our reviews
+summary: DHR case viewer
+data:
+  tables: []
 sandbox: true
