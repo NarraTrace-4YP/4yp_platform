@@ -46,9 +46,8 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
 
 - **The team's pipelines** are in the folder `f/dhr`. Open one (for example
   `f/dhr/load_dhrc`), fill in the form, and click **Run**. The log appears as it runs,
-  and every past run is kept under **Runs**. Everyone can run these, but no one can edit
-  them in Windmill: they come from GitHub (see below), so GitHub always has the real
-  version.
+  and every past run is kept under **Runs**. Everyone can run them, and edit them either
+  on GitHub or in Windmill's web editor (see "How work reaches the server").
 - **The O1 app** (`f/dhr/o1`, under **Apps**) is the place to start. It explains O1 and
   where it stands, shows the datasets and where their reviews came from, runs each
   pipeline (with its progress and log as it runs), and has the case viewer (every case
@@ -76,6 +75,21 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
    pushes `f/dhr` to Windmill. Each script's history in Windmill names the commit it came
    from, and the pipelines record that commit next to everything they store, so any
    result can be traced back to the code that produced it.
+
+**Editing in Windmill instead.** You can also change anything in `f/dhr` in Windmill's web
+editor. It runs straight away. Within about 15 minutes a GitHub workflow (**windmill to
+github**) notices and opens a pull request called **Changes made in Windmill**, with the
+checks run on it; review and merge it like any other. (To send edits sooner: **Actions** >
+**windmill to github** > **Run workflow**.) A few things to know:
+
+- Until that pull request is merged, deploys stop rather than overwrite the edits, and say
+  why. Merging it deploys everything on main, including whatever was waiting.
+- Don't push to the `windmill-changes` branch: it's rebuilt from Windmill every 15 minutes.
+  To change something in it, edit it in Windmill again.
+- If the same file was also changed on GitHub since the last deploy, the pull request says
+  so: check the GitHub change hasn't been undone.
+- Leave the `windmill-snapshot` branch alone: it records what Windmill held after the last
+  deploy, which is how edits are spotted (`.github/windmill_sync.py`).
 
 ## Writing a pipeline script
 

@@ -169,6 +169,24 @@ export default function Overview({ status, goTo }: Props) {
           <dd>How often each case detail appears in each dataset compared with the whole library: how representative each dataset is.</dd>
         </dl>
       </section>
+
+      <section>
+        <h2>Changing the code (including this app)</h2>
+        <p>
+          The team code lives in GitHub (NarraTrace-4YP/4yp_platform), and you can change it in either place:
+        </p>
+        <ul>
+          <li>
+            <strong>In Windmill’s web editor.</strong> Your edit runs straight away. Within about 15 minutes GitHub
+            opens a pull request called “Changes made in Windmill” with it, for someone to review and merge. Until
+            it’s merged, deploys from GitHub wait rather than overwrite your edit.
+          </li>
+          <li>
+            <strong>On GitHub,</strong> with a branch and a pull request. Merging it deploys it here within a couple
+            of minutes.
+          </li>
+        </ul>
+      </section>
     </div>
   )
 }

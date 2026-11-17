@@ -89,7 +89,12 @@ def test_migrations_are_numbered_in_order():
 
 
 def test_windmill_versions_match():
-    files = ["compose.yaml", ".github/workflows/checks.yml", ".github/workflows/deploy.yml"]
+    files = [
+        "compose.yaml",
+        ".github/workflows/checks.yml",
+        ".github/workflows/deploy.yml",
+        ".github/workflows/windmill-to-github.yml",
+    ]
     texts = [(ROOT / name).read_text(encoding="utf-8") for name in files]
     texts += [path.read_text(encoding="utf-8") for path in RUNNABLE]
     versions = set()

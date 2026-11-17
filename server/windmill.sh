@@ -8,8 +8,9 @@
 #   1. replaces Windmill's built-in admin@windmill.dev login (password "changeme") with
 #      an admin account whose password is WINDMILL_ADMIN_PASSWORD in .env,
 #   2. tells Windmill its web address,
-#   3. creates the "dhr" workspace and its "dhr" folder. Everyone can see and run what's in
-#      the folder, but only deploys from GitHub can change it,
+#   3. creates the "dhr" workspace and its "dhr" folder, which everyone in the team can
+#      see, run and edit. Edits made in Windmill are brought back to GitHub as a pull
+#      request (.github/workflows/windmill-to-github.yml),
 #   4. stores the passwords and tokens the pipelines need as secret Windmill variables
 #      (f/dhr/...), so they never appear in code,
 #   5. creates a "deploy" account, and a token for it that GitHub uses to push code.
@@ -182,12 +183,13 @@ wm_configure() {
 			"$(jq -n --arg e "$deploy_email" '{email: $e, is_admin: true}')" >/dev/null
 	fi
 
-	# f/dhr holds the team's pipelines. Everyone can see and run them ("g/all": false
-	# means read-only); only workspace admins, and so the deploys, can change them.
+	# f/dhr holds the team's pipelines. Everyone can see, run and edit them ("g/all": true
+	# means read and write). Edits made here reach GitHub as a pull request within about
+	# 15 minutes, and deploys from GitHub stop rather than overwrite edits not there yet.
 	local folder
 	# (Windmill insists that every owner can also write.)
-	folder=$(jq -n --arg owner "u/$admin_username" '{summary: "The team pipelines. They come from GitHub: change them with a pull request, not here.",
-		owners: [$owner], extra_perms: {($owner): true, "g/all": false}}')
+	folder=$(jq -n --arg owner "u/$admin_username" '{summary: "The team pipelines, kept in GitHub (NarraTrace-4YP/4yp_platform). Edits saved here run straight away and reach GitHub as a pull request within about 15 minutes.",
+		owners: [$owner], extra_perms: {($owner): true, "g/all": true}}')
 	if wm_exists GET "/w/$WM_WORKSPACE/folders/exists/dhr"; then
 		wm_api POST "/w/$WM_WORKSPACE/folders/update/dhr" "$folder" >/dev/null
 	else
