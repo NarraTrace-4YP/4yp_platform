@@ -116,6 +116,7 @@ def test_app_can_follow_every_run_it_starts():
         "f/dhr/load_dhrc",
         "f/dhr/collect_case_metadata",
         "f/dhr/group_sections",
+        "f/dhr/find_template_candidates",
         "f/dhr/o1_pipeline",
     }
     flow_steps = {step["value"]["path"] for step in STEPS}

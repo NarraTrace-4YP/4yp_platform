@@ -199,6 +199,28 @@ them into the database.
 
   On a laptop, `uv run python -m f.dhr.group_sections --file <review.json>` prints one
   review file's outline without touching the database.
+- **Template candidates (towards the standardised representation):** the
+  `f/dhr/find_template_candidates` script gives every section a short list of the report
+  template sections it might be. The templates are downloaded from GOV.UK and read each
+  run (`f/dhr/templates.py`), with each file's sha256 stored: the 2016 DHR guidance PDF
+  (overview report, executive summary, IMRs, action plan; the default, as in the
+  specification) or the September 2026 DARDR guidance (the DARDR template from its own
+  Word file, and the action plan, scoping review and IMR from the guidance PDF). A section's
+  candidates are the template sections whose headings are most alike its own (fuzzy word
+  match, after dropping numbering) and those whose guidance text is most alike its text
+  (embeddings from a small open model, `BAAI/bge-small-en-v1.5`, run on the server's CPU).
+  Run it after grouping a dataset (regrouping removes the old candidates): about 5 minutes
+  for DHRC-100, 40 for DHRC-RAW. A dataset keeps its candidates against each guidance.
+
+  ```sql
+  SELECT section_heading, template_title, template_heading, heading_score, text_score
+  FROM corpus.current_template_candidates
+  WHERE dataset = 'DHRC-100' AND guidance = 'dhr-2016' AND doc_id = '<doc_id>'
+  ORDER BY section_position, text_rank;
+  ```
+
+  The next O1 step has an LLM choose among each section's candidates, or flag it as
+  matching none.
 - **Case metadata:** the `f/dhr/collect_case_metadata` script asks the Home Office's
   [DHR Library](https://homicide-review.homeoffice.gov.uk/) which reviews match each of its
   search filters (victim's age, method of killing, relationship, ...), since the library

@@ -15,6 +15,10 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=18",
     "pydantic>=2.9",
+    "onnxruntime>=1.20",
+    "tokenizers>=0.21",
+    "rapidfuzz>=3.10",
+    "pypdf>=6.1",
 ]
 
 [dependency-groups]
