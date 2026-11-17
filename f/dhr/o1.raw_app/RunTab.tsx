@@ -233,6 +233,24 @@ function CollectResult({ result }: { result: any }) {
 
 function GroupResult({ result }: { result: any }) {
   if (!result) return null
+  if (result.stored === false) {
+    return (
+      <div>
+        <p>
+          Checked {number(result.n_documents + result.n_skipped)} {result.dataset} reviews:{' '}
+          {number(result.n_documents)} fit together ({number(result.n_sections)} sections) and{' '}
+          {number(result.n_skipped)} don’t. Nothing was stored.
+        </p>
+        {result.n_skipped > 0 && (
+          <ul>
+            {(result.skipped ?? []).map((s: string) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )
+  }
   return (
     <div>
       <p>
@@ -245,6 +263,8 @@ function GroupResult({ result }: { result: any }) {
         {result.n_page_furniture > 0 && `; ${number(result.n_page_furniture)} page headers and footers left out`}
         {result.n_loose_headings > 0 &&
           `; ${number(result.n_loose_headings)} heading blocks sit outside the hierarchy and were kept as ordinary blocks`}
+        {result.n_moved_headings > 0 &&
+          `; ${number(result.n_moved_headings)} headings printed below the start of their own section were moved up to it`}
         .
       </p>
       {result.n_skipped > 0 && (
@@ -468,6 +488,7 @@ function CollectMetadata({ status, refresh }: Props) {
 function GroupSections({ status, refresh }: Props) {
   const run = useRun('group_sections', refresh)
   const [dataset, setDataset] = useState(DATASETS[0])
+  const [checkOnly, setCheckOnly] = useState(false)
   const current = status?.datasets.find((d) => d.name === dataset)
   return (
     <Card title="Group blocks by section" path="group_sections" kind="script">
@@ -484,9 +505,14 @@ function GroupSections({ status, refresh }: Props) {
           Datalab’s own headings, which nobody has checked;
         </li>
         <li>
+          puts a heading back at the start of its own section where the page prints it lower down (an appendix’s
+          title above its “APPENDIX 1” label). It only ever moves past blocks that belong inside that section;
+        </li>
+        <li>
           checks the structure holds together: every block points to a heading that exists and comes before it,
           every heading sits under one at a higher level, and nothing from outside a section sits in the middle of
-          it. In DHRC-100 one review that fails stops the run; in DHRC-RAW it’s left out and listed;
+          it. In DHRC-100, if any review fails nothing is stored and every failing review is listed; in DHRC-RAW a
+          failing review is left out and listed;
         </li>
         <li>leaves out page headers and footers (running titles, “Page 3 of 56”), which belong to no section;</li>
         <li>
@@ -514,10 +540,19 @@ function GroupSections({ status, refresh }: Props) {
             ))}
           </select>
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={checkOnly}
+            onChange={(e) => setCheckOnly(e.target.checked)}
+            disabled={run.active}
+          />{' '}
+          Check only (list every review that doesn’t fit; store nothing)
+        </label>
         <StartButton
           run={run}
-          label={`Group ${dataset}`}
-          onStart={() => run.start(() => backendAsync.group_sections({ dataset }))}
+          label={checkOnly ? `Check ${dataset}` : `Group ${dataset}`}
+          onStart={() => run.start(() => backendAsync.group_sections({ dataset, check_only: checkOnly }))}
         />
       </div>
       <RunPanel run={run} status={status} renderResult={(result) => <GroupResult result={result} />} />
