@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NarraTrace: reading across domestic homicide reviews</title>
+  <meta name="description" content="NarraTrace is a CS407 group project at the University of Warwick testing whether an LLM wiki helps researchers find connections and recurring patterns across Domestic Homicide Reviews.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#ffffff">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="NarraTrace">
+  <meta property="og:description" content="Reading across domestic homicide reviews with an LLM wiki. A CS407 group project, University of Warwick.">
+  <meta property="og:url" content="https://rshields.xyz/">
+  <meta property="og:image" content="https://rshields.xyz/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="preload" href="/assets/fonts/archivo-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/ibm-plex-mono-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="masthead">
+    <div class="wrap">
+      <a class="wordmark" href="/" aria-current="page"><span>Narra</span><span class="trace">Trace</span></a>
+      <nav class="nav" aria-label="Main">
+        <a href="#tools">Tools</a>
+        <a href="#docs">Documentation</a>
+        <a href="#progress">Progress</a>
+        <a href="/about/">About</a>
+        <a class="btn btn-primary btn-small" href="https://windmill.rshields.xyz/apps_raw/get/f/dhr/o1?workspace=dhr">Open the O1 app</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap">
+
+      <section class="grid hero" aria-labelledby="title">
+        <div class="cell hero-text">
+          <h1 id="title">Reading across domestic homicide reviews</h1>
+          <p class="lede">Each Domestic Homicide Review examines one death, so failings that recur only surface when many reviews are compared. NarraTrace builds an LLM wiki over 100 reviews, kept up to date by an agent and linked to its sources, and tests whether it helps researchers find the connections and patterns across them.</p>
+          <dl class="facts">
+            <div><dt>Project</dt><dd>Our fourth year group project at the University of Warwick</dd></div>
+            <div><dt>Client</dt><dd><a href="https://fcn.police.uk/">Forensic Capability Network</a></dd></div>
+          </dl>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://windmill.rshields.xyz/apps_raw/get/f/dhr/o1?workspace=dhr">Open the O1 app</a>
+            <a class="btn" href="/about/">About the project</a>
+          </div>
+        </div>
+        <figure class="cell hero-figure">
+          <svg viewBox="0 0 440 424" role="img" aria-labelledby="trace-title">
+            <title id="trace-title">The project's four stages, each feeding the next: corpus preparation, knowledge organisation, analysis and evaluation.</title>
+            <g class="bar"><rect x="0" y="12" width="440" height="8"/><rect x="0" y="56" width="14" height="8"/><rect x="214" y="56" width="226" height="8"/><rect x="0" y="100" width="408" height="8"/><rect x="0" y="144" width="198" height="8"/><rect x="0" y="188" width="440" height="8"/><rect x="0" y="232" width="58" height="8"/><rect x="174" y="232" width="222" height="8"/><rect x="0" y="276" width="430" height="8"/><rect x="0" y="320" width="218" height="8"/><rect x="351" y="320" width="89" height="8"/><rect x="0" y="364" width="370" height="8"/><rect x="0" y="408" width="236" height="8"/></g>
+            <g class="passage s1"><rect class="passage-wash" x="20" y="47" width="188" height="26"/><rect class="passage-line" x="20" y="71" width="188" height="2"/><text class="passage-text" x="30" y="65">1 CORPUS PREPARATION</text></g>
+            <g class="passage s2"><rect class="passage-wash" x="204" y="135" width="222" height="26"/><rect class="passage-line" x="204" y="159" width="222" height="2"/><text class="passage-text" x="214" y="153">2 KNOWLEDGE ORGANISATION</text></g>
+            <g class="passage s3"><rect class="passage-wash" x="64" y="223" width="104" height="26"/><rect class="passage-line" x="64" y="247" width="104" height="2"/><text class="passage-text" x="74" y="241">3 ANALYSIS</text></g>
+            <g class="passage s4"><rect class="passage-wash" x="224" y="311" width="121" height="26"/><rect class="passage-line" x="224" y="335" width="121" height="2"/><text class="passage-text" x="234" y="329">4 EVALUATION</text></g>
+            <path class="arrow a1" pathLength="1" d="M114 76V122H315V126"/>
+            <polygon class="arrow-head t1" points="310,126 320,126 315,133"/>
+            <path class="arrow a2" pathLength="1" d="M315 164V210H116V214"/>
+            <polygon class="arrow-head t2" points="111,214 121,214 116,221"/>
+            <path class="arrow a3" pathLength="1" d="M116 252V298H284V302"/>
+            <polygon class="arrow-head t3" points="279,302 289,302 284,309"/>
+          </svg>
+          <figcaption>The project in four stages. Each one works from what the stage before it produced.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section" id="tools" aria-labelledby="tools-title">
+        <div class="section-head">
+          <h2 id="tools-title">Tools</h2>
+          <p>What the team works with. Windmill, MLflow and the database share one sign-in per person: your details are in <code>~/ACCOUNTS.txt</code> on the server. Ask an admin if you don't have one.</p>
+        </div>
+        <div class="grid cols-3">
+          <div class="cell tool">
+            <h3><a href="https://windmill.rshields.xyz/apps_raw/get/f/dhr/o1?workspace=dhr">O1 app</a></h3>
+            <p>Start here. Explains Stage 1 and where it stands, shows the datasets and where their reviews came from, runs each pipeline with its progress, and lets you browse cases, sections and template matches.</p>
+            <div class="meta"><span class="access">Team sign-in</span><span class="data">windmill.rshields.xyz</span></div>
+          </div>
+          <div class="cell tool">
+            <h3><a href="https://windmill.rshields.xyz/">Windmill</a></h3>
+            <p>Runs the pipeline scripts and keeps every run. The team's code is in <code>f/dhr</code>; your own experiments go in <code>u/&lt;username&gt;</code>.</p>
+            <div class="also"><a href="https://windmill.rshields.xyz/flows/get/f/dhr/o1_pipeline?workspace=dhr">O1 pipeline</a><a href="https://windmill.rshields.xyz/runs?workspace=dhr">Recent runs</a></div>
+            <div class="meta"><span class="access">Team sign-in</span><span class="data">windmill.rshields.xyz</span></div>
+          </div>
+          <div class="cell tool">
+            <h3><a href="https://mlflow.rshields.xyz/">MLflow</a></h3>
+            <p>Records every experiment run and LLM call: the settings it used, the commit that ran it and what it produced.</p>
+            <div class="meta"><span class="access">Team sign-in</span><span class="data">mlflow.rshields.xyz</span></div>
+          </div>
+          <div class="cell tool">
+            <h3><a href="https://github.com/NarraTrace-4YP/4yp_platform">GitHub</a></h3>
+            <p>All the code and the server setup. Every change goes in through a pull request that passes the checks and has one approval.</p>
+            <div class="also"><a href="https://github.com/NarraTrace-4YP/4yp_platform/pulls">Pull requests</a><a href="https://github.com/NarraTrace-4YP/4yp_platform/actions">Actions</a></div>
+            <div class="meta"><span class="access">Public</span><span class="data">github.com/NarraTrace-4YP</span></div>
+          </div>
+          <div class="cell tool">
+            <h3><a href="https://huggingface.co/datasets/4YP/dhr-corpus-100-copy">Datasets</a></h3>
+            <p>Where the reviews come from. DHRC-100 holds 100 reviews checked by hand; DHRC-RAW holds all 702 gathered, as unchecked automated output.</p>
+            <div class="also"><a href="https://huggingface.co/datasets/4YP/dhr-corpus-100-copy">DHRC-100</a><a href="https://huggingface.co/datasets/4YP/dhr-corpus-raw-copy">DHRC-RAW</a></div>
+            <div class="meta"><span class="access">Team access</span><span class="data">huggingface.co/4YP</span></div>
+          </div>
+          <div class="cell tool">
+            <h3><a href="https://github.com/NarraTrace-4YP/4yp_platform#using-the-database-from-your-laptop">Database</a></h3>
+            <p>PostgreSQL, holding the reviews and everything built from them. It isn't open to the internet: reach it from your laptop through an SSH tunnel.</p>
+            <div class="meta"><span class="access">Team sign-in</span><span class="data">SSH tunnel, port 5432</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="docs" aria-labelledby="docs-title">
+        <div class="section-head">
+          <h2 id="docs-title">Documentation</h2>
+          <p>The guides live in the repository's README, next to the code they describe, so a change to how something works and its instructions go in together.</p>
+        </div>
+        <div class="grid cols-4">
+          <div class="cell doc-group">
+            <h3>Getting started</h3>
+            <ul>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#getting-access">Getting access</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#the-tools">What each tool is for</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#using-windmill">Using Windmill</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#working-on-your-laptop">Working on your laptop</a></li>
+            </ul>
+          </div>
+          <div class="cell doc-group">
+            <h3>Changing the code</h3>
+            <ul>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#how-work-reaches-the-server">How work reaches the server</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#writing-a-pipeline-script">Writing a pipeline script</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#where-things-go">Where things go</a></li>
+            </ul>
+          </div>
+          <div class="cell doc-group">
+            <h3>Data and results</h3>
+            <ul>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#the-data">The data</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#using-the-database-from-your-laptop">Using the database from your laptop</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#logging-to-mlflow-from-your-laptop">Logging to MLflow from your laptop</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#the-llm-wiki">The LLM wiki</a></li>
+            </ul>
+          </div>
+          <div class="cell doc-group">
+            <h3>Running the server</h3>
+            <ul>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md">Setting up the server</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md#day-to-day">Day to day</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md#upgrading-windmill">Upgrading Windmill</a></li>
+              <li><a href="https://github.com/NarraTrace-4YP/4yp_platform#not-set-up-yet">Not set up yet</a></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="progress" aria-labelledby="progress-title">
+        <div class="section-head">
+          <h2 id="progress-title">Where the project is</h2>
+          <p>Four stages, run in order. Stage 1 turns the reviews into a database the rest of the project can trust; stages 2 and 3 are the heart of the research.</p>
+        </div>
+        <ol class="grid cols-4 stages" aria-label="Project stages">
+          <li class="cell stage current">
+            <span class="stage-number">1</span>
+            <h3>Corpus preparation</h3>
+            <p>A database of the reviews in three forms: as published, grouped by section, and mapped to the 2016 report template. Each review is linked to its case details.</p>
+            <div class="meta"><span class="status on">In progress</span><span class="data">O1</span></div>
+          </li>
+          <li class="cell stage">
+            <span class="stage-number">2</span>
+            <h3>Knowledge organisation</h3>
+            <p>The LLM wiki: linked pages on people, agencies, events and recommendations, with every claim citing the passages it came from.</p>
+            <div class="meta"><span class="status">Not started</span><span class="data">O2</span></div>
+          </li>
+          <li class="cell stage">
+            <span class="stage-number">3</span>
+            <h3>Analysis</h3>
+            <p>Similar cases, patterns over time, recurring recommendations and lessons, and the critical events behind each case.</p>
+            <div class="meta"><span class="status">Not started</span><span class="data">O3</span></div>
+          </li>
+          <li class="cell stage">
+            <span class="stage-number">4</span>
+            <h3>Evaluation</h3>
+            <p>Rebuilding cases from the wiki, comparing the wiki with a standard retrieval baseline, and finding case details the records leave out.</p>
+            <div class="meta"><span class="status">Not started</span><span class="data">O4 to O6</span></div>
+          </li>
+        </ol>
+
+        <div class="steps">
+          <h3>Stage 1, step by step</h3>
+          <ol class="step-list">
+            <li><span class="n">1</span><span><strong>Load the reviews</strong><span class="what">Both datasets, from Hugging Face, each file checked against its checksum.</span></span><span class="status on">Built</span></li>
+            <li><span class="n">2</span><span><strong>Link the case metadata</strong><span class="what">Every case detail the Home Office DHR Library holds for each review, kept where the wiki can't read it.</span></span><span class="status on">Built</span></li>
+            <li><span class="n">3</span><span><strong>Group blocks by section</strong><span class="what">Each review's text put back under its headings, so a section that runs across a page break is one section.</span></span><span class="status on">Built</span></li>
+            <li><span class="n">4</span><span><strong>Find candidate template sections</strong><span class="what">For every section, the report template sections it might be, by heading and by meaning.</span></span><span class="status on">Built</span></li>
+            <li><span class="n">5</span><span><strong>Choose the template section</strong><span class="what">An LLM picks one candidate for each section, or flags it as matching none.</span></span><span class="status">Next</span></li>
+          </ol>
+          <p class="note">Updated 17 November 2026. The <a href="https://windmill.rshields.xyz/apps_raw/get/f/dhr/o1?workspace=dhr">O1 app</a> has the live figures.</p>
+        </div>
+      </section>
+
+      <section class="section" id="sources" aria-labelledby="sources-title">
+        <div class="section-head">
+          <h2 id="sources-title">Sources and guidance</h2>
+          <p>The documents the project works from. The reviews and the DHR Library are published under the Open Government Licence.</p>
+        </div>
+        <table class="ref-table">
+          <thead>
+            <tr><th scope="col">Document</th><th scope="col">From</th><th scope="col">Format</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="https://homicide-review.homeoffice.gov.uk/">Domestic Homicide Review Library</a></td>
+              <td>Home Office</td>
+              <td>Website</td>
+            </tr>
+            <tr>
+              <td><a href="https://assets.publishing.service.gov.uk/media/5a80be88e5274a2e87dbb923/DHR-Statutory-Guidance-161206.pdf">Multi-agency statutory guidance for the conduct of Domestic Homicide Reviews</a></td>
+              <td>Home Office, December 2016</td>
+              <td>PDF</td>
+            </tr>
+            <tr>
+              <td><a href="https://assets.publishing.service.gov.uk/media/6aaa9fdd086ce7c57b81859e/Domestic_abuse_related_death_review_statutory_guidance1609.pdf">Domestic Abuse Related Death Review: statutory guidance</a></td>
+              <td>Home Office, September 2026</td>
+              <td>PDF</td>
+            </tr>
+            <tr>
+              <td><a href="https://assets.publishing.service.gov.uk/media/6a9fb119f36e1f225ecb7eca/_final__Annex_A_-_DARDR_Template.docx">DARDR report template (Annex A)</a></td>
+              <td>Home Office, September 2026</td>
+              <td>Word</td>
+            </tr>
+            <tr>
+              <td><a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f">LLM wiki</a></td>
+              <td>Andrej Karpathy</td>
+              <td>Website</td>
+            </tr>
+            <tr>
+              <td><a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/">Open Government Licence v3.0</a></td>
+              <td>The National Archives</td>
+              <td>Website</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
+      <div class="footer-names" aria-label="Team">
+        <span>Mikaeel Haaris</span><span>Arushi Khemani</span><span>Kieran Saphir</span><span>Rowan Shields</span>
+      </div>
+      <p class="footer-small">Fourth year group project (CS407), Department of Computer Science, University of Warwick, 2026 to 2027. Client: the <a href="https://fcn.police.uk/">Forensic Capability Network</a>. Supervisor: Gabriele Pergola. <a href="/about/">About the project</a></p>
+    </div>
+  </footer>
+</body>
+</html>

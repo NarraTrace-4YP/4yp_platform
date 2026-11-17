@@ -1,7 +1,30 @@
 # Caddy gets HTTPS certificates for these addresses automatically.
-# Both names must point at the server in DNS (an A record each) before it can.
+# All three names must point at the server in DNS (an A record each) before it can.
 {
 	email {$ACME_EMAIL}
+}
+
+# The landing page, at the domain itself: the plain HTML and CSS in site/.
+# A change to site/ goes live once the server has pulled it (server/update.sh).
+{$DOMAIN} {
+	encode zstd gzip
+	root * /srv/site
+	file_server
+	# An address with no page gets site/404.html, still with the 404 status.
+	handle_errors {
+		@missing expression {err.status_code} == 404
+		handle @missing {
+			rewrite * /404.html
+			file_server
+		}
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		# The pages only load their own CSS, fonts and images: no scripts, nothing from
+		# other sites (tests/test_site.py checks they keep to this).
+		Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	}
 }
 
 windmill.{$DOMAIN} {

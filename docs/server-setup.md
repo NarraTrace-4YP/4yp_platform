@@ -36,8 +36,9 @@ This takes about 30 minutes, most of it waiting. You need:
 
 ## 2. Point the web addresses at the server
 
-In your DNS, add two **A records** pointing at the server's IP address:
+In your DNS, add three **A records** pointing at the server's IP address:
 
+- `<domain>` itself, for the landing page (in Namecheap and most DNS panels, the host is `@`)
 - `windmill.<domain>`
 - `mlflow.<domain>`
 
@@ -111,6 +112,7 @@ never approves them, so a person still has to.)
    with `OK` lines: downloaded, checksums, read 100 reviews, stored, logged to MLflow.
 3. Open `https://mlflow.<domain>`. The `corpus-ingest` experiment should have one run,
    tagged with the Git commit that was deployed.
+4. Open `https://<domain>`. The landing page should load, with links to everything above.
 
 ## Day to day
 
