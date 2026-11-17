@@ -1,5 +1,5 @@
 import React from 'react'
-import { DatasetStatus, Status, number, percent, shortId, when } from './shared'
+import { DatasetStatus, HEADINGS, Status, number, percent, shortId, when } from './shared'
 
 type Props = { status: Status | null; error: string | null; goTo: (tab: string) => void }
 
@@ -40,9 +40,10 @@ function SourceBar({ coverage }: { coverage: DatasetStatus['coverage'] }) {
   )
 }
 
-function DatasetCard({ dataset }: { dataset: DatasetStatus }) {
+function DatasetCard({ dataset, goTo }: { dataset: DatasetStatus; goTo: (tab: string) => void }) {
   const v = dataset.version
   const c = dataset.coverage
+  const s = dataset.sections
   const skipped = c.n_listed - c.n_loaded
   return (
     <article className="card">
@@ -81,6 +82,24 @@ function DatasetCard({ dataset }: { dataset: DatasetStatus }) {
                 ? 'Every review had to read as a document, or nothing was stored.'
                 : 'Reviews that don’t read as a document are skipped and listed in the load’s log.'}
             </dd>
+            <dt>Sections</dt>
+            <dd>
+              {s ? (
+                <>
+                  {number(s.n_sections)} sections from {number(s.n_reviews)} reviews (
+                  {number(s.n_across_pages)} cross a page break), from {HEADINGS[s.headings]}; grouped{' '}
+                  {when(s.grouped_at)}
+                  {s.n_skipped > 0 && (
+                    <span className="muted"> · {number(s.n_skipped)} left out (their headings don’t fit together)</span>
+                  )}
+                </>
+              ) : (
+                <span className="warning">
+                  Not grouped yet. Run “Group blocks by section” with {dataset.name} on the{' '}
+                  <a onClick={() => goTo('run')}>Run</a> tab.
+                </span>
+              )}
+            </dd>
           </dl>
           <h4>Where its reviews were published</h4>
           <SourceBar coverage={c} />
@@ -109,7 +128,7 @@ export default function DataTab({ status, error, goTo }: Props) {
         </p>
         <div className="cards">
           {status.datasets.map((d) => (
-            <DatasetCard key={d.name} dataset={d} />
+            <DatasetCard key={d.name} dataset={d} goTo={goTo} />
           ))}
         </div>
       </section>
@@ -169,6 +188,19 @@ export default function DataTab({ status, error, goTo }: Props) {
             The Hugging Face commit a dataset was loaded from. Loading a newer version doesn’t delete the
             old one; the “current” views always show the newest of each dataset.
           </dd>
+          <dt>Headings</dt>
+          <dd>
+            Where a dataset’s sections come from. <strong>Checked</strong> (DHRC-100): the team validated
+            every heading’s level and parent, and which heading each block belongs to. <strong>Datalab</strong>{' '}
+            (DHRC-RAW): Datalab’s own guesses, unchecked, so some sections will be wrong (page banners
+            taken for headings, for example).
+          </dd>
+          <dt>Section</dt>
+          <dd>
+            A heading and everything after it up to the next heading at the same level or above, so it
+            includes its subsections. Blocks before the first heading (title page, contents) are in no
+            section. Page headers and footers are left out.
+          </dd>
         </dl>
       </section>
 
@@ -202,6 +234,43 @@ export default function DataTab({ status, error, goTo }: Props) {
             </tr>
             <tr>
               <td>
+                <code>corpus.current_sections</code>
+              </td>
+              <td>
+                Every section: its heading, level, parent (<code>parent_id</code>), the pages it covers, and where it
+                starts and ends in reading order (<code>position</code> to <code>last_position</code>).
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
+                <code>corpus.current_blocks</code>
+              </td>
+              <td>
+                Every block in reading order, with its section, page, HTML and plain <code>text</code>. A block’s id
+                (e.g. <code>/page/5/Text/3</code>) is the same as in the dataset, so it can be cited.
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
+                <code>corpus.section_blocks(dataset, doc_id, section_id)</code>
+              </td>
+              <td>
+                A section with everything nested inside it, block by block. <code>corpus.section_text(…)</code> gives
+                the same as one piece of text, with headings marked <code>#</code>, <code>##</code>…
+              </td>
+              <td>Can use</td>
+            </tr>
+            <tr>
+              <td>
+                <code>corpus.grouped_versions</code>
+              </td>
+              <td>Every grouping: which version, from which headings, when, by which code, and any reviews left out.</td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
                 <code>evaluation.case_metadata</code>
               </td>
               <td>One row per review per dataset: what the library lists, every case detail as JSON, and its source.</td>
@@ -224,7 +293,11 @@ export default function DataTab({ status, error, goTo }: Props) {
           </tbody>
         </table>
         <p className="muted">
-          Example: <code>SELECT dataset, source, count(*) FROM evaluation.case_metadata GROUP BY 1, 2;</code>
+          Examples: <code>SELECT dataset, source, count(*) FROM evaluation.case_metadata GROUP BY 1, 2;</code>
+          <br />
+          <code>
+            SELECT corpus.section_text('DHRC-100', 'Mary - Bromley - 2018_a - DHR', '/page/5/SectionHeader/0');
+          </code>
         </p>
       </section>
     </div>

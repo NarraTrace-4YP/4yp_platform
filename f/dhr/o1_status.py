@@ -8,8 +8,8 @@
 """Where O1 (corpus preparation) stands, read from the database.
 
 For each dataset: the version loaded, how many reviews it has, where they were published,
-and how many the Home Office DHR Library has case details for. Then the newest case
-metadata snapshot. The O1 app shows this, and it is the last step of the O1 pipeline
+how many the Home Office DHR Library has case details for, and whether that version has
+been grouped by section. Then the newest case metadata snapshot. The O1 app shows this, and it is the last step of the O1 pipeline
 (f/dhr/o1_pipeline), so every pipeline run ends with a summary of what it produced.
 """
 
@@ -68,6 +68,26 @@ COVERAGE_COLUMNS = (
     "n_with_details",
 )
 
+# The grouping by section of each dataset's newest version (none if it hasn't been grouped).
+SECTIONS_SQL = """
+SELECT v.dataset, g.headings, g.grouped_at, g.git_commit, g.n_documents, g.n_sections,
+       g.n_blocks, g.n_skipped,
+       (SELECT count(*) FROM corpus.sections AS s
+        WHERE s.revision = g.revision AND s.last_page > s.first_page)
+FROM corpus.current_versions AS v
+JOIN corpus.grouped_versions AS g ON g.revision = v.revision
+"""
+SECTIONS_COLUMNS = (
+    "headings",
+    "grouped_at",
+    "git_commit",
+    "n_reviews",
+    "n_sections",
+    "n_blocks",
+    "n_skipped",
+    "n_across_pages",
+)
+
 SNAPSHOT_SQL = """
 SELECT s.snapshot_id, s.collected_at, s.git_commit, s.n_reviews, s.n_filters,
        (SELECT count(*) FROM evaluation.library_attributes AS a
@@ -95,7 +115,9 @@ def as_dict(columns: tuple[str, ...], row) -> dict:
     }
 
 
-def describe(versions: dict, coverage: dict, snapshot: dict | None) -> dict:
+def describe(
+    versions: dict, coverage: dict, snapshot: dict | None, sections: dict | None = None
+) -> dict:
     """Puts the query results together, one entry per dataset in DATASETS order."""
     datasets = []
     for name, settings in DATASETS.items():
@@ -105,8 +127,10 @@ def describe(versions: dict, coverage: dict, snapshot: dict | None) -> dict:
                 "repo_id": settings["repo_id"],
                 "expected_reviews": settings["reviews"],
                 "strict": settings["strict"],
+                "headings": settings["headings"],
                 "version": versions.get(name),
                 "coverage": coverage.get(name, dict.fromkeys(COVERAGE_COLUMNS, 0)),
+                "sections": (sections or {}).get(name),
             }
         )
     return {
@@ -125,5 +149,9 @@ def main():
         coverage = {
             row[0]: as_dict(COVERAGE_COLUMNS, row[1:]) for row in conn.execute(COVERAGE_SQL)
         }
+        sections = {
+            row[0]: as_dict(SECTIONS_COLUMNS, row[1:]) for row in conn.execute(SECTIONS_SQL)
+        }
         row = conn.execute(SNAPSHOT_SQL).fetchone()
-    return describe(versions, coverage, as_dict(SNAPSHOT_COLUMNS, row) if row else None)
+    snapshot = as_dict(SNAPSHOT_COLUMNS, row) if row else None
+    return describe(versions, coverage, snapshot, sections)

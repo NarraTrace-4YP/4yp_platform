@@ -16,6 +16,7 @@ pipelines (RUNNABLE_PATHS), so it can't be used to read other jobs' logs.
 RUNNABLE_PATHS = {
     "f/dhr/load_dhrc",
     "f/dhr/collect_case_metadata",
+    "f/dhr/group_sections",
     "f/dhr/o1_pipeline",
     "f/dhr/o1_status",
 }

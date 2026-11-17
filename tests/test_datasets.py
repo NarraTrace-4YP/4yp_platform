@@ -28,7 +28,9 @@ def test_o1_app_offers_the_same_datasets():
     assert re.findall(r"'([^']+)'", match.group(1)) == list(DATASETS)
 
 
-@pytest.mark.parametrize("module", ["load_dhrc", "case_viewer_reviews", "case_viewer_details"])
+@pytest.mark.parametrize(
+    "module", ["load_dhrc", "group_sections", "case_viewer_reviews", "case_viewer_details"]
+)
 def test_windmill_dropdowns_offer_the_same_datasets(module):
     # Windmill shows main's Literal[...] as a dropdown; it must list exactly these datasets.
     main = importlib.import_module(f"f.dhr.{module}").main

@@ -258,4 +258,122 @@ LEFT JOIN evaluation.library_reviews AS r
    AND r.snapshot_id = (SELECT snapshot_id FROM evaluation.library_latest);
 """,
     ),
+    (
+        "004_sections",
+        """
+-- The hierarchical representation: each review's blocks in reading order, grouped under
+-- the sections their headings open. Filled by the group_sections script
+-- (f/dhr/group_sections.py), one dataset version at a time. Reloading a version removes
+-- its sections too (ON DELETE CASCADE), so it has to be grouped again.
+
+-- Which dataset versions have been grouped, from which headings, and by which code.
+CREATE TABLE corpus.grouped_versions (
+    revision     text PRIMARY KEY REFERENCES corpus.dataset_versions ON DELETE CASCADE,
+    -- 'checked': the headings the team validated by hand (DHRC-100);
+    -- 'datalab': Datalab's own headings, unchecked (DHRC-RAW)
+    headings     text NOT NULL CHECK (headings IN ('checked', 'datalab')),
+    grouped_at   timestamptz NOT NULL DEFAULT now(),
+    git_commit   text,                   -- the pipeline code that grouped it
+    n_documents  integer NOT NULL,       -- reviews grouped
+    n_sections   integer NOT NULL,
+    n_blocks     integer NOT NULL,
+    n_skipped    integer NOT NULL,       -- reviews left out: their headings didn't fit together
+    skipped      jsonb NOT NULL DEFAULT '[]'  -- why each one was left out
+);
+
+-- One row per section: a heading and everything after it, up to the next heading at the
+-- same level or above. Sections nest: parent_id is the section this one sits in.
+CREATE TABLE corpus.sections (
+    revision       text NOT NULL,
+    doc_id         text NOT NULL,
+    section_id     text NOT NULL,        -- its heading's block id, e.g. /page/5/SectionHeader/8
+    parent_id      text,                 -- NULL for a top-level section
+    level          integer NOT NULL CHECK (level >= 1),  -- 1 = top level
+    heading        text NOT NULL,        -- the heading's words
+    position       integer NOT NULL,     -- its heading's place in reading order
+    last_position  integer NOT NULL,     -- the last block inside it, subsections included
+    first_page     integer NOT NULL,     -- pages count from 0, as in the block ids
+    last_page      integer NOT NULL,     -- more than first_page: it crosses a page break
+    n_blocks       integer NOT NULL,     -- blocks directly in it (not its heading or subsections)
+    PRIMARY KEY (revision, doc_id, section_id),
+    UNIQUE (revision, doc_id, position),
+    FOREIGN KEY (revision, doc_id) REFERENCES corpus.documents ON DELETE CASCADE,
+    FOREIGN KEY (revision, doc_id, parent_id)
+        REFERENCES corpus.sections (revision, doc_id, section_id) ON DELETE CASCADE,
+    CHECK (last_position >= position AND last_page >= first_page)
+);
+CREATE INDEX ON corpus.sections (revision, doc_id, parent_id);
+
+-- One row per block, in reading order, with the section it sits directly in. Page headers
+-- and footers (running titles, "Page 3 of 56") are left out.
+CREATE TABLE corpus.blocks (
+    revision    text NOT NULL,
+    doc_id      text NOT NULL,
+    block_id    text NOT NULL,           -- the dataset's block id, e.g. /page/5/Text/3
+    position    integer NOT NULL,        -- reading order within the review, from 0
+    page        integer NOT NULL,
+    block_type  text NOT NULL,           -- Text, ListGroup, Table, SectionHeader, ...
+    section_id  text,                    -- a heading's is its own; NULL before the first heading
+    html        text NOT NULL,
+    text        text NOT NULL,           -- the words without HTML (for a picture: Datalab's
+                                         -- description of it)
+    PRIMARY KEY (revision, doc_id, block_id),
+    UNIQUE (revision, doc_id, position),
+    FOREIGN KEY (revision, doc_id) REFERENCES corpus.documents ON DELETE CASCADE,
+    FOREIGN KEY (revision, doc_id, section_id) REFERENCES corpus.sections ON DELETE CASCADE
+);
+
+-- The newest version of each dataset, where it has been grouped. Pick with WHERE dataset = ...
+CREATE VIEW corpus.current_sections AS
+SELECT s.*, v.dataset, g.headings
+FROM corpus.sections AS s
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.grouped_versions AS g USING (revision);
+
+CREATE VIEW corpus.current_blocks AS
+SELECT b.*, v.dataset
+FROM corpus.blocks AS b
+JOIN corpus.current_versions AS v USING (revision);
+
+-- A section with everything nested inside it, in reading order: its heading, its own
+-- blocks, and its subsections' headings and blocks. Each block comes with the level and
+-- heading of the section it sits directly in. For example:
+--   SELECT * FROM corpus.section_blocks('DHRC-100', 'Mary - Bromley - 2018_a - DHR',
+--                                       '/page/5/SectionHeader/0');
+CREATE FUNCTION corpus.section_blocks(dataset text, doc_id text, section_id text)
+RETURNS TABLE ("position" integer, page integer, block_id text, block_type text,
+               section_id text, level integer, heading text, text text, html text)
+LANGUAGE sql STABLE
+AS $fn$
+    SELECT b.position, b.page, b.block_id, b.block_type, b.section_id,
+           own.level, own.heading, b.text, b.html
+    FROM corpus.current_sections AS s
+    JOIN corpus.blocks AS b
+      ON b.revision = s.revision AND b.doc_id = s.doc_id
+     AND b.position BETWEEN s.position AND s.last_position
+    JOIN corpus.sections AS own
+      ON own.revision = b.revision AND own.doc_id = b.doc_id
+     AND own.section_id = b.section_id
+    WHERE s.dataset = section_blocks.dataset
+      AND s.doc_id = section_blocks.doc_id
+      AND s.section_id = section_blocks.section_id
+    ORDER BY b.position
+$fn$;
+
+-- The same section as one piece of text, for reading or for an LLM prompt. Headings are
+-- marked like Markdown: "# " for level 1, "## " for level 2, and so on.
+CREATE FUNCTION corpus.section_text(dataset text, doc_id text, section_id text)
+RETURNS text
+LANGUAGE sql STABLE
+AS $fn$
+    SELECT string_agg(
+               CASE WHEN b.block_type = 'SectionHeader'
+                    THEN repeat('#', b.level) || ' ' || b.text ELSE b.text END,
+               E'\\n\\n' ORDER BY b.position)
+    FROM corpus.section_blocks(section_text.dataset, section_text.doc_id,
+                               section_text.section_id) AS b
+    WHERE b.text <> ''
+$fn$;
+""",
+    ),
 ]

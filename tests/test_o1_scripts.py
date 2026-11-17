@@ -171,6 +171,8 @@ def test_status_lists_every_dataset_even_before_any_is_loaded():
     assert [d["name"] for d in status["datasets"]] == ["DHRC-100", "DHRC-RAW"]
     assert all(d["version"] is None for d in status["datasets"])
     assert status["datasets"][1]["coverage"]["n_loaded"] == 0
+    assert all(d["sections"] is None for d in status["datasets"])
+    assert [d["headings"] for d in status["datasets"]] == ["checked", "datalab"]
     assert status["case_metadata"] is None
 
 
