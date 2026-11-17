@@ -164,6 +164,50 @@ def test_review_without_pages_stops():
         group({"metadata": {}}, "checked")
 
 
+# ----------------------------------------------------------------- a heading printed too low
+
+APPENDICES, APPENDIX_1, TITLE = (
+    "/page/0/SectionHeader/0",
+    "/page/1/SectionHeader/1",
+    "/page/1/SectionHeader/0",
+)
+
+
+def appendix(*page_one):
+    """'APPENDICES', then a page that prints an appendix's title above its 'APPENDIX 1'
+    label, so the page is read child heading first."""
+    return review([heading(0, 0, "APPENDICES", level=1)], list(page_one))
+
+
+def test_heading_printed_below_its_own_section_moves_to_its_start():
+    raw = appendix(
+        heading(1, 0, "Guidance title", level=3, parent=APPENDIX_1),
+        heading(1, 1, "APPENDIX 1", level=2, parent=APPENDICES),
+        text(1, 2, "Guidance words", section=TITLE),
+    )
+    grouped = group(raw, "checked")
+    assert grouped.n_moved_headings == 1
+    assert [b.block_id for b in grouped.blocks] == [
+        APPENDICES, APPENDIX_1, TITLE, "/page/1/Text/2"
+    ]  # fmt: skip
+    assert outline(grouped) == [
+        "APPENDICES  [p0-1, 0]",
+        "  APPENDIX 1  [p1, 0]",
+        "    Guidance title  [p1, 1]",
+    ]
+
+
+def test_heading_never_moves_past_a_block_from_another_section():
+    raw = appendix(
+        heading(1, 0, "Guidance title", level=3, parent=APPENDIX_1),
+        text(1, 5, "Words of APPENDICES itself", section=APPENDICES),
+        heading(1, 1, "APPENDIX 1", level=2, parent=APPENDICES),
+        text(1, 2, "Guidance words", section=TITLE),
+    )
+    with pytest.raises(GroupError, match="comes before its parent /page/1/SectionHeader/1"):
+        group(raw, "checked")
+
+
 # ----------------------------------------------------------------- Datalab's own output
 
 
