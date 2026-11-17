@@ -55,11 +55,11 @@ export default function App() {
   return (
     <div className="shell">
       <header className="top">
-        <div>
+        <div className="app-wrap app-heading">
           <h1>O1: Corpus preparation</h1>
           <p>Turning the DHR corpus into a hierarchical, standardised database linked to the Home Office case metadata</p>
         </div>
-        <nav aria-label="O1 views">
+        <nav className="app-wrap app-nav" aria-label="O1 views">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -72,7 +72,7 @@ export default function App() {
           ))}
         </nav>
       </header>
-      <div className="content">
+      <main className="content">
         {statusError && tab !== 'data' && (
           <p className="message error">Couldn’t read where O1 stands: {statusError}</p>
         )}
@@ -86,7 +86,7 @@ export default function App() {
         {tab === 'attributes' && <AttributesTab version={version} />}
         {tab === 'sections' && <SectionsTab key={version} goTo={goTo} />}
         {tab === 'candidates' && <CandidatesTab key={version} goTo={goTo} />}
-      </div>
+      </main>
     </div>
   )
 }
