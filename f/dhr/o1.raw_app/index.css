@@ -972,3 +972,229 @@ input[type='search'] {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
+
+/* ---------------------------------------------------------------- sections and template candidates */
+
+.step-body .link-button + .link-button {
+  margin-left: 16px;
+}
+
+.three-columns {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(280px, 380px) 1fr;
+  height: 100%;
+}
+
+.two-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  height: 100%;
+}
+
+.outline {
+  border-right: 1px solid var(--line);
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+
+.outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.outline-title {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.outline-item:hover {
+  background: var(--soft);
+}
+
+.outline-item.selected {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+
+.outline-item .heading {
+  display: block;
+  font-size: 14px;
+}
+
+.outline-item .meta,
+.outline-item .match {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 1px;
+}
+
+.outline-item .match.agree {
+  color: var(--good);
+}
+
+.breadcrumb {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.skipped {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.skipped summary {
+  cursor: pointer;
+  color: var(--bad);
+}
+
+.blocks {
+  max-width: 820px;
+}
+
+.block {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.block-heading {
+  font-weight: 600;
+  margin-top: 18px;
+}
+
+.block-heading.depth-0 {
+  font-size: 18px;
+}
+
+.block-heading.depth-1 {
+  font-size: 16px;
+}
+
+.block-heading.depth-2 {
+  font-size: 15px;
+}
+
+.block-heading.depth-3 {
+  font-size: 14px;
+  font-style: italic;
+}
+
+.footnote {
+  font-size: 13px;
+  color: var(--muted);
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+}
+
+.picture,
+.contents {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.block-type {
+  font-weight: 600;
+}
+
+.page-mark {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px;
+  border-top: 1px dashed var(--line);
+  padding-top: 4px;
+}
+
+.table-block {
+  overflow-x: auto;
+  white-space: normal;
+}
+
+.details .table-block table {
+  font-size: 13px;
+}
+
+.details .table-block th,
+.details .table-block td {
+  width: auto;
+  border: 1px solid var(--line);
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--text);
+}
+
+.details table.candidates {
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.details table.candidates th,
+.details table.candidates td {
+  width: auto;
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.details table.candidates th {
+  font-size: 12px;
+}
+
+.candidates tbody tr {
+  cursor: pointer;
+}
+
+.candidates tbody tr:hover {
+  background: var(--soft);
+}
+
+.candidates tbody tr.selected {
+  background: var(--accent-soft);
+}
+
+.details table.candidates .number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.candidates .best {
+  font-weight: 700;
+  color: var(--good);
+}
+
+.rank {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.guidance-text {
+  white-space: pre-wrap;
+  background: var(--soft);
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  max-width: 820px;
+  line-height: 1.5;
+  margin: 4px 0;
+}
+
+.details details summary {
+  cursor: pointer;
+  font-weight: 600;
+}

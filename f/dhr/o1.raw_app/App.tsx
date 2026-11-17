@@ -6,6 +6,8 @@ import DataTab from './DataTab'
 import RunTab from './RunTab'
 import CasesTab from './CasesTab'
 import AttributesTab from './AttributesTab'
+import SectionsTab from './SectionsTab'
+import CandidatesTab from './CandidatesTab'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -13,6 +15,8 @@ const TABS = [
   { id: 'run', label: 'Run' },
   { id: 'cases', label: 'Cases' },
   { id: 'attributes', label: 'Attributes' },
+  { id: 'sections', label: 'Sections' },
+  { id: 'candidates', label: 'Template candidates' },
 ]
 
 export default function App() {
@@ -75,6 +79,8 @@ export default function App() {
         </div>
         {tab === 'cases' && <CasesTab key={version} />}
         {tab === 'attributes' && <AttributesTab version={version} />}
+        {tab === 'sections' && <SectionsTab key={version} goTo={goTo} />}
+        {tab === 'candidates' && <CandidatesTab key={version} goTo={goTo} />}
       </div>
     </div>
   )
