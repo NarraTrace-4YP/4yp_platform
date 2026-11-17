@@ -221,8 +221,9 @@ main() {
 
 		Done.
 
-		  Windmill: https://windmill.$DOMAIN
-		  MLflow:   https://mlflow.$DOMAIN
+		  Landing page: https://$DOMAIN
+		  Windmill:     https://windmill.$DOMAIN
+		  MLflow:       https://mlflow.$DOMAIN
 		  Your own logins are in ~/ACCOUNTS.txt when you SSH in as yourself.
 		  Server admin logins (Windmill: admin@$DOMAIN, MLflow: admin) are in $ENV_FILE.
 
@@ -234,8 +235,8 @@ main() {
 		      https://windmill.$DOMAIN/
 		(The token is also kept in $ENV_FILE as WINDMILL_DEPLOY_TOKEN.)
 
-		If the web addresses don't load yet, check that windmill.$DOMAIN and mlflow.$DOMAIN
-		both point at this server in your DNS. HTTPS starts working once they do.
+		If the web addresses don't load yet, check that $DOMAIN, windmill.$DOMAIN and
+		mlflow.$DOMAIN all point at this server in your DNS. HTTPS starts working once they do.
 	EOF
 }
 

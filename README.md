@@ -13,7 +13,7 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
 | GitHub | Home for all code. Every change goes in through a pull request | GitHub |
 | GitHub Actions | Runs the checks on every pull request, and deploys `main` to Windmill | GitHub |
 | Docker Compose | Runs every service on the server from one file (`compose.yaml`) | Server |
-| Caddy | Serves Windmill and MLflow over HTTPS | Server |
+| Caddy | Serves Windmill, MLflow and the landing page over HTTPS | Server |
 | PostgreSQL + pgvector + pg_search | The project database, with meaning search and keyword search built in | Server |
 | Windmill | Runs the pipeline scripts, and has a web editor for trying things out | Server |
 | MLflow | Records every experiment run and LLM call | Server |
@@ -161,7 +161,10 @@ export MLFLOW_TRACKING_PASSWORD=<your password>
 ## Where things go
 
 - `f/dhr/`: the team's pipelines, as Windmill scripts, plus the code they share.
-- `tests/`: tests for `f/dhr/`.
+- `tests/`: tests for `f/dhr/` (and for `site/`).
+- `site/`: the landing page at `https://<domain>`, with links to every tool and the docs,
+  and an about page. Plain HTML and CSS in the NarraTrace brand, no build step. Merging a
+  change doesn't publish it: an admin runs `sudo /opt/dhr/server/update.sh`.
 - `wmill.yaml`, `.github/workflows/deploy.yml`: how `main` is deployed to Windmill.
 - `server/`, `postgres/`, `mlflow/`, `caddy/`, `compose.yaml`: the server setup. Only
   admins should need to touch these.
