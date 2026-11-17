@@ -42,7 +42,9 @@ jobs:
           done
 
   server-config:
-    name: Local and server config is valid
+    # Keep this display name stable: the repository ruleset may require it by name.
+    # The steps below validate both deployment environments despite the historical name.
+    name: Server config is valid
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
