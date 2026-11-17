@@ -6,6 +6,25 @@
 #     "wmill==1.875.0",
 # ]
 # ///
+# ===================================================================================== #
+# FIXES FOR PROBLEM REVIEWS
+# Reviews that failed to group at first, and what was changed so they pass. Every fix is
+# general (it applies to all reviews); each is listed with the review that showed it.
+#
+# Fix 1. A heading printed below the start of its own section
+#   Review:   Annie - Hartlepool - 2018_a - DHR (DHRC-100)
+#   Problem:  "heading /page/49/SectionHeader/0 comes before its parent
+#             /page/49/SectionHeader/1", and the same on pages 56, 58, 65 and 74.
+#   Why:      Each appendix's first page prints its title ("PDP", "MAPPA", "ACTION PLAN",
+#             "IMR Agency Recommendations", "GLOSSARY") above its "APPENDIX n" label.
+#             Datalab reads a page top to bottom, so the child heading came before its
+#             parent. The team's checked structure (APPENDICES > APPENDIX n > title) is
+#             right; only the order on the page is upside down.
+#   Solution: A heading whose own section starts before it moves up to that start
+#             (group(), "moved"). It only moves past blocks that already belong inside its
+#             own section, so no block changes section. In Annie exactly the five
+#             "APPENDIX n" labels move; nothing moves in any other review checked.
+# ===================================================================================== #
 """Groups each review's blocks under their sections: O1's hierarchical representation.
 
 Datalab gives a review page by page. This puts its blocks back in reading order and under
@@ -29,9 +48,14 @@ datasets.py):
 Either way, a review is only stored if its structure holds together: every block points
 to a heading that exists and comes before it, every heading sits under one at a higher
 level, and each section is one unbroken stretch of the review (nothing from outside it in
-the middle). For DHRC-100 one review that fails stops the run and nothing is stored; for
-DHRC-RAW it is left out and listed. Page headers and footers (running titles, "Page 3 of
-56") are left out: they are not part of any section.
+the middle). For DHRC-100 a review that fails means nothing is stored, and the run lists
+every review that failed; for DHRC-RAW it is left out and listed. Page headers and footers
+(running titles, "Page 3 of 56") are left out: they are not part of any section.
+
+Some pages print a heading just below the start of its own section: Annie - Hartlepool's
+appendices put each title ("PDP") above its "APPENDIX 1" label, so the page reads child
+heading first. There the heading is moved up to the start of its section. It only ever
+moves past blocks that belong inside that section, so nothing changes section.
 
 The results go in corpus.sections and corpus.blocks; corpus.section_blocks(...) and
 corpus.section_text(...) fetch a section with everything inside it.
@@ -166,6 +190,7 @@ class Grouped:
     sections: list[Section]
     n_page_furniture: int  # page headers and footers left out
     n_loose_headings: int  # heading blocks outside the hierarchy, kept as ordinary blocks
+    n_moved_headings: int = 0  # headings moved up to the start of their own section
 
 
 def reading_order(raw: dict) -> tuple[list[dict], int]:
@@ -273,26 +298,22 @@ def group(raw: dict, headings_from: str) -> Grouped:
     for h in loose:
         del headings[h]
 
+    # The references first: every heading has a level and sits under a heading at a higher
+    # level (so no heading can end up inside itself), and every block belongs to a heading.
     for heading_id, (level, parent) in headings.items():
         if level is None:
             problems.append(f"heading {heading_id} has no level")
         elif parent is not None:
             if parent not in headings:
                 problems.append(f"heading {heading_id} sits under {parent}, which isn't a heading")
-            elif position[parent] > position[heading_id]:
-                problems.append(f"heading {heading_id} comes before its parent {parent}")
             elif headings[parent][0] is not None and headings[parent][0] >= level:
                 problems.append(
                     f"heading {heading_id} (level {level}) sits under {parent}, "
                     f"which is level {headings[parent][0]}"
                 )
-    for i, (block, section) in enumerate(zip(blocks, sections)):
-        if section is None or block["id"] in headings:
-            continue
-        if section not in headings:
+    for block, section in zip(blocks, sections):
+        if section is not None and block["id"] not in headings and section not in headings:
             problems.append(f"{block['id']} belongs to {section}, which isn't a heading")
-        elif position[section] > i:
-            problems.append(f"{block['id']} comes before its heading {section}")
     if problems:
         raise GroupError(summarise(problems))
 
@@ -303,6 +324,31 @@ def group(raw: dict, headings_from: str) -> Grouped:
         if section not in chains:
             chains[section] = (section, *chain(headings[section][1]))
         return chains[section]
+
+    # Some pages print a heading just below the start of its own section: an appendix's
+    # title ("PDP") above its "APPENDIX 1" label, so the page is read child heading first.
+    # The structure is right; only the order is off. Such a heading moves up to the start
+    # of its section, past blocks that belong inside that section and nothing else.
+    moved = 0
+    for i in range(len(blocks)):
+        heading_id, start = blocks[i]["id"], i
+        if heading_id in headings:
+            while start > 0 and heading_id in chain(sections[start - 1]):
+                start -= 1
+        if start < i:
+            blocks.insert(start, blocks.pop(i))
+            sections.insert(start, sections.pop(i))
+            moved += 1
+    position = {block["id"]: i for i, block in enumerate(blocks)}
+
+    for heading_id, (_, parent) in headings.items():
+        if parent is not None and position[parent] > position[heading_id]:
+            problems.append(f"heading {heading_id} comes before its parent {parent}")
+    for i, (block, section) in enumerate(zip(blocks, sections)):
+        if section is not None and block["id"] not in headings and position[section] > i:
+            problems.append(f"{block['id']} comes before its heading {section}")
+    if problems:
+        raise GroupError(summarise(problems))
 
     last = {h: position[h] for h in headings}
     for i, section in enumerate(sections):
@@ -351,7 +397,7 @@ def group(raw: dict, headings_from: str) -> Grouped:
                 n_blocks=direct[heading_id],
             )
         )
-    return Grouped(stored, grouped, furniture, len(loose))
+    return Grouped(stored, grouped, furniture, len(loose), moved)
 
 
 def heading_text(block: dict) -> str:
@@ -386,6 +432,7 @@ class Totals:
     n_before_first_heading: int = 0  # blocks in no section (title page, contents, ...)
     n_page_furniture: int = 0
     n_loose_headings: int = 0
+    n_moved_headings: int = 0
 
     def add(self, grouped: Grouped) -> None:
         self.n_documents += 1
@@ -395,6 +442,7 @@ class Totals:
         self.n_before_first_heading += sum(b.section_id is None for b in grouped.blocks)
         self.n_page_furniture += grouped.n_page_furniture
         self.n_loose_headings += grouped.n_loose_headings
+        self.n_moved_headings += grouped.n_moved_headings
 
 
 SECTION_COLUMNS = (
@@ -421,11 +469,9 @@ def write(conn, revision: str, doc_id: str, grouped: Grouped) -> None:
                 )  # fmt: skip
 
 
-def group_version(conn, revision: str, headings_from: str, strict: bool, progress) -> dict:
-    """Groups every review of one dataset version and stores the result, replacing any
-    earlier grouping of it. All or nothing: if anything fails, nothing changes."""
-    from psycopg.types.json import Jsonb
-
+def each_review(conn, revision: str, headings_from: str, progress):
+    """Groups each review of one dataset version in turn, yielding (doc_id, its Grouped or
+    the GroupError saying why it doesn't fit). One review is in memory at a time."""
     doc_ids = [
         row[0]
         for row in conn.execute(
@@ -434,28 +480,57 @@ def group_version(conn, revision: str, headings_from: str, strict: bool, progres
     ]
     if not doc_ids:
         raise GroupError(f"version {revision} has no reviews stored")
+    for number, doc_id in enumerate(doc_ids, start=1):
+        progress(5 + 90 * number / len(doc_ids))
+        if number % 100 == 0:
+            say(f"      grouped {number}/{len(doc_ids)}")
+        (raw,) = conn.execute(
+            "SELECT raw FROM corpus.documents WHERE revision = %s AND doc_id = %s",
+            (revision, doc_id),
+        ).fetchone()
+        try:
+            result = group(raw, headings_from)
+        except GroupError as error:
+            result = error
+        yield doc_id, result
+
+
+def check_version(conn, revision: str, headings_from: str, progress) -> dict:
+    """Groups every review of one dataset version without storing anything, and lists
+    every review that doesn't fit together."""
+    totals, skipped = Totals(), []
+    for doc_id, result in each_review(conn, revision, headings_from, progress):
+        if isinstance(result, GroupError):
+            skipped.append(f"{doc_id}: {result}")
+        else:
+            totals.add(result)
+    return {**totals.__dict__, "n_skipped": len(skipped), "skipped": skipped}
+
+
+def group_version(conn, revision: str, headings_from: str, strict: bool, progress) -> dict:
+    """Groups every review of one dataset version and stores the result, replacing any
+    earlier grouping of it. All or nothing: if anything fails, nothing changes."""
+    from psycopg.types.json import Jsonb
+
     totals, skipped = Totals(), []
     with conn.transaction():
         conn.execute("DELETE FROM corpus.grouped_versions WHERE revision = %s", (revision,))
         conn.execute("DELETE FROM corpus.blocks WHERE revision = %s", (revision,))
         conn.execute("DELETE FROM corpus.sections WHERE revision = %s", (revision,))
-        for number, doc_id in enumerate(doc_ids, start=1):
-            (raw,) = conn.execute(
-                "SELECT raw FROM corpus.documents WHERE revision = %s AND doc_id = %s",
-                (revision, doc_id),
-            ).fetchone()
-            try:
-                grouped = group(raw, headings_from)
-            except GroupError as error:
-                if strict:
-                    raise GroupError(f"{doc_id}: {error}") from error
-                skipped.append(f"{doc_id}: {error}")
-                continue
-            write(conn, revision, doc_id, grouped)
-            totals.add(grouped)
-            progress(5 + 90 * number / len(doc_ids))
-            if number % 100 == 0:
-                say(f"      grouped {number}/{len(doc_ids)}")
+        for doc_id, result in each_review(conn, revision, headings_from, progress):
+            if isinstance(result, GroupError):
+                skipped.append(f"{doc_id}: {result}")
+            elif not (strict and skipped):  # once one fails, nothing will be stored
+                write(conn, revision, doc_id, result)
+                totals.add(result)
+        if strict and skipped:
+            # Raising inside the transaction undoes everything above: nothing changes.
+            more = f"\n  ...and {len(skipped) - 20} more" if len(skipped) > 20 else ""
+            raise GroupError(
+                f"{len(skipped)} review(s) don't fit together, so nothing was stored:\n  "
+                + "\n  ".join(skipped[:20])
+                + more
+            )
         conn.execute(
             "INSERT INTO corpus.grouped_versions (revision, headings, git_commit, n_documents,"
             " n_sections, n_blocks, n_skipped, skipped) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
@@ -482,8 +557,9 @@ def log_to_mlflow(summary: dict) -> str | None:
     return run.info.run_id
 
 
-def run(dataset: str = "DHRC-100") -> dict:
-    """Groups the newest version of a dataset. Returns a summary."""
+def run(dataset: str = "DHRC-100", check_only: bool = False) -> dict:
+    """Groups the newest version of a dataset. Returns a summary. check_only: group and
+    check every review, list those that don't fit together, and store nothing."""
     settings = check_dataset(dataset)
     headings_from = settings["headings"]
     progress = ProgressBar()
@@ -498,11 +574,33 @@ def run(dataset: str = "DHRC-100") -> dict:
             raise GroupError(f"{dataset} isn't loaded yet: run f/dhr/load_dhrc for it first")
         revision = row[0]
         say(
-            f"Grouping {dataset} version {revision} by section, using"
-            f" {HEADINGS_FROM[headings_from]}..."
+            f"{'Checking' if check_only else 'Grouping'} {dataset} version {revision} by"
+            f" section, using {HEADINGS_FROM[headings_from]}"
+            + (" (nothing will be stored)..." if check_only else "...")
         )
         progress(5)
-        totals = group_version(conn, revision, headings_from, settings["strict"], progress)
+        if check_only:
+            totals = check_version(conn, revision, headings_from, progress)
+        else:
+            totals = group_version(conn, revision, headings_from, settings["strict"], progress)
+
+    summary = {"dataset": dataset, "revision": revision, "headings": headings_from,
+               "git_commit": GIT_COMMIT, "stored": not check_only, **totals}  # fmt: skip
+    if check_only:
+        n_reviews = totals["n_documents"] + totals["n_skipped"]
+        say(
+            f"OK    {totals['n_documents']} of {n_reviews} reviews fit together:"
+            f" {totals['n_sections']} sections, {totals['n_blocks']} blocks"
+        )
+        if totals["n_moved_headings"]:
+            say(f"NOTE  {totals['n_moved_headings']} headings would be moved up to the start"
+                " of their own section")  # fmt: skip
+        if totals["skipped"]:
+            say(f"NOTE  {totals['n_skipped']} review(s) don't fit together:")
+            for problem in totals["skipped"]:
+                say(f"        {problem}")
+        say("OK    Nothing was stored (check only)")
+        return summary
 
     say(
         f"OK    {totals['n_documents']} reviews: {totals['n_sections']} sections,"
@@ -515,14 +613,15 @@ def run(dataset: str = "DHRC-100") -> dict:
     if totals["n_loose_headings"]:
         say(f"NOTE  {totals['n_loose_headings']} heading blocks sit outside the hierarchy;"
             " kept as ordinary blocks")  # fmt: skip
+    if totals["n_moved_headings"]:
+        say(f"NOTE  {totals['n_moved_headings']} headings printed below the start of their own"
+            " section were moved up to its start")  # fmt: skip
     if totals["skipped"]:
         say(f"NOTE  Left out {totals['n_skipped']} review(s) whose headings don't fit together:")
         for problem in totals["skipped"][:50]:
             say(f"        {problem}")
     say(f"OK    Stored in corpus.sections and corpus.blocks as {dataset} version {revision}")
 
-    summary = {"dataset": dataset, "revision": revision, "headings": headings_from,
-               "git_commit": GIT_COMMIT, **totals}  # fmt: skip
     run_id = log_to_mlflow(summary)
     if run_id:
         say(f"OK    Logged to MLflow: run {run_id} in experiment 'corpus-sections'")
@@ -530,10 +629,11 @@ def run(dataset: str = "DHRC-100") -> dict:
     return summary
 
 
-def main(dataset: Literal["DHRC-100", "DHRC-RAW"] = "DHRC-100"):
-    """Windmill runs this. dataset: which dataset's newest version to group."""
+def main(dataset: Literal["DHRC-100", "DHRC-RAW"] = "DHRC-100", check_only: bool = False):
+    """Windmill runs this. dataset: which dataset's newest version to group. check_only:
+    list every review that doesn't fit together, and store nothing."""
     sys.stdout.reconfigure(line_buffering=True)  # show progress in the log as it happens
-    return run(dataset)
+    return run(dataset, check_only)
 
 
 if __name__ == "__main__":
@@ -543,6 +643,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--headings", choices=sorted(STRUCTURES), help="with --file: checked or datalab"
     )
+    parser.add_argument(
+        "--check-only", action="store_true", help="list reviews that don't fit; store nothing"
+    )
     args = parser.parse_args()
     if args.file:
         headings_from = args.headings or check_dataset(args.dataset)["headings"]
@@ -550,5 +653,5 @@ if __name__ == "__main__":
         print("\n".join(outline(result)))
         print(f"{len(result.sections)} sections, {len(result.blocks)} blocks")
     else:
-        run(args.dataset)
+        run(args.dataset, args.check_only)
         say("Done.")
