@@ -163,6 +163,30 @@ def test_attribute_counts_are_grouped_like_the_library_page():
     assert attributes[2]["values"][0]["value"] == "East: Essex"
 
 
+def test_review_fields_come_after_the_death_with_years_oldest_first():
+    rows = [
+        ("About the victim / Sex", "Female", 541, "DHRC-100", 82),
+        ("About the death / Method of killing", "Stabbing", 300, "DHRC-100", 40),
+        ("Filter by theme", "Victim - alcohol misuse", 242, "DHRC-100", 30),
+        ("About the review / CSP region", "Greater London", 120, "DHRC-100", 20),
+        ("About the review / Year of death", "2021", 50, None, 0),
+        ("About the review / Year of death", "2019", 80, "DHRC-100", 9),
+    ]
+    attributes = o1_attributes.group_counts(rows)
+    assert [(a["section"], a["attribute"]) for a in attributes] == [
+        ("About the victim", "Sex"),
+        ("About the death", "Method of killing"),
+        ("About the review", "CSP region"),
+        ("About the review", "Year of death"),
+        ("Themes", "Victim"),
+    ]
+    assert [v["value"] for v in attributes[3]["values"]] == ["2019", "2021"]
+    assert o1_attributes.as_totals({None: 684, "DHRC-100": 100}) == {
+        "library": 684,
+        "datasets": {"DHRC-100": 100, "DHRC-RAW": 0},
+    }
+
+
 # ----------------------------------------------------------------- o1_status
 
 
