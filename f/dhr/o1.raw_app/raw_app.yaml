@@ -1,2 +1,5 @@
-summary: "O1: corpus preparation - what O1 is, the data so far, the pipelines (with a Run button for each), the case viewer and attribute counts"
+summary: 'O1: corpus preparation artefact'
+data:
+  tables: []
+labels: []
 sandbox: true
