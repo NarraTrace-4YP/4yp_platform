@@ -1,5 +1,5 @@
 import React from 'react'
-import { Status, number, shortId, when } from './shared'
+import { HEADINGS, Status, number, shortId, when } from './shared'
 
 type Props = { status: Status | null; goTo: (tab: string) => void }
 
@@ -59,7 +59,25 @@ const STEPS: Step[] = [
       'Use the validated headings and their parents to put each block under its section, joining ' +
       'sections that cross a page break. This gives the hierarchical representation: a section ' +
       'can be fetched with everything nested inside it.',
-    built: false,
+    built: true,
+    run: true,
+    now: (status) => (
+      <ul className="facts-list">
+        {status.datasets.map((d) => (
+          <li key={d.name}>
+            <strong>{d.name}:</strong>{' '}
+            {d.sections
+              ? `${number(d.sections.n_sections)} sections from ${number(d.sections.n_reviews)} reviews ` +
+                `(${number(d.sections.n_across_pages)} cross a page break), from ${HEADINGS[d.sections.headings]}, ` +
+                `grouped ${when(d.sections.grouped_at)}` +
+                (d.sections.n_skipped ? `; ${number(d.sections.n_skipped)} reviews left out` : '')
+              : d.version
+                ? 'loaded, not grouped yet'
+                : 'not loaded yet'}
+          </li>
+        ))}
+      </ul>
+    ),
   },
   {
     title: 'Find candidate template sections',
@@ -81,7 +99,7 @@ const STEPS: Step[] = [
 export default function Overview({ status, goTo }: Props) {
   const representations = [
     { name: 'Page-based (as Datalab produced it)', built: true },
-    { name: 'Hierarchical (blocks grouped by section)', built: false },
+    { name: 'Hierarchical (blocks grouped by section)', built: true },
     { name: 'Standardised (sections mapped to the 2016 template)', built: false },
   ]
   return (
@@ -107,7 +125,7 @@ export default function Overview({ status, goTo }: Props) {
       <section>
         <h2>The O1 pipeline, step by step</h2>
         <p className="muted">
-          These are the steps in the specification’s Stage 1 diagram (Appendix B). The first two are
+          These are the steps in the specification’s Stage 1 diagram (Appendix B). The first three are
           built and can be run from the <a onClick={() => goTo('run')}>Run</a> tab; the rest come next.
         </p>
         <ol className="pipeline">

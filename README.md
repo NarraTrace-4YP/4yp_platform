@@ -55,8 +55,9 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
   compares with the whole library). It's a small React app in `f/dhr/o1.raw_app`,
   deployed like everything else; its backend is the `o1_*` and `case_viewer_*` scripts.
 - **The O1 pipeline** (`f/dhr/o1_pipeline`, a Windmill flow) runs every built O1 step in
-  order: load DHRC-100, load DHRC-RAW, collect the case metadata, then report where O1
-  stands. Each step can be switched off. New O1 steps get added to it as they're built.
+  order: load DHRC-100, load DHRC-RAW, collect the case metadata, group each dataset's
+  blocks by section, then report where O1 stands. Each step can be switched off. New O1
+  steps get added to it as they're built.
 - **Your own space** is the folder `u/<your-username>`. Write and run anything there in
   the web editor (**+ Script**, choose Python). Your scripts can use the team's code:
   `from f.dhr.db import connect` gives you the project database.
@@ -108,7 +109,7 @@ these rules, so a pull request that breaks one fails its checks:
 - **Passwords never go in code.** `settings.py` reads them from Windmill's secret
   variables, or from environment variables on your laptop.
 - **Changing the database:** add a new entry at the end of `f/dhr/migrations.py`
-  (e.g. `003_blocks`). Pipelines apply new migrations the next time they run. Never edit
+  (e.g. `005_template_matches`). Pipelines apply new migrations the next time they run. Never edit
   one that's already been merged; add a new one instead.
 
 ## Working on your laptop
@@ -181,6 +182,23 @@ them into the database.
 - **Reading it:** `corpus.current_documents` shows the latest version of each dataset,
   with a `dataset` column: add `WHERE dataset = 'DHRC-100'` (or `'DHRC-RAW'`) to pick one.
   The review's original JSON is in the `raw` column.
+- **Sections (the hierarchical representation):** the `f/dhr/group_sections` script puts
+  each review's blocks back in reading order under the headings they belong to, so a
+  section that runs across a page break is one section. For DHRC-100 the structure comes
+  from the headings the team checked by hand; for DHRC-RAW from Datalab's own, unchecked
+  headings. Run it after loading a dataset (reloading removes the old grouping).
+  `corpus.current_sections` has one row per section (heading, level, `parent_id`, pages)
+  and `corpus.current_blocks` one row per block in reading order (section, page, HTML and
+  plain `text`). Page headers and footers are left out. To get a section with everything
+  nested inside it:
+
+  ```sql
+  SELECT * FROM corpus.section_blocks('DHRC-100', '<doc_id>', '<section_id>');  -- block by block
+  SELECT corpus.section_text('DHRC-100', '<doc_id>', '<section_id>');           -- as one text
+  ```
+
+  On a laptop, `uv run python -m f.dhr.group_sections --file <review.json>` prints one
+  review file's outline without touching the database.
 - **Case metadata:** the `f/dhr/collect_case_metadata` script asks the Home Office's
   [DHR Library](https://homicide-review.homeoffice.gov.uk/) which reviews match each of its
   search filters (victim's age, method of killing, relationship, ...), since the library

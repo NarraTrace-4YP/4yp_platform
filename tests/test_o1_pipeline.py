@@ -112,6 +112,11 @@ def test_app_can_follow_every_run_it_starts():
         "f/dhr/case_viewer_reviews",
         "f/dhr/case_viewer_details",
     }
-    assert started == {"f/dhr/load_dhrc", "f/dhr/collect_case_metadata", "f/dhr/o1_pipeline"}
+    assert started == {
+        "f/dhr/load_dhrc",
+        "f/dhr/collect_case_metadata",
+        "f/dhr/group_sections",
+        "f/dhr/o1_pipeline",
+    }
     flow_steps = {step["value"]["path"] for step in STEPS}
     assert started | flow_steps <= RUNNABLE_PATHS

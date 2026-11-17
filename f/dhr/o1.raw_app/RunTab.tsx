@@ -23,6 +23,8 @@ const FLOW_STEPS: Record<string, string> = {
   load_dhrc_100: 'Load DHRC-100',
   load_dhrc_raw: 'Load DHRC-RAW',
   collect_case_metadata: 'Collect case metadata',
+  group_sections_100: 'Group DHRC-100 by section',
+  group_sections_raw: 'Group DHRC-RAW by section',
   status: 'Report where O1 stands',
 }
 
@@ -229,9 +231,45 @@ function CollectResult({ result }: { result: any }) {
   )
 }
 
+function GroupResult({ result }: { result: any }) {
+  if (!result) return null
+  return (
+    <div>
+      <p>
+        Grouped {number(result.n_documents)} {result.dataset} reviews into {number(result.n_sections)} sections (
+        {number(result.n_across_pages)} cross a page break), {number(result.n_blocks)} blocks in all.
+      </p>
+      <p className="muted">
+        {number(result.n_before_first_heading)} {result.n_before_first_heading === 1 ? 'block comes' : 'blocks come'}{' '}
+        before the first heading (title pages, contents)
+        {result.n_page_furniture > 0 && `; ${number(result.n_page_furniture)} page headers and footers left out`}
+        {result.n_loose_headings > 0 &&
+          `; ${number(result.n_loose_headings)} heading blocks sit outside the hierarchy and were kept as ordinary blocks`}
+        .
+      </p>
+      {result.n_skipped > 0 && (
+        <div>
+          Left out {number(result.n_skipped)} review(s) whose headings don’t fit together:
+          <ul>
+            {(result.skipped ?? []).slice(0, 20).map((s: string) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function RunAll({ status, refresh }: Props) {
   const run = useRun('o1_pipeline', refresh)
-  const [steps, setSteps] = useState({ load_dhrc_100: true, load_dhrc_raw: true, collect_case_metadata: true })
+  const [steps, setSteps] = useState({
+    load_dhrc_100: true,
+    load_dhrc_raw: true,
+    collect_case_metadata: true,
+    group_sections_100: true,
+    group_sections_raw: true,
+  })
   const [revisions, setRevisions] = useState({ dhrc_100_revision: 'main', dhrc_raw_revision: 'main' })
   const nothing = !Object.values(steps).some(Boolean)
   return (
@@ -266,6 +304,22 @@ function RunAll({ status, refresh }: Props) {
             onChange={(e) => setSteps({ ...steps, collect_case_metadata: e.target.checked })}
           />{' '}
           Collect case metadata (about 20 minutes)
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={steps.group_sections_100}
+            onChange={(e) => setSteps({ ...steps, group_sections_100: e.target.checked })}
+          />{' '}
+          Group DHRC-100 by section
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={steps.group_sections_raw}
+            onChange={(e) => setSteps({ ...steps, group_sections_raw: e.target.checked })}
+          />{' '}
+          Group DHRC-RAW by section
         </label>
         <details>
           <summary>Dataset versions</summary>
@@ -411,6 +465,66 @@ function CollectMetadata({ status, refresh }: Props) {
   )
 }
 
+function GroupSections({ status, refresh }: Props) {
+  const run = useRun('group_sections', refresh)
+  const [dataset, setDataset] = useState(DATASETS[0])
+  const current = status?.datasets.find((d) => d.name === dataset)
+  return (
+    <Card title="Group blocks by section" path="group_sections" kind="script">
+      <p>
+        Datalab gives each review page by page. This puts its blocks back in reading order under the headings they
+        belong to, so a section that runs across a page break is one section again, and any section can be fetched
+        with everything nested inside it. In order, it:
+      </p>
+      <ol>
+        <li>takes the newest version loaded of the dataset you choose;</li>
+        <li>
+          works out each review’s structure. For DHRC-100 that comes from the headings the team checked by hand (each
+          heading’s level and parent, and which heading every block belongs to). For DHRC-RAW it comes from
+          Datalab’s own headings, which nobody has checked;
+        </li>
+        <li>
+          checks the structure holds together: every block points to a heading that exists and comes before it,
+          every heading sits under one at a higher level, and nothing from outside a section sits in the middle of
+          it. In DHRC-100 one review that fails stops the run; in DHRC-RAW it’s left out and listed;
+        </li>
+        <li>leaves out page headers and footers (running titles, “Page 3 of 56”), which belong to no section;</li>
+        <li>
+          stores the sections in <code>corpus.sections</code> and the blocks in <code>corpus.blocks</code>, replacing
+          any earlier grouping of that version, all in one go (if anything fails, nothing changes);
+        </li>
+        <li>records the run in MLflow (experiment “corpus-sections”).</li>
+      </ol>
+      <p className="muted">
+        Run it again after loading a dataset: reloading a version removes its grouping. It takes about a minute for
+        DHRC-RAW.
+      </p>
+      {current?.sections && (
+        <p className="muted">
+          {dataset} was last grouped {when(current.sections.grouped_at)}: {number(current.sections.n_sections)}{' '}
+          sections from {number(current.sections.n_reviews)} reviews.
+        </p>
+      )}
+      <div className="form-row">
+        <label>
+          Dataset{' '}
+          <select value={dataset} onChange={(e) => setDataset(e.target.value)} disabled={run.active}>
+            {DATASETS.map((d) => (
+              <option key={d}>{d}</option>
+            ))}
+          </select>
+        </label>
+        <StartButton
+          run={run}
+          label={`Group ${dataset}`}
+          onStart={() => run.start(() => backendAsync.group_sections({ dataset }))}
+        />
+      </div>
+      <RunPanel run={run} status={status} renderResult={(result) => <GroupResult result={result} />} />
+    </Card>
+  )
+}
+
 export default function RunTab({ status, refresh }: Props) {
   return (
     <div className="page">
@@ -425,6 +539,7 @@ export default function RunTab({ status, refresh }: Props) {
       <RunAll status={status} refresh={refresh} />
       <LoadDataset status={status} refresh={refresh} />
       <CollectMetadata status={status} refresh={refresh} />
+      <GroupSections status={status} refresh={refresh} />
     </div>
   )
 }

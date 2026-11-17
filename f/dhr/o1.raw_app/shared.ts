@@ -15,11 +15,29 @@ export type Coverage = {
   n_in_library: number
   n_with_details: number
 }
+// Where a dataset's section structure comes from (the "headings" setting in datasets.py).
+export type Headings = 'checked' | 'datalab'
+export const HEADINGS: Record<Headings, string> = {
+  checked: 'the headings the team checked by hand',
+  datalab: 'Datalab’s own headings (nobody has checked them)',
+}
+export type SectionsStatus = {
+  headings: Headings
+  grouped_at: string
+  git_commit: string | null
+  n_reviews: number
+  n_sections: number
+  n_blocks: number
+  n_skipped: number
+  n_across_pages: number
+}
 export type DatasetStatus = {
   name: string
   repo_id: string
   expected_reviews: number
   strict: boolean
+  headings: Headings
+  sections: SectionsStatus | null
   version: {
     revision: string
     repo_id: string
