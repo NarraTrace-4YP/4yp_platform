@@ -351,11 +351,32 @@ def test_site_ignoring_page_numbers_stops_the_run(small_pages):
 def test_match_report_counts_our_reviews():
     collection = library.collect(FakeSite().get, base_url=BASE)
     ours = {"A": REVIEWS[0][0], "B": REVIEWS[5][0], "C": "f" * 24, "D": None}
+    # C has a library link the library doesn't list; D has no link (published elsewhere).
     assert library.report_matches(collection, ours) == {
         "n_documents": 4,
         "n_in_library": 2,
+        "n_elsewhere": 1,
         "n_with_details": 1,
     }
+
+
+def test_match_report_covers_each_dataset_separately(capsys):
+    collection = library.collect(FakeSite().get, base_url=BASE)
+    datasets = {
+        "DHRC-100": {"A": REVIEWS[0][0]},
+        "DHRC-RAW": {"A": REVIEWS[0][0], "B": REVIEWS[5][0], "E": None},
+    }
+    report = library.report_all_matches(collection, datasets)
+    assert report["DHRC-100"]["n_in_library"] == 1
+    assert report["DHRC-RAW"] == {
+        "n_documents": 3,
+        "n_in_library": 2,
+        "n_elsewhere": 1,
+        "n_with_details": 1,
+    }
+    output = capsys.readouterr().out
+    assert "2 of the 3 DHRC-RAW reviews are in the library listing" in output
+    assert "1 were published elsewhere" in output
 
 
 def test_dry_run_stores_nothing(monkeypatch, capsys):

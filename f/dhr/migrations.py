@@ -167,4 +167,95 @@ LEFT JOIN evaluation.library_reviews AS r
    AND r.snapshot_id = (SELECT snapshot_id FROM evaluation.library_latest);
 """,
     ),
+    (
+        "003_datasets",
+        """
+-- Several datasets now sit side by side: DHRC-100 (human-validated) and DHRC-RAW (702 raw
+-- extractions, including raw versions of the same 100 reviews under the same doc_id).
+-- Each loaded version says which dataset it is, and every "current" view gives the newest
+-- version of each dataset, with a dataset column to choose by.
+ALTER TABLE corpus.dataset_versions ADD COLUMN dataset text;
+UPDATE corpus.dataset_versions
+SET dataset = CASE WHEN repo_id = '4YP/dhr-corpus-raw-copy' THEN 'DHRC-RAW' ELSE 'DHRC-100' END;
+ALTER TABLE corpus.dataset_versions ALTER COLUMN dataset SET NOT NULL;
+
+-- The newest version loaded of each dataset.
+CREATE VIEW corpus.current_versions AS
+SELECT DISTINCT ON (dataset) *
+FROM corpus.dataset_versions
+ORDER BY dataset, loaded_at DESC;
+
+-- The reviews in the newest version of each dataset. Pick with WHERE dataset = 'DHRC-100'.
+CREATE OR REPLACE VIEW corpus.current_documents AS
+SELECT d.*, v.dataset
+FROM corpus.documents AS d
+JOIN corpus.current_versions AS v ON v.revision = d.revision;
+
+-- Which library review each of our reviews is, per dataset, from the dataset's own
+-- metadata (METADATA.json for DHRC-100, manifest.csv for DHRC-RAW). Reviews from outside
+-- the Home Office library (no /download/ link) have no library_id. The dataset_* columns
+-- are what the dataset itself says, for reviews the library doesn't have. "loaded" is
+-- false for a review whose file was skipped because it couldn't be read. "source" is where
+-- the review was published, from its link: 'Home Office website' (the DHR Library),
+-- 'HALT' (the HALT study's repository, domestichomicide-halt.co.uk) or 'Elsewhere' (such
+-- as a council's website); empty if the dataset gives no link.
+CREATE OR REPLACE VIEW evaluation.document_library_ids AS
+SELECT doc ->> 'document_id' AS doc_id,
+       substring(doc ->> 'source_url' FROM '/download/([0-9A-Za-z]+)') AS library_id,
+       v.dataset,
+       doc ->> 'dhr_title' AS dataset_title,
+       doc ->> 'csp' AS dataset_csp,
+       doc ->> 'csp_region' AS dataset_csp_region,
+       doc ->> 'date_of_death' AS dataset_date_of_death,
+       doc ->> 'source_url' AS source_url,
+       EXISTS (SELECT 1 FROM corpus.documents AS f
+               WHERE f.revision = v.revision AND f.doc_id = doc ->> 'document_id') AS loaded,
+       CASE
+           WHEN doc ->> 'source_url' IS NULL THEN NULL
+           WHEN substring(doc ->> 'source_url' FROM '^[A-Za-z]+://([^/:?#]+)')
+                ~* '(^|[.])homicide-review[.]homeoffice[.]gov[.]uk$' THEN 'Home Office website'
+           WHEN substring(doc ->> 'source_url' FROM '^[A-Za-z]+://([^/:?#]+)')
+                ~* 'halt' THEN 'HALT'
+           ELSE 'Elsewhere'
+       END AS source
+FROM corpus.current_versions AS v,
+     jsonb_array_elements(
+         CASE WHEN jsonb_typeof(v.dataset_metadata -> 'documents') = 'array'
+              THEN v.dataset_metadata -> 'documents' ELSE '[]'::jsonb END
+     ) AS doc;
+
+CREATE OR REPLACE VIEW evaluation.case_attributes AS
+SELECT d.doc_id, a.library_id, f.group_label, f.label, f.field, f.value, d.dataset
+FROM evaluation.document_library_ids AS d
+JOIN evaluation.library_attributes AS a
+    ON a.library_id = d.library_id
+   AND a.snapshot_id = (SELECT snapshot_id FROM evaluation.library_latest)
+JOIN evaluation.library_filters AS f
+    ON f.snapshot_id = a.snapshot_id AND f.field = a.field AND f.value = a.value;
+
+CREATE OR REPLACE VIEW evaluation.case_metadata AS
+SELECT d.doc_id,
+       d.library_id,
+       r.full_name,
+       r.title,
+       r.csp,
+       r.csp_region,
+       r.uploaded,
+       r.date_of_death,
+       COALESCE(
+           (SELECT jsonb_object_agg(g.group_label, g.labels)
+            FROM (SELECT c.group_label, jsonb_agg(c.label ORDER BY c.label) AS labels
+                  FROM evaluation.case_attributes AS c
+                  WHERE c.doc_id = d.doc_id AND c.dataset = d.dataset
+                  GROUP BY c.group_label) AS g),
+           '{}'::jsonb
+       ) AS details,
+       d.dataset,
+       d.source
+FROM evaluation.document_library_ids AS d
+LEFT JOIN evaluation.library_reviews AS r
+    ON r.library_id = d.library_id
+   AND r.snapshot_id = (SELECT snapshot_id FROM evaluation.library_latest);
+""",
+    ),
 ]
