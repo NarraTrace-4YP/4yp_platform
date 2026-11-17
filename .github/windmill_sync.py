@@ -19,6 +19,9 @@ stays the record of what runs because:
 
 Run from the repo root, with WINDMILL_URL and WINDMILL_TOKEN set (as for the deploy), and
 the wmill and git commands. `sync` also needs the gh command with GH_TOKEN.
+
+The command-line entry point deliberately runs only inside GitHub Actions. Local Windmill
+instances are isolated and must never create or rewrite the synchronization branches.
 """
 
 from __future__ import annotations
@@ -65,6 +68,14 @@ def say(message: str) -> None:
 
 class SyncError(RuntimeError):
     """Something needs a person: the message says what."""
+
+
+def require_github_actions() -> None:
+    """Keep branch/PR synchronization out of local development environments."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        raise SyncError(
+            "Refusing to synchronize outside GitHub Actions. Local Windmill edits stay local."
+        )
 
 
 # ----------------------------------------------------------------- comparing file trees
@@ -437,6 +448,7 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 2
     try:
+        require_github_actions()
         with tempfile.TemporaryDirectory() as tmp:
             return commands[argv[1]](Path.cwd(), Path(tmp))
     except SyncError as error:

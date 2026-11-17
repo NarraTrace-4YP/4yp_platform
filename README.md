@@ -4,7 +4,9 @@ This repo holds everything the CS407 DHR project runs on: the server setup, the 
 Python environment, and the pipeline code. If it isn't in this repo, it isn't on the
 server.
 
-Admins setting up the server for the first time: see [docs/server-setup.md](docs/server-setup.md).
+To run the complete stack on a development computer, see
+[docs/local-setup.md](docs/local-setup.md). Admins setting up the server for the first
+time should see [docs/server-setup.md](docs/server-setup.md).
 
 ## The tools
 
@@ -113,6 +115,10 @@ these rules, so a pull request that breaks one fails its checks:
   one that's already been merged; add a new one instead.
 
 ## Working on your laptop
+
+The steps below install the Python environment for tests and pipeline development. To run
+the landing page, Windmill, MLflow and both databases locally as well, follow the
+[full local deployment guide](docs/local-setup.md).
 
 1. Install uv: https://docs.astral.sh/uv/getting-started/installation/
 2. Clone the repo and install the packages:
