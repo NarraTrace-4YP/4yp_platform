@@ -27,6 +27,7 @@
 }
 
 :root {
+  --paper: #ffffff;
   --text: #201e1d;
   --muted: #605d5d;
   --line: #d7d3d3;
@@ -49,7 +50,8 @@
   --elsewhere: #bf8700;
   --none: #d7d3d3;
   --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
-  --gutter: clamp(16px, 4vw, 56px);
+  --gutter: 56px;
+  --wrap: 1240px;
   font-family: 'Archivo', system-ui, sans-serif;
   color: var(--text);
 }
@@ -60,7 +62,7 @@
 
 body {
   margin: 0;
-  background: #fff;
+  background: var(--soft);
 }
 
 a {
@@ -102,40 +104,48 @@ button {
   height: 100dvh;
 }
 
+.app-wrap,
+.page {
+  max-width: var(--wrap);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
 .top {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0 24px;
-  padding: 20px var(--gutter) 0;
-  border-bottom: 2px solid var(--text);
-  background: #fff;
-  flex-wrap: wrap;
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.app-heading {
+  padding-block: 24px 16px;
 }
 
 .top h1 {
-  font-size: clamp(22px, 3vw, 32px);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  font-size: clamp(24px, 4vw, 40px);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
   margin: 0;
 }
 
 .top p {
-  margin: 6px 0 14px;
+  max-width: 68ch;
+  margin: 8px 0 0;
   color: var(--muted);
   font-size: 14px;
+  line-height: 1.5;
 }
 
-.top nav {
+.app-nav {
   display: flex;
-  gap: 2px 8px;
+  gap: 0 4px;
   flex-wrap: wrap;
 }
 
 .tab {
   border: 0;
-  background: none;
-  padding: 8px 10px;
+  background: transparent;
+  padding: 10px 12px;
   border-bottom: 2px solid transparent;
   cursor: pointer;
   color: var(--muted);
@@ -159,12 +169,11 @@ button {
   overflow-y: auto;
   min-height: 0;
   background: var(--soft);
+  scrollbar-gutter: stable both-edges;
 }
 
 .page {
-  max-width: 1240px;
-  margin-inline: auto;
-  padding: 24px var(--gutter) 48px;
+  padding-block: 24px 48px;
 }
 
 .page section {
@@ -178,14 +187,15 @@ button {
 }
 
 .page .intro {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-top: 3px solid var(--accent);
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-top: 3px solid var(--text);
   padding: clamp(16px, 3vw, 32px);
 }
 
 .intro p:last-child {
   margin-bottom: 0;
+  max-width: 72ch;
 }
 
 .page h2 {
@@ -204,7 +214,8 @@ blockquote {
   margin: 12px 0;
   padding: 10px 16px;
   border-left: 4px solid var(--accent);
-  background: var(--soft);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
 }
 
 /* ---------------------------------------------------------------- cards */
@@ -220,7 +231,7 @@ blockquote {
   border-top: 2px solid var(--text);
   padding: 16px 20px;
   margin-bottom: 16px;
-  background: #fff;
+  background: var(--paper);
 }
 
 .card-head {
@@ -1265,6 +1276,30 @@ input[type='search'] {
 
 .details {
   background: #fff;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --gutter: 32px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  .app-heading {
+    padding-block: 16px 10px;
+  }
+
+  .tab {
+    padding: 7px 8px;
+  }
+
+  .page {
+    padding-block-start: 16px;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
