@@ -19,5 +19,7 @@ if [[ -n "$waiting" ]]; then
 	exit 1
 fi
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
+# Apply Caddyfile edits even when Compose keeps the existing container.
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 bash server/windmill.sh configure
 bash server/team.sh sync
