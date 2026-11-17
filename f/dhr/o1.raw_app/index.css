@@ -107,26 +107,28 @@ button {
   align-items: flex-end;
   justify-content: space-between;
   gap: 0 24px;
-  padding: 16px var(--gutter) 0;
+  padding: 20px var(--gutter) 0;
   border-bottom: 2px solid var(--text);
-  background: var(--soft);
+  background: #fff;
   flex-wrap: wrap;
 }
 
 .top h1 {
-  font-size: 24px;
+  font-size: clamp(22px, 3vw, 32px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
   margin: 0;
 }
 
 .top p {
-  margin: 2px 0 12px;
+  margin: 6px 0 14px;
   color: var(--muted);
   font-size: 14px;
 }
 
 .top nav {
   display: flex;
-  gap: 0 8px;
+  gap: 2px 8px;
   flex-wrap: wrap;
 }
 
@@ -142,7 +144,8 @@ button {
 }
 
 .tab:hover {
-  color: var(--text);
+  color: var(--accent-deep);
+  background: var(--soft);
 }
 
 .tab.selected {
@@ -155,20 +158,39 @@ button {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  background: var(--soft);
 }
 
 .page {
   max-width: 1240px;
   margin-inline: auto;
-  padding: 8px var(--gutter) 48px;
+  padding: 24px var(--gutter) 48px;
 }
 
 .page section {
   margin-top: 24px;
+  padding-top: 16px;
+  border-top: 2px solid var(--text);
+}
+
+.page > :first-child {
+  margin-top: 0;
+}
+
+.page .intro {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  padding: clamp(16px, 3vw, 32px);
+}
+
+.intro p:last-child {
+  margin-bottom: 0;
 }
 
 .page h2 {
-  font-size: 24px;
+  font-size: clamp(21px, 2.5vw, 28px);
+  letter-spacing: -0.015em;
   margin: 0 0 8px;
 }
 
@@ -190,11 +212,12 @@ blockquote {
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .card {
   border: 1px solid var(--line);
+  border-top: 2px solid var(--text);
   padding: 16px 20px;
   margin-bottom: 16px;
   background: #fff;
@@ -390,6 +413,7 @@ button.primary:disabled {
   flex: 1;
   min-width: 0;
   border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
   background: #fff;
   padding: 10px 16px;
 }
@@ -417,7 +441,8 @@ button.primary:disabled {
 }
 
 .step-now {
-  background: var(--good-soft);
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
   padding: 6px 10px;
   margin: 8px 0;
   font-size: 14px;
@@ -504,7 +529,8 @@ table {
 
 .tables th {
   color: var(--muted);
-  font-weight: 500;
+  font: 700 12px/1.4 var(--mono);
+  text-transform: uppercase;
 }
 
 /* ---------------------------------------------------------------- run */
@@ -896,6 +922,7 @@ input[type='search'] {
   border-right: 1px solid var(--line);
   padding: 16px;
   overflow-y: auto;
+  background: #fff;
 }
 
 .small {
@@ -1032,6 +1059,7 @@ input[type='search'] {
   border-right: 1px solid var(--line);
   padding: 16px 12px;
   overflow-y: auto;
+  background: #fff;
 }
 
 .outline ul {
@@ -1233,6 +1261,65 @@ input[type='search'] {
 .details details summary {
   cursor: pointer;
   font-weight: 600;
+}
+
+.details {
+  background: #fff;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tab,
+  .review,
+  .outline-item,
+  .facet-value,
+  .datasets button,
+  button.primary {
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  }
+
+  .content > .page,
+  .content > .run-view,
+  .content > .cases,
+  .content > .explorer,
+  .content > .three-columns,
+  .content > .two-columns {
+    animation: view-in 200ms ease-out;
+  }
+
+  .pipeline .step-body {
+    animation: view-in 300ms ease-out both;
+  }
+
+  .pipeline .step:nth-child(2) .step-body { animation-delay: 45ms; }
+  .pipeline .step:nth-child(3) .step-body { animation-delay: 90ms; }
+  .pipeline .step:nth-child(4) .step-body { animation-delay: 135ms; }
+  .pipeline .step:nth-child(5) .step-body { animation-delay: 180ms; }
+
+  .bar > span {
+    transform-origin: left;
+    animation: bar-in 380ms ease-out both;
+  }
+}
+
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes bar-in {
+  from { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress div {
+    transition: none;
+  }
+
+  .progress div.unknown {
+    animation: none;
+  }
 }
 
 @media (max-width: 960px) {

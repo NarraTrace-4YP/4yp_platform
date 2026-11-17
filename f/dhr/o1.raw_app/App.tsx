@@ -59,9 +59,14 @@ export default function App() {
           <h1>O1: Corpus preparation</h1>
           <p>Turning the DHR corpus into a hierarchical, standardised database linked to the Home Office case metadata</p>
         </div>
-        <nav>
+        <nav aria-label="O1 views">
           {TABS.map((t) => (
-            <button key={t.id} className={t.id === tab ? 'tab selected' : 'tab'} onClick={() => goTo(t.id)}>
+            <button
+              key={t.id}
+              className={t.id === tab ? 'tab selected' : 'tab'}
+              aria-pressed={t.id === tab}
+              onClick={() => goTo(t.id)}
+            >
               {t.label}
             </button>
           ))}
@@ -74,7 +79,7 @@ export default function App() {
         {tab === 'overview' && <Overview status={status} goTo={goTo} />}
         {tab === 'data' && <DataTab status={status} error={statusError} goTo={goTo} />}
         {/* Kept mounted (just hidden) so runs keep being followed while you look at other tabs. */}
-        <div style={{ display: tab === 'run' ? 'block' : 'none' }}>
+        <div className="run-view" hidden={tab !== 'run'}>
           <RunTab status={status} refresh={refresh} />
         </div>
         {tab === 'cases' && <CasesTab key={version} />}
