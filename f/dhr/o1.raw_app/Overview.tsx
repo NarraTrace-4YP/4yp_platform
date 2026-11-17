@@ -10,6 +10,7 @@ type Step = {
   built: boolean
   now?: (status: Status) => React.ReactNode
   run?: boolean
+  see?: { tab: string; label: string } // the tab that shows what the step produced
 }
 
 const STEPS: Step[] = [
@@ -61,6 +62,7 @@ const STEPS: Step[] = [
       'can be fetched with everything nested inside it.',
     built: true,
     run: true,
+    see: { tab: 'sections', label: 'See the sections' },
     now: (status) => (
       <ul className="facts-list">
         {status.datasets.map((d) => (
@@ -89,6 +91,7 @@ const STEPS: Step[] = [
       'September 2026 guidance’s templates (DARDRs) can be matched too, for comparison.',
     built: true,
     run: true,
+    see: { tab: 'candidates', label: 'See the candidates' },
     now: (status) => (
       <ul className="facts-list">
         {status.templates.map((t) => (
@@ -172,6 +175,11 @@ export default function Overview({ status, goTo }: Props) {
                 </div>
                 <p>{step.what}</p>
                 {step.built && status && step.now && <div className="step-now">{step.now(status)}</div>}
+                {step.see && (
+                  <button className="link-button" onClick={() => goTo(step.see!.tab)}>
+                    {step.see.label} →
+                  </button>
+                )}
                 {step.run && (
                   <button className="link-button" onClick={() => goTo('run')}>
                     Run it →
@@ -216,6 +224,14 @@ export default function Overview({ status, goTo }: Props) {
             <a onClick={() => goTo('attributes')}>Attributes</a>
           </dt>
           <dd>How often each case detail appears in each dataset compared with the whole library: how representative each dataset is.</dd>
+          <dt>
+            <a onClick={() => goTo('sections')}>Sections</a>
+          </dt>
+          <dd>What grouping by section produced: each review’s sections as an outline, and each section’s text with everything nested inside it.</dd>
+          <dt>
+            <a onClick={() => goTo('candidates')}>Template candidates</a>
+          </dt>
+          <dd>The template sections each review section might be, with their heading and text scores, review by review or template section by template section.</dd>
         </dl>
       </section>
 

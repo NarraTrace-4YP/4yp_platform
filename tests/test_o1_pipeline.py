@@ -111,6 +111,8 @@ def test_app_can_follow_every_run_it_starts():
         "f/dhr/o1_run_status",
         "f/dhr/case_viewer_reviews",
         "f/dhr/case_viewer_details",
+        "f/dhr/o1_sections",
+        "f/dhr/o1_candidates",
     }
     assert started == {
         "f/dhr/load_dhrc",
