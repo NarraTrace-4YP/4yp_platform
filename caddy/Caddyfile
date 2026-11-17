@@ -21,10 +21,10 @@
 	header {
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
-		# The pages only load their own CSS, fonts and images: no scripts, nothing from
-		# other sites (tests/test_site.py checks they keep to this).
-		Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		# The O1 page embeds the Windmill app. All other resources are local.
+		Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; frame-src https://windmill.{$DOMAIN}/public/dhr/09f7276fa53f893213d238447a5f345e"
 	}
+	header /assets/fonts/* Access-Control-Allow-Origin "https://windmill.{$DOMAIN}"
 }
 
 windmill.{$DOMAIN} {

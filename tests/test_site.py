@@ -1,8 +1,8 @@
 """Checks for the landing page in site/, which Caddy serves at the domain itself.
 
 - Every link and file a page points to within the site exists, including #sections.
-- The pages keep to what the Caddyfile's Content-Security-Policy allows: their own CSS,
-  fonts and images only. No scripts, no inline styles, nothing loaded from other sites.
+- The pages load local CSS, fonts and images, plus the Windmill iframe on the O1 page.
+  No scripts or inline styles.
   (Links to other sites are fine: following a link isn't loading it.)
 - Caddy is set up to serve site/.
 """
@@ -16,6 +16,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 PAGES = sorted(SITE.rglob("*.html"))
+O1_PAGE = SITE / "o1" / "index.html"
+O1_EMBED = "https://windmill.rshields.xyz/public/dhr/09f7276fa53f893213d238447a5f345e"
 
 
 class Page(HTMLParser):
@@ -27,6 +29,7 @@ class Page(HTMLParser):
         self.ids: set[str] = set()
         self.links: list[str] = []  # <a href>: may point anywhere
         self.loads: list[str] = []  # files the browser fetches to show the page
+        self.frames: list[str] = []
         self.problems: list[str] = []
         self.has_title = False
         self.feed(path.read_text(encoding="utf-8"))
@@ -37,8 +40,12 @@ class Page(HTMLParser):
             self.ids.add(a["id"])
         if tag == "title":
             self.has_title = True
-        if tag in ("script", "style", "iframe", "object", "embed"):
+        if tag in ("script", "style", "object", "embed"):
             self.problems.append(f"<{tag}> is not allowed")
+        if tag == "iframe":
+            self.frames.append(a.get("src", ""))
+            if not a.get("title", "").strip():
+                self.problems.append("<iframe> needs a title")
         for name in a:
             if name == "style" or name.startswith("on"):
                 self.problems.append(f"<{tag} {name}=...> is not allowed")
@@ -74,6 +81,7 @@ def is_local(ref: str) -> bool:
 def test_the_pages_exist():
     for name in ("index.html", "about/index.html", "404.html", "robots.txt", "favicon.ico"):
         assert (SITE / name).is_file(), f"site/{name} is missing"
+    assert O1_PAGE.is_file()
 
 
 @pytest.mark.parametrize("path", PAGES, ids=lambda p: str(p.relative_to(SITE)))
@@ -88,6 +96,7 @@ def test_page_loads_only_its_own_files(path):
     page = Page(path)
     outside = [ref for ref in page.loads if not is_local(ref)]
     assert not outside, f"loads from other sites, which the Caddyfile blocks: {outside}"
+    assert page.frames == ([O1_EMBED] if path == O1_PAGE else [])
 
 
 @pytest.mark.parametrize("path", PAGES, ids=lambda p: str(p.relative_to(SITE)))
@@ -120,3 +129,4 @@ def test_caddy_serves_the_site():
     assert "./site:/srv/site:ro" in compose
     assert "{$DOMAIN} {" in caddyfile
     assert "root * /srv/site" in caddyfile
+    assert f"frame-src https://windmill.{{$DOMAIN}}{urlsplit(O1_EMBED).path}" in caddyfile
