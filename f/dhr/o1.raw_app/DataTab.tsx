@@ -271,6 +271,30 @@ export default function DataTab({ status, error, goTo }: Props) {
             </tr>
             <tr>
               <td>
+                <code>corpus.template_sections</code>
+              </td>
+              <td>
+                Each guidance’s templates (five from the 2016 DHR guidance, four from the 2026 DARDR guidance),
+                section by section: heading, what the guidance says goes there, and page.{' '}
+                <code>corpus.templates</code> lists the templates, each with the GOV.UK file it was read from and that
+                file’s checksum (the 2026 DARDR template comes from its own Word file, the rest from the guidance PDFs).
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
+                <code>corpus.current_template_candidates</code>
+              </td>
+              <td>
+                For each section, the template sections it might be, with how alike the headings are (
+                <code>heading_score</code>, 0 to 100) and the text is (<code>text_score</code>, -1 to 1), and the
+                rank of each. <code>guidance</code> says whose templates; pick one with{' '}
+                <code>WHERE guidance = 'dhr-2016'</code>.
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
                 <code>evaluation.case_metadata</code>
               </td>
               <td>One row per review per dataset: what the library lists, every case detail as JSON, and its source.</td>

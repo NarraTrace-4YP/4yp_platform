@@ -8,9 +8,11 @@
 """Where O1 (corpus preparation) stands, read from the database.
 
 For each dataset: the version loaded, how many reviews it has, where they were published,
-how many the Home Office DHR Library has case details for, and whether that version has
-been grouped by section. Then the newest case metadata snapshot. The O1 app shows this, and it is the last step of the O1 pipeline
-(f/dhr/o1_pipeline), so every pipeline run ends with a summary of what it produced.
+how many the Home Office DHR Library has case details for, whether that version has been
+grouped by section, and its sections' template candidates against each guidance. Then the
+guidance documents whose templates are stored, and the newest case metadata snapshot. The
+O1 app shows this, and it is the last step of the O1 pipeline (f/dhr/o1_pipeline), so
+every pipeline run ends with a summary of what it produced.
 """
 
 import os
@@ -88,6 +90,42 @@ SECTIONS_COLUMNS = (
     "n_across_pages",
 )
 
+# The template candidates of each dataset's newest grouped version, one row per guidance
+# they were found against (none if not found yet).
+CANDIDATES_SQL = """
+SELECT v.dataset, c.guidance, c.matched_at, c.git_commit, c.model, c.k, c.n_sections,
+       c.n_candidates,
+       (SELECT count(DISTINCT (t.doc_id, t.section_id)) FROM corpus.template_candidates AS t
+        WHERE t.revision = c.revision AND t.heading_rank <= c.k
+          AND t.heading_score >= c.min_heading_score
+          AND t.template IN (SELECT template FROM corpus.templates WHERE guidance = c.guidance))
+FROM corpus.current_versions AS v
+JOIN corpus.candidate_versions AS c ON c.revision = v.revision
+ORDER BY v.dataset, c.guidance
+"""
+CANDIDATES_COLUMNS = (
+    "guidance",
+    "matched_at",
+    "git_commit",
+    "model",
+    "k",
+    "n_sections",
+    "n_candidates",
+    "n_with_heading_match",
+)
+
+# Each guidance document whose templates are stored (each is stored by the first candidates
+# run against it).
+TEMPLATES_SQL = """
+SELECT g.guidance, g.title, g.source_url, g.loaded_at, count(DISTINCT t.template), count(ts.*)
+FROM corpus.guidance_documents AS g
+JOIN corpus.templates AS t ON t.guidance = g.guidance
+JOIN corpus.template_sections AS ts ON ts.template = t.template
+GROUP BY g.guidance, g.title, g.source_url, g.loaded_at
+ORDER BY g.guidance DESC
+"""
+TEMPLATES_COLUMNS = ("guidance", "title", "source_url", "loaded_at", "n_templates", "n_sections")
+
 SNAPSHOT_SQL = """
 SELECT s.snapshot_id, s.collected_at, s.git_commit, s.n_reviews, s.n_filters,
        (SELECT count(*) FROM evaluation.library_attributes AS a
@@ -116,7 +154,12 @@ def as_dict(columns: tuple[str, ...], row) -> dict:
 
 
 def describe(
-    versions: dict, coverage: dict, snapshot: dict | None, sections: dict | None = None
+    versions: dict,
+    coverage: dict,
+    snapshot: dict | None,
+    sections: dict | None = None,
+    candidates: dict | None = None,
+    templates: list | None = None,
 ) -> dict:
     """Puts the query results together, one entry per dataset in DATASETS order."""
     datasets = []
@@ -131,11 +174,13 @@ def describe(
                 "version": versions.get(name),
                 "coverage": coverage.get(name, dict.fromkeys(COVERAGE_COLUMNS, 0)),
                 "sections": (sections or {}).get(name),
+                "candidates": (candidates or {}).get(name, []),
             }
         )
     return {
         "datasets": datasets,
         "case_metadata": snapshot,
+        "templates": templates or [],
         "code_version": GIT_COMMIT,
         "windmill_url": os.environ.get("WM_BASE_URL"),
         "workspace": os.environ.get("WM_WORKSPACE"),
@@ -152,6 +197,10 @@ def main():
         sections = {
             row[0]: as_dict(SECTIONS_COLUMNS, row[1:]) for row in conn.execute(SECTIONS_SQL)
         }
+        candidates: dict[str, list] = {}
+        for row in conn.execute(CANDIDATES_SQL):
+            candidates.setdefault(row[0], []).append(as_dict(CANDIDATES_COLUMNS, row[1:]))
+        templates = [as_dict(TEMPLATES_COLUMNS, row) for row in conn.execute(TEMPLATES_SQL)]
         row = conn.execute(SNAPSHOT_SQL).fetchone()
     snapshot = as_dict(SNAPSHOT_COLUMNS, row) if row else None
-    return describe(versions, coverage, snapshot, sections)
+    return describe(versions, coverage, snapshot, sections, candidates, templates)

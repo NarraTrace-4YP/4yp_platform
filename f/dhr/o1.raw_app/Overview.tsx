@@ -1,5 +1,5 @@
 import React from 'react'
-import { HEADINGS, Status, number, shortId, when } from './shared'
+import { GUIDANCES, HEADINGS, Status, number, shortId, when } from './shared'
 
 type Props = { status: Status | null; goTo: (tab: string) => void }
 
@@ -82,9 +82,40 @@ const STEPS: Step[] = [
   {
     title: 'Find candidate template sections',
     what:
-      'For each section, find the sections of the 2016 overview-report template (Appendix D) it ' +
-      'might be, by matching headings (exactly or fuzzily) and by meaning (embeddings).',
-    built: false,
+      'For each section, find the template sections it might be, by matching headings (exactly or ' +
+      'fuzzily) and by meaning (embeddings). The templates are read from the 2016 statutory guidance: ' +
+      'the overview report (Appendix D in the specification), and also the executive summary, the ' +
+      'agencies’ own reports (IMRs) and the action plan, since reviews follow different ones. The ' +
+      'September 2026 guidance’s templates (DARDRs) can be matched too, for comparison.',
+    built: true,
+    run: true,
+    now: (status) => (
+      <ul className="facts-list">
+        {status.templates.map((t) => (
+          <li key={t.guidance}>
+            <strong>{GUIDANCES[t.guidance] ?? t.guidance}:</strong> {number(t.n_templates)} templates,{' '}
+            {number(t.n_sections)} sections, read {when(t.loaded_at)}
+          </li>
+        ))}
+        {status.datasets.map((d) => (
+          <li key={d.name}>
+            <strong>{d.name}:</strong>{' '}
+            {d.candidates.length
+              ? d.candidates
+                  .map(
+                    (c) =>
+                      `${number(c.n_candidates)} candidates for ${number(c.n_sections)} sections against the ` +
+                      `${GUIDANCES[c.guidance] ?? c.guidance} (${number(c.n_with_heading_match)} with a heading ` +
+                      `match), found ${when(c.matched_at)}`,
+                  )
+                  .join('; ')
+              : d.sections
+                ? 'grouped, no candidates yet'
+                : 'not grouped yet'}
+          </li>
+        ))}
+      </ul>
+    ),
   },
   {
     title: 'Choose the template section',
@@ -125,7 +156,7 @@ export default function Overview({ status, goTo }: Props) {
       <section>
         <h2>The O1 pipeline, step by step</h2>
         <p className="muted">
-          These are the steps in the specification’s Stage 1 diagram (Appendix B). The first three are
+          These are the steps in the specification’s Stage 1 diagram (Appendix B). The first four are
           built and can be run from the <a onClick={() => goTo('run')}>Run</a> tab; the rest come next.
         </p>
         <ol className="pipeline">

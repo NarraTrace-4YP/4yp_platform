@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { backendAsync } from './wmill'
-import { DATASETS, Status, minutes, number, when, windmillLink } from './shared'
+import { DATASETS, GUIDANCES, Status, minutes, number, when, windmillLink } from './shared'
 import { Run, useRun } from './runs'
 
 type Props = { status: Status | null; refresh: () => void }
@@ -25,6 +25,8 @@ const FLOW_STEPS: Record<string, string> = {
   collect_case_metadata: 'Collect case metadata',
   group_sections_100: 'Group DHRC-100 by section',
   group_sections_raw: 'Group DHRC-RAW by section',
+  template_candidates_100: 'Find DHRC-100’s template candidates',
+  template_candidates_raw: 'Find DHRC-RAW’s template candidates',
   status: 'Report where O1 stands',
 }
 
@@ -289,8 +291,11 @@ function RunAll({ status, refresh }: Props) {
     collect_case_metadata: true,
     group_sections_100: true,
     group_sections_raw: true,
+    template_candidates_100: true,
+    template_candidates_raw: true,
   })
   const [revisions, setRevisions] = useState({ dhrc_100_revision: 'main', dhrc_raw_revision: 'main' })
+  const [guidance, setGuidance] = useState('dhr-2016')
   const nothing = !Object.values(steps).some(Boolean)
   return (
     <Card title="Run all of O1" path="o1_pipeline" kind="flow">
@@ -341,6 +346,32 @@ function RunAll({ status, refresh }: Props) {
           />{' '}
           Group DHRC-RAW by section
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={steps.template_candidates_100}
+            onChange={(e) => setSteps({ ...steps, template_candidates_100: e.target.checked })}
+          />{' '}
+          Find DHRC-100’s template candidates (about 5 minutes)
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={steps.template_candidates_raw}
+            onChange={(e) => setSteps({ ...steps, template_candidates_raw: e.target.checked })}
+          />{' '}
+          Find DHRC-RAW’s template candidates (about 40 minutes)
+        </label>
+        <label>
+          Templates from the{' '}
+          <select value={guidance} onChange={(e) => setGuidance(e.target.value)}>
+            {Object.entries(GUIDANCES).map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <details>
           <summary>Dataset versions</summary>
           <label>
@@ -364,9 +395,11 @@ function RunAll({ status, refresh }: Props) {
         run={run}
         label={nothing ? 'Report where O1 stands' : 'Run all of O1'}
         confirm={
-          steps.collect_case_metadata
-            ? 'This includes the case metadata collection, so it takes about half an hour. Start?'
-            : undefined
+          steps.template_candidates_raw
+            ? 'This includes finding DHRC-RAW’s template candidates, so it takes about 40 minutes. Start?'
+            : steps.collect_case_metadata
+              ? 'This includes the case metadata collection, so it takes about half an hour. Start?'
+              : undefined
         }
         onStart={() =>
           run.start(() =>
@@ -374,6 +407,7 @@ function RunAll({ status, refresh }: Props) {
               ...steps,
               dhrc_100_revision: revisions.dhrc_100_revision.trim() || 'main',
               dhrc_raw_revision: revisions.dhrc_raw_revision.trim() || 'main',
+              template_guidance: guidance,
             }),
           )
         }
@@ -560,6 +594,107 @@ function GroupSections({ status, refresh }: Props) {
   )
 }
 
+function CandidatesResult({ result }: { result: any }) {
+  if (!result) return null
+  const perSection = (result.n_candidates / Math.max(1, result.n_sections)).toFixed(1)
+  return (
+    <div>
+      <p>
+        Found {number(result.n_candidates)} candidates for {number(result.n_sections)} sections of{' '}
+        {number(result.n_reviews)} {result.dataset} reviews ({perSection} per section), against the{' '}
+        {GUIDANCES[result.guidance] ?? result.guidance}, in {minutes(result.seconds * 1000)}.
+      </p>
+      <p className="muted">
+        {number(result.n_sections_with_heading_candidate)} sections have a template heading at least{' '}
+        {result.min_heading_score}/100 alike their own. {number(result.n_named_sections)} are headed exactly as a
+        template section; for {number(result.n_named_text_top1)} of those, that section is also their best match by
+        text, and for {number(result.n_named_text_top3)} one of their best three.
+      </p>
+    </div>
+  )
+}
+
+function FindCandidates({ status, refresh }: Props) {
+  const run = useRun('find_template_candidates', refresh)
+  const [dataset, setDataset] = useState(DATASETS[0])
+  const [guidance, setGuidance] = useState('dhr-2016')
+  const current = status?.datasets.find((d) => d.name === dataset)?.candidates.find((c) => c.guidance === guidance)
+  return (
+    <Card title="Find candidate template sections" path="find_template_candidates" kind="script">
+      <p>
+        The 2016 statutory guidance sets out templates for what a review produces: the overview report (Appendix
+        Three), its executive summary (Four), the agencies’ own reports (individual management reviews, One and Two)
+        and an example action plan (Five). Reviews don’t all follow them and word their headings differently, so
+        this gives every section a short list of template sections it might be. The next step has an LLM choose
+        among them. You can also match against the September 2026 guidance (which renamed the reviews DARDRs): its
+        DARDR template, action plan, scoping review and IMR (Annexes A to D). A dataset keeps its candidates against
+        both. In order, it:
+      </p>
+      <ol>
+        <li>
+          downloads the guidance you choose from GOV.UK (for 2026: the guidance PDF, and the DARDR template’s own
+          Word file) and reads its templates (each heading, and what the guidance says goes there), stopping if a
+          file no longer has the headings expected. They’re stored with each file’s checksum, once, and again only
+          if a file changes;
+        </li>
+        <li>takes every section of the newest grouped version of the dataset you choose;</li>
+        <li>
+          compares each section’s heading with every template heading, as words (0 to 100), after dropping
+          numbering (“3.2”, “Two:”), small words and plural endings, so “Lessons Learned” matches “Lessons to be
+          learnt”;
+        </li>
+        <li>
+          compares each section’s text (its heading, the start of its own text and its subsections’ headings) with
+          what the guidance says goes in each template section, by meaning, using a small open embedding model
+          (BAAI’s bge-small) on the server’s CPU;
+        </li>
+        <li>
+          keeps as candidates the 5 best each way (by heading only if at least 60/100 alike), with both scores, in{' '}
+          <code>corpus.template_candidates</code>, replacing any earlier candidates for that version against the same
+          guidance;
+        </li>
+        <li>records the run in MLflow (experiment “template-candidates”).</li>
+      </ol>
+      <p className="muted">
+        Run it again after grouping a dataset by section: regrouping removes the old candidates. It takes about 5
+        minutes for DHRC-100 and about 40 for DHRC-RAW (the model reads every section).
+      </p>
+      {current && (
+        <p className="muted">
+          {dataset}’s candidates against the {GUIDANCES[guidance]} were last found {when(current.matched_at)}:{' '}
+          {number(current.n_candidates)} for {number(current.n_sections)} sections.
+        </p>
+      )}
+      <div className="form-row">
+        <label>
+          Dataset{' '}
+          <select value={dataset} onChange={(e) => setDataset(e.target.value)} disabled={run.active}>
+            {DATASETS.map((d) => (
+              <option key={d}>{d}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Templates from the{' '}
+          <select value={guidance} onChange={(e) => setGuidance(e.target.value)} disabled={run.active}>
+            {Object.entries(GUIDANCES).map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <StartButton
+          run={run}
+          label={`Find ${dataset}’s candidates`}
+          onStart={() => run.start(() => backendAsync.find_template_candidates({ dataset, guidance }))}
+        />
+      </div>
+      <RunPanel run={run} status={status} renderResult={(result) => <CandidatesResult result={result} />} />
+    </Card>
+  )
+}
+
 export default function RunTab({ status, refresh }: Props) {
   return (
     <div className="page">
@@ -575,6 +710,7 @@ export default function RunTab({ status, refresh }: Props) {
       <LoadDataset status={status} refresh={refresh} />
       <CollectMetadata status={status} refresh={refresh} />
       <GroupSections status={status} refresh={refresh} />
+      <FindCandidates status={status} refresh={refresh} />
     </div>
   )
 }

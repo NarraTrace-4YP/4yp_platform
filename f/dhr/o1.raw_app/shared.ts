@@ -31,6 +31,23 @@ export type SectionsStatus = {
   n_skipped: number
   n_across_pages: number
 }
+// The guidance editions whose templates sections can be matched against (f/dhr/templates.py).
+export const GUIDANCES: Record<string, string> = {
+  'dhr-2016': '2016 DHR guidance',
+  'dardr-2026': '2026 DARDR guidance',
+}
+// The template candidates of a dataset's newest grouped version against one guidance
+// (f/dhr/find_template_candidates).
+export type CandidatesStatus = {
+  guidance: string
+  matched_at: string
+  git_commit: string | null
+  model: string
+  k: number
+  n_sections: number
+  n_candidates: number
+  n_with_heading_match: number
+}
 export type DatasetStatus = {
   name: string
   repo_id: string
@@ -38,6 +55,7 @@ export type DatasetStatus = {
   strict: boolean
   headings: Headings
   sections: SectionsStatus | null
+  candidates: CandidatesStatus[]
   version: {
     revision: string
     repo_id: string
@@ -60,6 +78,15 @@ export type Status = {
     n_details: number
     n_reviews_with_details: number
   } | null
+  // Each guidance whose templates are stored (the first candidates run against it stores them).
+  templates: {
+    guidance: string
+    title: string
+    source_url: string
+    loaded_at: string
+    n_templates: number
+    n_sections: number
+  }[]
   code_version: string
   windmill_url: string | null
   workspace: string | null
