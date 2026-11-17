@@ -6,6 +6,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets windmill-to-github.yml run the checks on its pull request: GitHub doesn't start
+  # workflows for branches a workflow pushed.
+  workflow_dispatch:
 
 jobs:
   python:
@@ -29,6 +32,14 @@ jobs:
       # The same version as the server (compose.yaml), for the same parser Windmill uses.
       - run: npm install --no-save --no-audit --no-fund windmill-cli@1.875.0
       - run: node .github/check_windmill_scripts.mjs
+      # Flows (f/**/*.flow/flow.yaml) against Windmill's flow schema.
+      - run: npx --no-install wmill lint f
+      # Each app: its structure, and that its frontend builds.
+      - name: Check the apps
+        run: |
+          for app in f/*/*.raw_app; do
+            npx --no-install wmill app lint "$app"
+          done
 
   server-config:
     name: Server config is valid

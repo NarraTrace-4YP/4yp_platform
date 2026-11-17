@@ -1,0 +1,39 @@
+# Every 15 minutes, brings edits made in Windmill's web editor (to f/dhr) to GitHub as a
+# pull request called "Changes made in Windmill", and runs the checks on it. See
+# .github/windmill_sync.py for how edits are found.
+#
+# Needs the same WINDMILL_URL variable and WINDMILL_TOKEN secret as the deploy, and
+# "Allow GitHub Actions to create and approve pull requests" turned on (see
+# docs/server-setup.md). To check for edits now: Actions > windmill to github > Run workflow.
+name: windmill to github
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: windmill-to-github
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the windmill-changes (and first time, windmill-snapshot) branch
+  pull-requests: write # open and update the pull request
+  actions: write # start the checks on it, and see whether a deploy is running
+
+jobs:
+  sync:
+    name: Bring Windmill edits to GitHub
+    runs-on: ubuntu-24.04
+    env:
+      WINDMILL_URL: ${{ vars.WINDMILL_URL }}
+      WINDMILL_TOKEN: ${{ secrets.WINDMILL_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # Keep this version the same as the server's (compose.yaml).
+      - run: npm install --global --no-audit --no-fund windmill-cli@1.875.0
+      - run: python3 .github/windmill_sync.py sync

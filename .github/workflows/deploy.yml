@@ -4,6 +4,10 @@
 #   - secret   WINDMILL_TOKEN: the deploy token (WINDMILL_DEPLOY_TOKEN in the server's .env)
 #   - variable WINDMILL_URL:   e.g. https://windmill.example.com/
 # To deploy again by hand: Actions > deploy > Run workflow.
+#
+# People can also edit f/dhr in Windmill's web editor; those edits come back to GitHub as a
+# pull request (windmill-to-github.yml). So this first checks Windmill has no edits it
+# would overwrite, and afterwards saves what Windmill holds (.github/windmill_sync.py).
 name: deploy
 
 on:
@@ -13,12 +17,21 @@ on:
       - "f/**"
       - "wmill.yaml"
       - ".github/workflows/deploy.yml"
+      - ".github/windmill_sync.py"
   workflow_dispatch:
+    inputs:
+      overwrite_windmill_edits:
+        description: "Overwrite edits made in Windmill that aren't on GitHub yet"
+        type: boolean
+        default: false
 
 # One deploy at a time, in order.
 concurrency:
   group: deploy
   cancel-in-progress: false
+
+permissions:
+  contents: write # to save what Windmill holds on the windmill-snapshot branch
 
 jobs:
   windmill:
@@ -43,6 +56,14 @@ jobs:
       # Keep this version the same as the server's (compose.yaml).
       - run: npm install --global --no-audit --no-fund windmill-cli@1.875.0
 
+      # Stops if someone edited f/dhr in Windmill and this commit doesn't have those edits
+      # yet: deploying would overwrite them. Merge the "Changes made in Windmill" pull
+      # request first (the message says how).
+      - name: Check Windmill has no edits this would overwrite
+        env:
+          OVERWRITE_WINDMILL_EDITS: ${{ inputs.overwrite_windmill_edits }}
+        run: python3 .github/windmill_sync.py guard
+
       - name: Record which commit is being deployed
         run: sed -i "s/^GIT_COMMIT = .*/GIT_COMMIT = \"$GITHUB_SHA\"/" f/dhr/version.py
 
@@ -58,3 +79,7 @@ jobs:
           wmill sync push --yes \
             --workspace dhr --base-url "$WINDMILL_URL" --token "$WINDMILL_TOKEN" \
             --message "GitHub ${GITHUB_SHA::7}: ${COMMIT_MESSAGE%%$'\n'*}"
+
+      # So that later edits made in Windmill can be told apart from this deploy.
+      - name: Remember what Windmill holds now
+        run: python3 .github/windmill_sync.py snapshot

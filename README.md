@@ -46,28 +46,50 @@ Admins setting up the server for the first time: see [docs/server-setup.md](docs
 
 - **The team's pipelines** are in the folder `f/dhr`. Open one (for example
   `f/dhr/load_dhrc`), fill in the form, and click **Run**. The log appears as it runs,
-  and every past run is kept under **Runs**. Everyone can run these, but no one can edit
-  them in Windmill: they come from GitHub (see below), so GitHub always has the real
-  version.
-- **The case viewer** (`f/dhr/case_viewer`, under **Apps**) shows every case detail the
-  DHR Library holds for each of our reviews, with a search for reviews and for details.
-  It's a small React app in `f/dhr/case_viewer.raw_app`, deployed like everything else.
+  and every past run is kept under **Runs**. Everyone can run them, and edit them either
+  on GitHub or in Windmill's web editor (see "How work reaches the server").
+- **The O1 app** (`f/dhr/o1`, under **Apps**) is the place to start. It explains O1 and
+  where it stands, shows the datasets and where their reviews came from, runs each
+  pipeline (with its progress and log as it runs), and has the case viewer (every case
+  detail the DHR Library holds for each review) and attribute counts (how each dataset
+  compares with the whole library). It's a small React app in `f/dhr/o1.raw_app`,
+  deployed like everything else; its backend is the `o1_*` and `case_viewer_*` scripts.
+- **The O1 pipeline** (`f/dhr/o1_pipeline`, a Windmill flow) runs every built O1 step in
+  order: load DHRC-100, load DHRC-RAW, collect the case metadata, then report where O1
+  stands. Each step can be switched off. New O1 steps get added to it as they're built.
 - **Your own space** is the folder `u/<your-username>`. Write and run anything there in
   the web editor (**+ Script**, choose Python). Your scripts can use the team's code:
   `from f.dhr.db import connect` gives you the project database.
 - **Making something a team pipeline:** copy it into this repo as `f/dhr/<name>.py`, check
-  it follows the rules below, and open a pull request.
+  it follows the rules below, and open a pull request. If it's an O1 step, also add it to
+  `f/dhr/o1_pipeline.flow/flow.yaml` and explain it in the O1 app (`Overview.tsx` and
+  `RunTab.tsx`); the tests check the flow and the app match the scripts.
 
 ## How work reaches the server
 
 1. Make a branch and do your work.
-2. Open a pull request. The checks run: tests and lint, "can Windmill read the scripts",
-   and "is the server config valid".
+2. Open a pull request. The checks run: tests and lint, "can Windmill read the scripts"
+   (and the flows and apps), and "is the server config valid".
 3. Someone else reviews it. Once it's approved and the checks pass, merge it.
 4. Merging starts the **deploy** (GitHub **Actions** tab). Within a couple of minutes it
    pushes `f/dhr` to Windmill. Each script's history in Windmill names the commit it came
    from, and the pipelines record that commit next to everything they store, so any
    result can be traced back to the code that produced it.
+
+**Editing in Windmill instead.** You can also change anything in `f/dhr` in Windmill's web
+editor. It runs straight away. Within about 15 minutes a GitHub workflow (**windmill to
+github**) notices and opens a pull request called **Changes made in Windmill**, with the
+checks run on it; review and merge it like any other. (To send edits sooner: **Actions** >
+**windmill to github** > **Run workflow**.) A few things to know:
+
+- Until that pull request is merged, deploys stop rather than overwrite the edits, and say
+  why. Merging it deploys everything on main, including whatever was waiting.
+- Don't push to the `windmill-changes` branch: it's rebuilt from Windmill every 15 minutes.
+  To change something in it, edit it in Windmill again.
+- If the same file was also changed on GitHub since the last deploy, the pull request says
+  so: check the GitHub change hasn't been undone.
+- Leave the `windmill-snapshot` branch alone: it records what Windmill held after the last
+  deploy, which is how edits are spotted (`.github/windmill_sync.py`).
 
 ## Writing a pipeline script
 
@@ -143,23 +165,32 @@ export MLFLOW_TRACKING_PASSWORD=<your password>
 - `server/`, `postgres/`, `mlflow/`, `caddy/`, `compose.yaml`: the server setup. Only
   admins should need to touch these.
 
-Never commit data or passwords. DHRC-100 comes from Hugging Face, and the pipeline loads it
-into the database.
+Never commit data or passwords. The datasets come from Hugging Face, and the pipeline loads
+them into the database.
 
 ## The data
 
-- **Loading DHRC-100:** the `f/dhr/load_dhrc` script downloads the dataset from Hugging
-  Face, checks every file against the dataset's checksums, and stores each review
-  untouched in `corpus.documents`, recording which version of the dataset it came from.
-- **Reading it:** `corpus.current_documents` always shows the latest version loaded. The
-  review's original JSON is in the `raw` column.
+- **Two datasets, kept apart:** DHRC-100 is the 100 human-validated reviews. DHRC-RAW is
+  all 702 reviews gathered (including raw versions of the same 100, under the same names),
+  as automated output nobody has checked by hand. They're listed in `f/dhr/datasets.py`.
+- **Loading one:** the `f/dhr/load_dhrc` script (choose the dataset in its form) downloads
+  it from Hugging Face, checks every file against the dataset's checksums, and stores each
+  review untouched in `corpus.documents`, labelled with its dataset and the version it
+  came from. In DHRC-RAW a review that doesn't read as a document is skipped and listed
+  in the log; in DHRC-100 it stops the load.
+- **Reading it:** `corpus.current_documents` shows the latest version of each dataset,
+  with a `dataset` column: add `WHERE dataset = 'DHRC-100'` (or `'DHRC-RAW'`) to pick one.
+  The review's original JSON is in the `raw` column.
 - **Case metadata:** the `f/dhr/collect_case_metadata` script asks the Home Office's
   [DHR Library](https://homicide-review.homeoffice.gov.uk/) which reviews match each of its
   search filters (victim's age, method of killing, relationship, ...), since the library
   has no download. It stores the answers in the `evaluation` schema, where the wiki agent
-  can't see them. `evaluation.case_metadata` has one row per review of ours, with every
-  detail as JSON; `evaluation.case_attributes` has one row per detail. A missing detail
-  means "not returned", which can be "no" or "not recorded". The library is
+  can't see them. It collects the whole library, so one run covers both datasets.
+  `evaluation.case_metadata` has one row per review per dataset, with every detail as
+  JSON; `evaluation.case_attributes` has one row per detail. Both have a `dataset` column.
+  A missing detail means "not returned", which can be "no" or "not recorded". Reviews
+  published elsewhere have no details: the `source` column says where each review came
+  from (`Home Office website`, `HALT` or `Elsewhere`). The library is
   [Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
   data, checked by people, but it warns that it may contain mistakes.
 

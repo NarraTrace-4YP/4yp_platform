@@ -60,7 +60,7 @@ bash server/setup.sh
 
 It asks for your domain, the GitHub repo (it suggests the one you cloned), an email
 address that Let's Encrypt uses only to warn about expiring certificates, and a Hugging
-Face token that can read DHRC-100 (press Enter to add it later). They're saved in
+Face token that can read the DHRC datasets (press Enter to add it later). They're saved in
 `/opt/dhr/.env`, so running the script again doesn't ask again. Then it:
 
 1. generates the passwords,
@@ -96,6 +96,13 @@ Secrets and variables > Actions**, and add:
 The token is also kept in `/opt/dhr/.env` as `WINDMILL_DEPLOY_TOKEN`. Then deploy for the
 first time: **Actions > deploy > Run workflow**. From now on every merge to `main` deploys
 by itself.
+
+Edits made in Windmill's web editor come back to GitHub as a pull request (the **windmill to
+github** workflow, every 15 minutes). For that, GitHub must let workflows open pull
+requests: in the organisation's **Settings > Actions > General > Workflow permissions**,
+tick **Allow GitHub Actions to create and approve pull requests**, then tick the same box
+in the repo's **Settings > Actions > General**. (The workflow only opens pull requests; it
+never approves them, so a person still has to.)
 
 ## 6. Check everything works
 
