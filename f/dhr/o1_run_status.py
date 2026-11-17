@@ -17,6 +17,7 @@ RUNNABLE_PATHS = {
     "f/dhr/load_dhrc",
     "f/dhr/collect_case_metadata",
     "f/dhr/group_sections",
+    "f/dhr/find_template_candidates",
     "f/dhr/o1_pipeline",
     "f/dhr/o1_status",
 }

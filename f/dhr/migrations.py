@@ -376,4 +376,139 @@ AS $fn$
 $fn$;
 """,
     ),
+    (
+        "005_templates",
+        """
+-- The report templates in the 2016 DHR statutory guidance (f/dhr/templates.py), and for
+-- each review section the template sections it might be (its candidates), found by
+-- f/dhr/find_template_candidates. An LLM picks among the candidates in the next O1 step.
+
+-- The guidance document the templates were read from.
+CREATE TABLE corpus.guidance_documents (
+    guidance    text PRIMARY KEY,            -- e.g. 'dhr-2016'
+    title       text NOT NULL,
+    source_url  text NOT NULL,
+    sha256      text NOT NULL,               -- of the PDF the templates were read from
+    n_pages     integer NOT NULL,
+    loaded_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- One row per template (one per appendix of the guidance).
+CREATE TABLE corpus.templates (
+    template    text PRIMARY KEY,            -- e.g. 'dhr-2016/overview-report'
+    guidance    text NOT NULL REFERENCES corpus.guidance_documents ON DELETE CASCADE,
+    appendix    integer NOT NULL,            -- its appendix number in the guidance
+    title       text NOT NULL,               -- e.g. 'Overview report template'
+    -- 'overview report', 'executive summary', 'individual management review', 'action plan'
+    kind        text NOT NULL,
+    first_page  integer NOT NULL,            -- page numbers as printed in the guidance
+    last_page   integer NOT NULL
+);
+
+-- One row per section of a template, in the template's order.
+CREATE TABLE corpus.template_sections (
+    template    text NOT NULL REFERENCES corpus.templates ON DELETE CASCADE,
+    position    integer NOT NULL,            -- from 1
+    heading     text NOT NULL,               -- e.g. 'Timescales'
+    printed     boolean NOT NULL,            -- false: no heading in the guidance (named by us)
+    guidance    text NOT NULL,               -- what the template says goes there ('' if nothing)
+    page        integer NOT NULL,            -- as printed in the guidance
+    PRIMARY KEY (template, position)
+);
+
+-- Which grouped dataset versions have candidates, and how they were found.
+CREATE TABLE corpus.candidate_versions (
+    revision           text PRIMARY KEY REFERENCES corpus.grouped_versions ON DELETE CASCADE,
+    guidance           text NOT NULL REFERENCES corpus.guidance_documents ON DELETE CASCADE,
+    model              text NOT NULL,        -- the embedding model, e.g. 'BAAI/bge-small-en-v1.5'
+    k                  integer NOT NULL,     -- how many candidates each method contributes
+    min_heading_score  real NOT NULL,        -- below this, a heading match isn't a candidate
+    matched_at         timestamptz NOT NULL DEFAULT now(),
+    git_commit         text,
+    n_sections         integer NOT NULL,
+    n_candidates       integer NOT NULL
+);
+
+-- For each review section, the template sections it might be. A template section is a
+-- candidate if its heading is among the k most like the section's heading (and at least
+-- min_heading_score alike), or its text among the k most like the section's text. Both
+-- scores are kept for every candidate, whichever way it was found.
+CREATE TABLE corpus.template_candidates (
+    revision           text NOT NULL,
+    doc_id             text NOT NULL,
+    section_id         text NOT NULL,
+    template           text NOT NULL,
+    template_position  integer NOT NULL,
+    heading_score      real NOT NULL,        -- 0 to 100: how alike the two headings' words are
+    heading_rank       integer NOT NULL,     -- 1 = the template section with the most alike heading
+    text_score         real NOT NULL,        -- -1 to 1: cosine similarity of the embeddings
+    text_rank          integer NOT NULL,     -- 1 = the template section with the most alike text
+    PRIMARY KEY (revision, doc_id, section_id, template, template_position),
+    FOREIGN KEY (revision, doc_id, section_id) REFERENCES corpus.sections ON DELETE CASCADE,
+    FOREIGN KEY (template, template_position)
+        REFERENCES corpus.template_sections ON DELETE CASCADE
+);
+
+-- The candidates for the newest grouped version of each dataset, with both sides' headings.
+-- Pick with WHERE dataset = ...; e.g. the most likely by text for one review:
+--   SELECT section_heading, template_heading, text_score FROM corpus.current_template_candidates
+--   WHERE dataset = 'DHRC-100' AND doc_id = '...' AND text_rank = 1 ORDER BY section_position;
+CREATE VIEW corpus.current_template_candidates AS
+SELECT c.revision, v.dataset, c.doc_id, c.section_id,
+       s.position AS section_position, s.level AS section_level, s.heading AS section_heading,
+       c.template, t.title AS template_title, t.kind AS template_kind,
+       c.template_position, ts.heading AS template_heading,
+       c.heading_score, c.heading_rank, c.text_score, c.text_rank
+FROM corpus.template_candidates AS c
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.sections AS s USING (revision, doc_id, section_id)
+JOIN corpus.templates AS t ON t.template = c.template
+JOIN corpus.template_sections AS ts
+  ON ts.template = c.template AND ts.position = c.template_position;
+""",
+    ),
+    (
+        "006_candidates_per_guidance",
+        """
+-- A dataset version can have template candidates against more than one guidance (the 2016
+-- DHR guidance and the 2026 DARDR guidance), so candidate_versions has a row for each.
+ALTER TABLE corpus.candidate_versions DROP CONSTRAINT candidate_versions_pkey;
+ALTER TABLE corpus.candidate_versions ADD PRIMARY KEY (revision, guidance);
+
+-- The candidates view gains the guidance each template comes from. Pick with
+-- WHERE dataset = ... AND guidance = ...
+CREATE OR REPLACE VIEW corpus.current_template_candidates AS
+SELECT c.revision, v.dataset, c.doc_id, c.section_id,
+       s.position AS section_position, s.level AS section_level, s.heading AS section_heading,
+       c.template, t.title AS template_title, t.kind AS template_kind,
+       c.template_position, ts.heading AS template_heading,
+       c.heading_score, c.heading_rank, c.text_score, c.text_rank,
+       t.guidance
+FROM corpus.template_candidates AS c
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.sections AS s USING (revision, doc_id, section_id)
+JOIN corpus.templates AS t ON t.template = c.template
+JOIN corpus.template_sections AS ts
+  ON ts.template = c.template AND ts.position = c.template_position;
+""",
+    ),
+    (
+        "007_template_sources",
+        """
+-- A guidance can come in several files: the 2026 DARDR template (Annex A) is published as a
+-- Word file of its own, and is read from that. Each template records the file it was read
+-- from and its sha256; guidance_documents.sha256 is then a fingerprint of all its files
+-- together. A Word file has no pages, so page numbers can be empty.
+ALTER TABLE corpus.templates ADD COLUMN source_url text;
+ALTER TABLE corpus.templates ADD COLUMN sha256 text;
+ALTER TABLE corpus.templates ALTER COLUMN first_page DROP NOT NULL;
+ALTER TABLE corpus.templates ALTER COLUMN last_page DROP NOT NULL;
+ALTER TABLE corpus.template_sections ALTER COLUMN page DROP NOT NULL;
+-- Templates stored before this came from their guidance's one file.
+UPDATE corpus.templates AS t
+SET source_url = g.source_url, sha256 = g.sha256
+FROM corpus.guidance_documents AS g
+WHERE g.guidance = t.guidance;
+""",
+    ),
 ]
