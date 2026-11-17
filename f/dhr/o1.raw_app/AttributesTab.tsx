@@ -4,11 +4,13 @@ import { DATASETS, message, number, percent, when } from './shared'
 
 // f/dhr/o1_attributes
 type Value = { value: string; library: number; datasets: Record<string, number> }
-type Attribute = { section: string; attribute: string; values: Value[] }
+type Totals = { library: number; datasets: Record<string, number> }
+// totals: only for "About the review" (CSP, region, years), which every listed review has.
+type Attribute = { section: string; attribute: string; values: Value[]; totals?: Totals }
 type Attributes = {
   snapshot_id: number | null
   collected_at: string | null
-  totals: { library: number; datasets: Record<string, number> }
+  totals: Totals
   attributes: Attribute[]
 }
 
@@ -69,7 +71,7 @@ export default function AttributesTab({ version }: { version: number }) {
   }
 
   const attribute = data.attributes.find((a) => key(a) === selected) ?? null
-  const totals = data.totals
+  const totals = attribute?.totals ?? data.totals
   const term = search.trim().toLowerCase()
   const values = attribute
     ? attribute.values.filter(
@@ -107,11 +109,21 @@ export default function AttributesTab({ version }: { version: number }) {
       </aside>
       <main className="details">
         <p className="muted">
-          Shares are out of the reviews with at least one case detail: {number(totals.library)} in the whole library
-          {DATASETS.map((d) => `, ${number(totals.datasets[d] ?? 0)} in ${d}`).join('')}. A review that wasn’t
-          returned for a value isn’t counted, which can mean “no” or “not recorded”. Comparing a dataset with the
-          library shows whether it is representative. From snapshot {data.snapshot_id}, collected{' '}
-          {when(data.collected_at)}.
+          {attribute?.totals ? (
+            <>
+              Every review’s entry in the library’s results list shows its CSP, CSP region and dates, so these shares
+              are out of all the reviews in the library: {number(totals.library)} in the whole library
+              {DATASETS.map((d) => `, ${number(totals.datasets[d] ?? 0)} in ${d}`).join('')}.
+            </>
+          ) : (
+            <>
+              Shares are out of the reviews with at least one case detail: {number(totals.library)} in the whole
+              library{DATASETS.map((d) => `, ${number(totals.datasets[d] ?? 0)} in ${d}`).join('')}. A review that
+              wasn’t returned for a value isn’t counted, which can mean “no” or “not recorded”.
+            </>
+          )}{' '}
+          Comparing a dataset with the library shows whether it is representative. From snapshot {data.snapshot_id},
+          collected {when(data.collected_at)}.
         </p>
         {attribute && (
           <>
