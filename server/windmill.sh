@@ -156,12 +156,13 @@ wm_disable_user() { # username
 # ---------------------------------------------------------------- configure
 
 wm_configure() {
+	local public_origin="${PUBLIC_SCHEME:-https}://windmill.$DOMAIN"
 	echo "  waiting for Windmill to answer..."
 	wm_wait
 	wm_admin_token
 
-	wm_api POST /settings/global/base_url "$(jq -n --arg v "https://windmill.$DOMAIN" '{value: $v}')" >/dev/null
-	echo "  web address: https://windmill.$DOMAIN"
+	wm_api POST /settings/global/base_url "$(jq -n --arg v "$public_origin" '{value: $v}')" >/dev/null
+	echo "  web address: $public_origin"
 
 	if ! wm_exists POST /workspaces/exists "{\"id\": \"$WM_WORKSPACE\"}"; then
 		wm_api POST /workspaces/create "{\"id\": \"$WM_WORKSPACE\", \"name\": \"DHR project\"}" >/dev/null

@@ -1,6 +1,7 @@
-# Everything the project runs on the server, in one file.
+# Everything the project runs locally or on the server, in one file.
 # Start or update it with:  docker compose up -d --build
-# Secrets and names come from .env (copy .env.example; server/setup.sh fills in the secrets).
+# Secrets and names come from the selected env file. Servers use .env; local development
+# uses .env.local (copy .env.local.example).
 
 name: dhr
 
@@ -37,7 +38,7 @@ services:
       - ./postgres/20-project.sh:/docker-entrypoint-initdb.d/20-project.sh:ro
     # Only reachable from the server itself (teammates use an SSH tunnel). Never public.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     mem_limit: 2g
     shm_size: 256m
     healthcheck:
@@ -74,7 +75,7 @@ services:
       <<: *windmill-env
       MODE: server
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${WINDMILL_HOST_PORT:-8000}:8000"
     volumes:
       - windmill-worker-logs:/tmp/windmill/logs
     mem_limit: 1g
@@ -165,11 +166,14 @@ services:
     restart: unless-stopped
     environment:
       DOMAIN: ${DOMAIN}
+      # Existing server .env files do not have this setting, so HTTPS remains the default.
+      # Local development sets it to http because .localhost needs no TLS certificate.
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
       ACME_EMAIL: ${ACME_EMAIL}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "${HTTP_HOST_PORT:-80}:80"
+      - "${HTTPS_HOST_PORT:-443}:443"
+      - "${HTTPS_HOST_PORT:-443}:443/udp"
     volumes:
       - ./caddy:/etc/caddy:ro
       - ./site:/srv/site:ro

@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 PAGES = sorted(SITE.rglob("*.html"))
 O1_PAGE = SITE / "o1" / "index.html"
-O1_EMBED = "https://windmill.rshields.xyz/public/dhr/09f7276fa53f893213d238447a5f345e"
+O1_PATH = "/public/dhr/09f7276fa53f893213d238447a5f345e"
+O1_EMBED = '{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}' + O1_PATH
 
 
 class Page(HTMLParser):
@@ -74,6 +75,8 @@ def target(page: Path, ref: str) -> tuple[Path, str]:
 
 
 def is_local(ref: str) -> bool:
+    if ref.startswith('{{env "'):
+        return False  # Caddy renders this as an environment-specific absolute URL.
     parts = urlsplit(ref)
     return not parts.scheme and not parts.netloc
 
@@ -127,6 +130,40 @@ def test_caddy_serves_the_site():
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     caddyfile = (ROOT / "caddy" / "Caddyfile").read_text(encoding="utf-8")
     assert "./site:/srv/site:ro" in compose
-    assert "{$DOMAIN} {" in caddyfile
+    assert "{$PUBLIC_SCHEME}://{$DOMAIN} {" in caddyfile
+    assert "templates" in caddyfile
     assert "root * /srv/site" in caddyfile
-    assert f"frame-src https://windmill.{{$DOMAIN}}{urlsplit(O1_EMBED).path}" in caddyfile
+    assert f"frame-src {{$PUBLIC_SCHEME}}://windmill.{{$DOMAIN}}{O1_PATH}" in caddyfile
+
+
+@pytest.mark.parametrize(
+    ("scheme", "domain", "expected_windmill", "expected_mlflow"),
+    [
+        ("http", "localhost", "http://windmill.localhost/", "http://mlflow.localhost/"),
+        (
+            "https",
+            "project.example",
+            "https://windmill.project.example/",
+            "https://mlflow.project.example/",
+        ),
+    ],
+)
+def test_service_links_render_for_local_and_server_environments(
+    scheme, domain, expected_windmill, expected_mlflow
+):
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+    rendered = html.replace('{{env "PUBLIC_SCHEME"}}', scheme).replace(
+        '{{env "DOMAIN"}}', domain
+    )
+    assert expected_windmill in rendered
+    assert expected_mlflow in rendered
+    assert "rshields.xyz" not in rendered
+
+
+def test_local_environment_selects_localhost_over_http():
+    settings = (ROOT / ".env.local.example").read_text(encoding="utf-8").splitlines()
+    assert "DOMAIN=localhost" in settings
+    assert "PUBLIC_SCHEME=http" in settings
+
+    compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    assert "PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}" in compose

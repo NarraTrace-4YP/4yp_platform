@@ -1,14 +1,17 @@
-# Caddy gets HTTPS certificates for these addresses automatically.
-# All three names must point at the server in DNS (an A record each) before it can.
+# PUBLIC_SCHEME is https on the server and http for local development. Caddy gets and
+# renews certificates automatically for the server addresses. All three server names
+# must point at the server in DNS (an A record each) before it can.
 {
 	email {$ACME_EMAIL}
 }
 
 # The landing page, at the domain itself: the plain HTML and CSS in site/.
 # A change to site/ goes live once the server has pulled it (server/update.sh).
-{$DOMAIN} {
+{$PUBLIC_SCHEME}://{$DOMAIN} {
 	encode zstd gzip
 	root * /srv/site
+	# Trusted HTML in site/ uses {{env "..."}} for environment-specific service links.
+	templates
 	file_server
 	# An address with no page gets site/404.html, still with the 404 status.
 	handle_errors {
@@ -22,13 +25,13 @@
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		# The O1 page embeds the Windmill app. All other resources are local.
-		Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; frame-src https://windmill.{$DOMAIN}/public/dhr/09f7276fa53f893213d238447a5f345e"
+		Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; frame-src {$PUBLIC_SCHEME}://windmill.{$DOMAIN}/public/dhr/09f7276fa53f893213d238447a5f345e"
 	}
 	# Windmill's sandboxed app has an opaque origin. These font files are public.
 	header /assets/fonts/* Access-Control-Allow-Origin "*"
 }
 
-windmill.{$DOMAIN} {
+{$PUBLIC_SCHEME}://windmill.{$DOMAIN} {
 	encode zstd gzip
 	# The web editor's autocomplete talks to windmill-extra over a websocket.
 	@extra path /ws/* /ws_mp/* /ws_debug/*
@@ -41,7 +44,7 @@ windmill.{$DOMAIN} {
 	}
 }
 
-mlflow.{$DOMAIN} {
+{$PUBLIC_SCHEME}://mlflow.{$DOMAIN} {
 	encode zstd gzip
 	reverse_proxy mlflow:5000
 }

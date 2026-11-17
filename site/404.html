@@ -29,10 +29,10 @@
       <section class="grid not-found" aria-labelledby="title">
         <div class="cell">
           <h1 id="title">There's no page at this address</h1>
-          <p class="lede">Windmill and MLflow have addresses of their own: windmill.rshields.xyz and mlflow.rshields.xyz.</p>
+          <p class="lede">Windmill and MLflow have addresses of their own: windmill.{{env "DOMAIN"}} and mlflow.{{env "DOMAIN"}}.</p>
           <div class="actions">
             <a class="btn btn-primary" href="/">Go to the home page</a>
-            <a class="btn" href="https://windmill.rshields.xyz/">Open Windmill</a>
+            <a class="btn" href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'>Open Windmill</a>
           </div>
         </div>
       </section>

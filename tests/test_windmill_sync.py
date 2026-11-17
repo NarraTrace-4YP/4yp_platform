@@ -5,6 +5,8 @@ rehearsed against stand-ins; these test the decisions.)"""
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("windmill_sync", ROOT / ".github/windmill_sync.py")
 sync = importlib.util.module_from_spec(spec)
@@ -99,3 +101,12 @@ def test_gitignore_keeps_what_the_sync_ignores_out_of_git():
     for pattern in ("*.script.yaml", "*.script.lock", "node_modules/", "dist/"):
         assert pattern in ignored
     assert "*.raw_app/package-lock.json" in ignored
+
+
+def test_command_line_sync_is_disabled_outside_github_actions(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    with pytest.raises(sync.SyncError, match="outside GitHub Actions"):
+        sync.require_github_actions()
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    sync.require_github_actions()

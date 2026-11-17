@@ -10,8 +10,8 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="NarraTrace">
   <meta property="og:description" content="Reading across domestic homicide reviews with an LLM wiki. A CS407 group project, University of Warwick.">
-  <meta property="og:url" content="https://rshields.xyz/">
-  <meta property="og:image" content="https://rshields.xyz/assets/og.png">
+  <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/'>
+  <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png'>
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -82,18 +82,18 @@
           <div class="cell tool">
             <h3><a href="/o1/">O1 app</a></h3>
             <p>Start here. Explains Stage 1 and where it stands, shows the datasets and where their reviews came from, runs each pipeline with its progress, and lets you browse cases, sections and template matches.</p>
-            <div class="also"><a href="https://windmill.rshields.xyz/apps_raw/get/f/dhr/o1?workspace=dhr">Open in Windmill with team sign-in</a></div>
+            <div class="also"><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/apps_raw/get/f/dhr/o1?workspace=dhr'>Open in Windmill with team sign-in</a></div>
           </div>
           <div class="cell tool">
-            <h3><a href="https://windmill.rshields.xyz/">Windmill</a></h3>
+            <h3><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'>Windmill</a></h3>
             <p>Runs the pipeline scripts and keeps every run. The team's code is in <code>f/dhr</code>; your own experiments go in <code>u/&lt;username&gt;</code>.</p>
-            <div class="also"><a href="https://windmill.rshields.xyz/flows/get/f/dhr/o1_pipeline?workspace=dhr">O1 pipeline</a><a href="https://windmill.rshields.xyz/runs?workspace=dhr">Recent runs</a></div>
-            <div class="meta"><span class="access">Team sign-in</span><span class="data">windmill.rshields.xyz</span></div>
+            <div class="also"><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/flows/get/f/dhr/o1_pipeline?workspace=dhr'>O1 pipeline</a><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/runs?workspace=dhr'>Recent runs</a></div>
+            <div class="meta"><span class="access">Team sign-in</span><span class="data">windmill.{{env "DOMAIN"}}</span></div>
           </div>
           <div class="cell tool">
-            <h3><a href="https://mlflow.rshields.xyz/">MLflow</a></h3>
+            <h3><a href='{{env "PUBLIC_SCHEME"}}://mlflow.{{env "DOMAIN"}}/'>MLflow</a></h3>
             <p>Records every experiment run and LLM call: the settings it used, the commit that ran it and what it produced.</p>
-            <div class="meta"><span class="access">Team sign-in</span><span class="data">mlflow.rshields.xyz</span></div>
+            <div class="meta"><span class="access">Team sign-in</span><span class="data">mlflow.{{env "DOMAIN"}}</span></div>
           </div>
           <div class="cell tool">
             <h3><a href="https://github.com/NarraTrace-4YP/4yp_platform">GitHub</a></h3>

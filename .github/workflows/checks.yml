@@ -42,11 +42,26 @@ jobs:
           done
 
   server-config:
-    name: Server config is valid
+    name: Local and server config is valid
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - run: cp .env.example .env && docker compose config --quiet
+      - name: Check both Compose environments
+        run: |
+          docker compose --env-file .env.example config --quiet
+          docker compose --env-file .env.local.example config --quiet
+      - name: Check Caddy in both environments
+        run: |
+          docker run --rm \
+            --env PUBLIC_SCHEME=https --env DOMAIN=example.com --env ACME_EMAIL=admin@example.com \
+            --mount type=bind,source="$PWD/caddy",target=/etc/caddy,readonly \
+            --entrypoint caddy \
+            caddy:2 validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          docker run --rm \
+            --env PUBLIC_SCHEME=http --env DOMAIN=localhost --env ACME_EMAIL=local@example.invalid \
+            --mount type=bind,source="$PWD/caddy",target=/etc/caddy,readonly \
+            --entrypoint caddy \
+            caddy:2 validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Check the shell scripts' syntax
         run: |
           for script in server/*.sh postgres/20-project.sh mlflow/start.sh; do
