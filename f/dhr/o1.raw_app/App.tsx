@@ -22,7 +22,9 @@ const TABS = [
 
 export default function App() {
   const contentRef = useRef<HTMLElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
   const [tab, setTab] = useState(() => recall<string>('tab') ?? 'overview')
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [status, setStatus] = useState<Status | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   // Goes up each time a run finishes, so every tab reloads what it shows.
@@ -60,6 +62,7 @@ export default function App() {
     const root = contentRef.current
     if (!root) return
     let frame = 0
+    let lastScrollTop = root.scrollTop
     const updateProgress = () => {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
@@ -68,6 +71,13 @@ export default function App() {
           '--app-scroll',
           String(available > 0 ? root.scrollTop / available : 0)
         )
+        const scrollTop = root.scrollTop
+        if (scrollTop < 48 || scrollTop < lastScrollTop - 2) {
+          setHeaderCollapsed(false)
+        } else if (scrollTop > lastScrollTop + 2) {
+          setHeaderCollapsed(true)
+        }
+        lastScrollTop = scrollTop
       })
     }
     root.addEventListener('scroll', updateProgress, { passive: true })
@@ -77,6 +87,16 @@ export default function App() {
       root.removeEventListener('scroll', updateProgress)
     }
   }, [tab])
+
+  useEffect(() => {
+    const header = headerRef.current
+    if (!header) return
+    const updateHeight = () => header.style.setProperty('--app-header-height', `${header.scrollHeight}px`)
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(header)
+    updateHeight()
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const root = contentRef.current
@@ -156,13 +176,13 @@ export default function App() {
 
   return (
     <div className="shell">
-      <header className="top">
+      <header ref={headerRef} className={headerCollapsed ? 'top is-collapsed' : 'top'}>
         <MotionCanvas />
         <div className="app-scroll-progress" aria-hidden="true"><span /></div>
-        <details className="app-header" open>
-          <summary className="app-wrap app-heading">
+        <div className="app-header">
+          <div className="app-wrap app-heading">
             <h1><span>O1:</span> Corpus preparation</h1>
-          </summary>
+          </div>
           <div className="app-wrap app-header-content">
             <p className="app-kicker"><span aria-hidden="true" /> Objective 01 / live workspace</p>
             <p>Turning the DHR corpus into a hierarchical, standardised database linked to the Home Office case metadata</p>
@@ -181,7 +201,7 @@ export default function App() {
               </button>
             ))}
           </nav>
-        </details>
+        </div>
       </header>
       <main className="content" ref={contentRef}>
         {statusError && tab !== 'data' && (

@@ -111,29 +111,20 @@ button {
 
 .top {
   flex: none;
+  max-height: var(--app-header-height, 500px);
+  overflow: hidden;
+  transition: max-height 220ms ease, border-bottom-width 220ms ease;
   border-bottom: 1px solid var(--line);
   background: var(--paper);
 }
 
+.top.is-collapsed {
+  max-height: 0;
+  border-bottom-width: 0;
+}
+
 .app-heading {
   padding-block: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.app-heading::-webkit-details-marker {
-  display: none;
-}
-
-.app-heading::after {
-  content: '+';
-  margin-left: 12px;
-  color: var(--accent);
-  font: 500 16px/1 var(--mono);
-}
-
-.app-header[open] .app-heading::after {
-  content: '−';
 }
 
 .top h1 {
@@ -1871,6 +1862,10 @@ button.primary:focus-visible::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .top {
+    transition: none;
+  }
+
   .app-webgl {
     display: none;
   }
