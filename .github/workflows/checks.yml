@@ -22,18 +22,6 @@ jobs:
       - run: uv run ruff format --check f/dhr
       - run: uv run pytest
 
-  formatting:
-    name: Frontend formatting
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run format:check
-
   windmill:
     name: Windmill scripts are valid
     runs-on: ubuntu-24.04

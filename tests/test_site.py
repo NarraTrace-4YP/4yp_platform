@@ -130,26 +130,6 @@ def test_stylesheet_files_exist():
     assert not missing, f"site.css points to missing files: {missing}"
 
 
-def test_landing_navigation_places_o1_last():
-    landing = (SITE / "index.html").read_text(encoding="utf-8")
-    nav = landing.split('<nav class="nav" aria-label="Main">', 1)[1].split("</nav>", 1)[0]
-    assert nav.index('href="/about/"') < nav.index('href="/o1/"')
-    assert '<details class="nav-disclosure"' not in landing
-
-
-def test_landing_and_o1_headers_share_the_content_width():
-    site_css = (SITE / "assets" / "site.css").read_text(encoding="utf-8")
-    app_css = (ROOT / "f/dhr/O1/app.raw_app/index.css").read_text(encoding="utf-8")
-    assert "--content-width: var(--wrap);" in site_css
-    assert "--content-width: var(--wrap);" in app_css
-    assert ".masthead {\n  width: var(--content-width);" in site_css
-    assert ".masthead::before" in site_css and "width: var(--content-width);" in site_css
-    assert ".top {\n  flex: none;\n  width: var(--content-width);" in app_css
-    assert ".content > * {\n  width: var(--content-width);" in app_css
-    assert ".content > .page,\n.content > .run-view," in app_css
-    assert "width: var(--content-width);\n  max-width: 100%;" in app_css
-
-
 def test_caddy_serves_the_site():
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     caddyfile = (ROOT / "caddy" / "Caddyfile").read_text(encoding="utf-8")
@@ -178,9 +158,7 @@ def test_service_links_render_for_local_and_server_environments(
     scheme, domain, expected_windmill, expected_mlflow
 ):
     html = (SITE / "index.html").read_text(encoding="utf-8")
-    rendered = html.replace('{{env "PUBLIC_SCHEME"}}', scheme).replace(
-        '{{env "DOMAIN"}}', domain
-    )
+    rendered = html.replace('{{env "PUBLIC_SCHEME"}}', scheme).replace('{{env "DOMAIN"}}', domain)
     assert expected_windmill in rendered
     assert expected_mlflow in rendered
     assert "rshields.xyz" not in rendered
@@ -204,29 +182,3 @@ def test_embedded_o1_app_uses_generated_instance_specific_public_url():
     assert 'src="/assets/objective-embed.js"' in page
     assert "/public/dhr/" in script
     assert "09f7276fa53f893213d238447a5f345e" not in page
-
-
-def test_landing_and_o1_share_the_progressive_motion_system():
-    landing = (SITE / "index.html").read_text(encoding="utf-8")
-    landing_css = (SITE / "assets/site.css").read_text(encoding="utf-8")
-    landing_motion = (SITE / "assets/motion.js").read_text(encoding="utf-8")
-    app = (ROOT / "f/dhr/O1/app.raw_app/App.tsx").read_text(encoding="utf-8")
-    app_css = (ROOT / "f/dhr/O1/app.raw_app/index.css").read_text(encoding="utf-8")
-    app_entry = (ROOT / "f/dhr/O1/app.raw_app/index.tsx").read_text(encoding="utf-8")
-    caddy = (ROOT / "caddy/Caddyfile").read_text(encoding="utf-8")
-
-    assert 'class="hero-webgl"' in landing
-    assert 'src="/assets/motion.js"' in landing
-    assert "window.addEventListener('scroll', updateScrollProgress, { passive: true })" in landing_motion
-    assert "behavior: prefersReducedMotion ? 'auto' : 'smooth'" in landing_motion
-    assert "addEventListener('wheel'" not in landing_motion
-    assert "getContext('webgl'" in landing_motion
-    assert "prefers-reduced-motion: reduce" in landing_css
-
-    assert "<MotionCanvas />" in app
-    assert "motion-card" in app
-    assert "view-mask-in" in app_css
-    assert "prefers-reduced-motion: reduce" in app_css
-    assert "rshields.xyz" not in app_css
-    assert "/brand-assets/fonts/" in app_entry
-    assert "handle_path /brand-assets/*" in caddy

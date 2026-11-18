@@ -13,7 +13,10 @@
 
   async function loadObjectiveApp(frame) {
     try {
-      const response = await fetch(frame.dataset.objectiveEmbed, { credentials: 'same-origin' })
+      const response = await fetch(frame.dataset.objectiveEmbed, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
       if (!response.ok) {
         throw new Error(`embed configuration returned ${response.status}`)
       }

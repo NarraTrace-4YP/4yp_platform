@@ -8,7 +8,6 @@ import CasesTab from './CasesTab'
 import AttributesTab from './AttributesTab'
 import SectionsTab from './SectionsTab'
 import CandidatesTab from './CandidatesTab'
-import MotionCanvas from './MotionCanvas'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -102,10 +101,13 @@ export default function App() {
   useEffect(() => {
     const header = headerRef.current
     if (!header) return
+    const headerContent = header.querySelector<HTMLElement>('.app-header')
+    if (!headerContent) return
     const updateHeight = () =>
-      header.style.setProperty('--app-header-height', `${header.scrollHeight}px`)
+      header.style.setProperty('--app-header-height', `${headerContent.scrollHeight}px`)
     const observer = new ResizeObserver(updateHeight)
-    observer.observe(header)
+    // Measure the natural content height so wrapped tabs are never clipped by max-height.
+    observer.observe(headerContent)
     updateHeight()
     return () => observer.disconnect()
   }, [])
@@ -183,35 +185,18 @@ export default function App() {
     }
   }, [tab, version, status])
 
-  const moveMagnet = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const button = event.currentTarget
-    const rect = button.getBoundingClientRect()
-    button.style.setProperty(
-      '--button-x',
-      `${(event.clientX - rect.left - rect.width / 2) * 0.1}px`,
-    )
-    button.style.setProperty(
-      '--button-y',
-      `${(event.clientY - rect.top - rect.height / 2) * 0.16}px`,
-    )
-  }
-
-  const resetMagnet = (event: React.PointerEvent<HTMLButtonElement>) => {
-    event.currentTarget.style.setProperty('--button-x', '0px')
-    event.currentTarget.style.setProperty('--button-y', '0px')
-  }
-
   return (
     <div className="shell">
       <header ref={headerRef} className={headerCollapsed ? 'top is-collapsed' : 'top'}>
-        <MotionCanvas />
         <div className="app-scroll-progress" aria-hidden="true">
           <span />
         </div>
         <div className="app-header">
           <div className="app-wrap app-header-row">
             <div className="app-heading">
-              <h1>O1: Corpus preparation</h1>
+              <h1>
+                <span>O1</span>: Corpus preparation
+              </h1>
             </div>
             <nav className="app-nav" aria-label="O1 views">
               {TABS.map((t) => (
@@ -220,8 +205,6 @@ export default function App() {
                   className={t.id === tab ? 'tab selected' : 'tab'}
                   aria-pressed={t.id === tab}
                   onClick={() => goTo(t.id)}
-                  onPointerMove={moveMagnet}
-                  onPointerLeave={resetMagnet}
                 >
                   {t.label}
                 </button>
