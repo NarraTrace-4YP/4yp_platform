@@ -42,8 +42,15 @@ services:
     mem_limit: 2g
     shm_size: 256m
     healthcheck:
-      # Checks over TCP, so it only passes once first-time setup has finished.
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d dhr"]
+      # Readiness alone is not enough: if a one-time init script fails, Postgres can
+      # restart and accept connections with the project roles and schemas missing.
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -h 127.0.0.1 -U postgres -d dhr &&
+          psql -U postgres -d dhr -Atqc
+          "SELECT 1 WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = 'pipeline')
+          AND to_regnamespace('corpus') IS NOT NULL" | grep -qx 1
       interval: 10s
       timeout: 5s
       retries: 10
@@ -133,6 +140,31 @@ services:
     depends_on:
       - windmill-server
 
+  # Explicit local-only tool: provisions the dhr workspace and pushes this checkout's
+  # f/dhr scripts, flow and app to local Windmill. The profile keeps it out of normal
+  # server startup/update commands. It has no GitHub credentials or sync behavior.
+  windmill-bootstrap:
+    profiles: ["local-tools"]
+    build: ./local
+    image: dhr-local-windmill-bootstrap:local
+    environment:
+      WINDMILL_INTERNAL_URL: http://windmill-server:8000
+      WINDMILL_PUBLIC_URL: ${PUBLIC_SCHEME:-https}://windmill.${DOMAIN}
+      WINDMILL_ADMIN_PASSWORD: ${WINDMILL_ADMIN_PASSWORD}
+      PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      MLFLOW_ADMIN_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      # Read-only by design: metadata generation happens in the container's /tmp copy,
+      # so importing cannot reformat or otherwise alter the developer's checkout.
+      - .:/source:ro
+      # The only writable checkout path: instance-specific public embed URLs. This
+      # directory is ignored by Git and served read-only by Caddy.
+      - ./runtime:/runtime
+    depends_on:
+      windmill-server:
+        condition: service_healthy
+
   # Records every experiment run and LLM call. Each person has their own login.
   mlflow:
     build: ./mlflow
@@ -177,6 +209,7 @@ services:
     volumes:
       - ./caddy:/etc/caddy:ro
       - ./site:/srv/site:ro
+      - ./runtime:/srv/runtime:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

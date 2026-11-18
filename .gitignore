@@ -11,5 +11,7 @@ node_modules/
 *.script.lock
 wmill-lock.yaml
 dist/
+runtime/*
+!runtime/.gitkeep
 # made when an app is linted or bundled
 *.raw_app/package-lock.json

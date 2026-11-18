@@ -45,20 +45,80 @@ cp .env.local.example .env.local
 docker compose --env-file .env.local up -d --build
 ```
 
+Once the services are healthy, provision local Windmill and import this checkout's
+`f/dhr` scripts, O1 flow and O1 app:
+
+```console
+docker compose --env-file .env.local --profile local-tools run --rm --build windmill-bootstrap
+```
+
+This explicit local-only command creates the `dhr` workspace and folder, stores the local
+database, MLflow and Hugging Face settings, and pushes the project code. It does not
+create a GitHub deploy account or token and cannot push to GitHub. The checkout is mounted
+read-only except for the ignored `runtime/` directory. Windmill metadata is generated in
+a temporary container copy, and `runtime/o1.json` receives this local Windmill instance's
+public O1 share URL so the landing-page embed works automatically.
+
 Wait until the services are ready:
 
 ```console
 docker compose --env-file .env.local ps
 ```
 
-Then open <http://localhost>. On a new local Windmill instance, use Windmill's initial
-login (`admin@windmill.dev` / `changeme`) and change it when prompted. MLflow's local
-login is `admin` / `local-admin-password`; you can change the local-only values in
-`.env.local` before the first start.
+If a first start made with an older checkout reports that `postgres` is unhealthy and
+its log says `20-project.sh: cannot execute: required file not found`, update the repo
+before continuing. That checkout used Windows line endings in a Linux container. Because
+PostgreSQL initialization is one-time, remove that incomplete first-start data and start
+again:
+
+```powershell
+docker compose --env-file .env.local down --volumes
+git pull
+docker compose --env-file .env.local up -d --build
+```
+
+Only use `down --volumes` for a failed, disposable local initialization: it permanently
+deletes all databases and artifacts belonging to this local Compose project.
+
+Then open <http://localhost>. The local bootstrap command replaces Windmill's temporary
+built-in login with `admin@local.invalid`; its password is `WINDMILL_ADMIN_PASSWORD` from
+`.env.local`. MLflow's local login is `admin` with `MLFLOW_ADMIN_PASSWORD` from that same
+file. Change the local-only values before the first start if desired.
 
 The local databases and uploaded artifacts live in Docker volumes, so they survive
 container restarts. They are separate from the server and never receive server data or
 credentials.
+
+## Local accounts and SSH
+
+Local deployment does **not** generate `ACCOUNTS.txt`. That file is created only by
+`server/team.sh` on the shared Ubuntu server, where the script also creates Linux users,
+installs their GitHub SSH keys and provisions their application accounts. Do not run
+`server/setup.sh` or `server/team.sh` on a development computer.
+
+The local stack does not contain or expose an SSH server, so there is no project-provided
+SSH username or password. Work with it directly on the computer running Docker. If that
+computer independently has Windows OpenSSH or another SSH server enabled, its login is
+your operating-system account and is outside this project.
+
+Local service credentials are:
+
+| Service | Local login |
+|---|---|
+| Windmill | `admin@local.invalid` / the `WINDMILL_ADMIN_PASSWORD` value in `.env.local` |
+| MLflow | user `admin` / the `MLFLOW_ADMIN_PASSWORD` value in `.env.local` |
+| PostgreSQL | user `postgres` / the `POSTGRES_PASSWORD` value in `.env.local` |
+
+PostgreSQL is available only on the local computer at `127.0.0.1`, using the
+`POSTGRES_HOST_PORT` in `.env.local` (`15432` in the example), with database `dhr`. You
+can also open its command line without a network login:
+
+```console
+docker compose --env-file .env.local exec postgres psql -U postgres -d dhr
+```
+
+The `.localhost` web addresses are also intended for the same computer: on another
+device, `windmill.localhost` would refer to that other device, not to this Docker host.
 
 ## GitHub isolation
 
@@ -90,6 +150,19 @@ After changing Compose, MLflow or another image, apply the change with:
 ```console
 docker compose --env-file .env.local up -d --build
 ```
+
+After changing anything under `f/dhr`, or after changing `HF_TOKEN` in `.env.local`,
+refresh local Windmill with:
+
+```console
+docker compose --env-file .env.local --profile local-tools run --rm --build windmill-bootstrap
+```
+
+The command updates the local Windmill variables plus the `f/dhr` scripts, flow and app
+to match the checkout, and refreshes the generated landing-page embed URL. It may
+overwrite edits made directly to those same items in local
+Windmill; personal `u/...` items and unrelated folders are outside `wmill.yaml` and are
+not touched.
 
 Useful commands:
 

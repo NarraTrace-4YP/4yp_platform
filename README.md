@@ -14,17 +14,57 @@ time should see [docs/server-setup.md](docs/server-setup.md).
 |---|---|---|
 | GitHub | Home for all code. Every change goes in through a pull request | GitHub |
 | GitHub Actions | Runs the checks on every pull request, and deploys `main` to Windmill | GitHub |
-| Docker Compose | Runs every service on the server from one file (`compose.yaml`) | Server |
-| Caddy | Serves Windmill, MLflow and the landing page over HTTPS | Server |
-| PostgreSQL + pgvector + pg_search | The project database, with meaning search and keyword search built in | Server |
-| Windmill | Runs the pipeline scripts, and has a web editor for trying things out | Server |
-| MLflow | Records every experiment run and LLM call | Server |
+| Docker Compose | Runs every service from one file (`compose.yaml`) | Local or server |
+| Caddy | Serves Windmill, MLflow and the landing page (local HTTP or server HTTPS) | Local or server |
+| PostgreSQL + pgvector + pg_search | The project database, with meaning search and keyword search built in | Local or server |
+| Windmill | Runs the pipeline scripts, and has a web editor for trying things out | Local or server |
+| MLflow | Records every experiment run and LLM call | Local or server |
 | LangGraph | Python library for building the agents | In the pipeline code |
 | vLLM on Blythe | Runs the open-weight LLMs on the university's GPUs | Blythe |
 | uv | Installs the same Python packages for everyone | Everywhere |
 | Obsidian | Reading the LLM wiki | Your laptop |
 
+## Running the full stack locally
+
+With Docker Desktop running, copy the local settings, start the services, then provision
+Windmill from `f/dhr`:
+
+```powershell
+Copy-Item .env.local.example .env.local
+docker compose --env-file .env.local up -d --build
+docker compose --env-file .env.local --profile local-tools run --rm --build windmill-bootstrap
+```
+
+Open the landing page at <http://localhost>, Windmill at
+<http://windmill.localhost>, and MLflow at <http://mlflow.localhost>. Windmill's local
+login is `admin@local.invalid` with `WINDMILL_ADMIN_PASSWORD` from `.env.local`; MLflow's
+is `admin` with `MLFLOW_ADMIN_PASSWORD`.
+
+After changing anything under `f/dhr`, or after changing `HF_TOKEN` in `.env.local`, run
+the local bootstrap again. It updates the local workspace and secrets without enabling
+GitHub synchronization:
+
+```powershell
+docker compose --env-file .env.local --profile local-tools run --rm --build windmill-bootstrap
+```
+
+For an environment setting read directly by a running container, recreate the containers:
+
+```powershell
+docker compose --env-file .env.local up -d --force-recreate
+```
+
+Database and application passwords persist in their databases and are not safely rotated
+by editing `.env.local` alone. In particular, change the Windmill admin password in
+Windmill first and then make `WINDMILL_ADMIN_PASSWORD` match. See the
+[full local deployment guide](docs/local-setup.md) for Linux/macOS commands, PostgreSQL
+access, stopping the stack, troubleshooting and the local/server isolation guarantees.
+
 ## Getting access
+
+This section is for the shared server. A local deployment does not create SSH users or
+`ACCOUNTS.txt`; use the credentials in the
+[local deployment guide](docs/local-setup.md#local-accounts-and-ssh) instead.
 
 1. Add an SSH key to your GitHub account if you haven't already:
    https://github.com/settings/keys (GitHub's guide: "Generating a new SSH key").
@@ -67,6 +107,12 @@ time should see [docs/server-setup.md](docs/server-setup.md).
   it follows the rules below, and open a pull request. If it's an O1 step, also add it to
   `f/dhr/o1_pipeline.flow/flow.yaml` and explain it in the O1 app (`Overview.tsx` and
   `RunTab.tsx`); the tests check the flow and the app match the scripts.
+- **Embedding an objective app on the landing page:** make the raw app public in its
+  `raw_app.yaml` (`public: true`). Windmill Community Edition gives the app a stable share
+  ID that is different on every Windmill instance. The local bootstrap and
+  `server/update.sh` discover it and write an ignored `runtime/<objective>.json`; the
+  landing page reads that file instead of hardcoding a server or local share URL. After
+  adding a new objective embed, add the matching generation call to both scripts.
 
 ## How work reaches the server
 

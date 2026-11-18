@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs once, the first time the database starts (after ParadeDB has added its extensions).
+# Runs inside the Linux Postgres container once, after ParadeDB adds its extensions.
 # Creates the databases and logins, and the project's three schemas.
 set -euo pipefail
 

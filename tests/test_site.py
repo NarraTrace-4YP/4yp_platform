@@ -1,8 +1,8 @@
 """Checks for the landing page in site/, which Caddy serves at the domain itself.
 
 - Every link and file a page points to within the site exists, including #sections.
-- The pages load local CSS, fonts and images, plus the Windmill iframe on the O1 page.
-  No scripts or inline styles.
+- The pages load only local CSS, fonts, images and scripts. The O1 page gets its
+  instance-specific Windmill iframe URL from a generated local runtime file.
   (Links to other sites are fine: following a link isn't loading it.)
 - Caddy is set up to serve site/.
 """
@@ -17,8 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 PAGES = sorted(SITE.rglob("*.html"))
 O1_PAGE = SITE / "o1" / "index.html"
-O1_PATH = "/public/dhr/09f7276fa53f893213d238447a5f345e"
-O1_EMBED = '{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}' + O1_PATH
+O1_RUNTIME_CONFIG = "/runtime/o1.json"
 
 
 class Page(HTMLParser):
@@ -41,8 +40,13 @@ class Page(HTMLParser):
             self.ids.add(a["id"])
         if tag == "title":
             self.has_title = True
-        if tag in ("script", "style", "object", "embed"):
+        if tag in ("style", "object", "embed"):
             self.problems.append(f"<{tag}> is not allowed")
+        if tag == "script":
+            if not a.get("src"):
+                self.problems.append("inline <script> is not allowed")
+            else:
+                self.loads.append(a["src"])
         if tag == "iframe":
             self.frames.append(a.get("src", ""))
             if not a.get("title", "").strip():
@@ -99,7 +103,7 @@ def test_page_loads_only_its_own_files(path):
     page = Page(path)
     outside = [ref for ref in page.loads if not is_local(ref)]
     assert not outside, f"loads from other sites, which the Caddyfile blocks: {outside}"
-    assert page.frames == ([O1_EMBED] if path == O1_PAGE else [])
+    assert page.frames == ([""] if path == O1_PAGE else [])
 
 
 @pytest.mark.parametrize("path", PAGES, ids=lambda p: str(p.relative_to(SITE)))
@@ -130,10 +134,12 @@ def test_caddy_serves_the_site():
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     caddyfile = (ROOT / "caddy" / "Caddyfile").read_text(encoding="utf-8")
     assert "./site:/srv/site:ro" in compose
+    assert "./runtime:/srv/runtime:ro" in compose
     assert "{$PUBLIC_SCHEME}://{$DOMAIN} {" in caddyfile
     assert "templates" in caddyfile
     assert "root * /srv/site" in caddyfile
-    assert f"frame-src {{$PUBLIC_SCHEME}}://windmill.{{$DOMAIN}}{O1_PATH}" in caddyfile
+    assert "root * /srv/runtime" in caddyfile
+    assert "frame-src {$PUBLIC_SCHEME}://windmill.{$DOMAIN}" in caddyfile
 
 
 @pytest.mark.parametrize(
@@ -167,3 +173,40 @@ def test_local_environment_selects_localhost_over_http():
 
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     assert "PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}" in compose
+
+
+def test_embedded_o1_app_uses_generated_instance_specific_public_url():
+    metadata = (ROOT / "f/dhr/o1.raw_app/raw_app.yaml").read_text(encoding="utf-8")
+    page = (SITE / "o1/index.html").read_text(encoding="utf-8")
+    script = (SITE / "assets/objective-embed.js").read_text(encoding="utf-8")
+    assert "public: true" in metadata
+    assert f'data-objective-embed="{O1_RUNTIME_CONFIG}"' in page
+    assert 'src="/assets/objective-embed.js"' in page
+    assert "/public/dhr/" in script
+    assert "09f7276fa53f893213d238447a5f345e" not in page
+
+
+def test_landing_and_o1_share_the_progressive_motion_system():
+    landing = (SITE / "index.html").read_text(encoding="utf-8")
+    landing_css = (SITE / "assets/site.css").read_text(encoding="utf-8")
+    landing_motion = (SITE / "assets/motion.js").read_text(encoding="utf-8")
+    app = (ROOT / "f/dhr/o1.raw_app/App.tsx").read_text(encoding="utf-8")
+    app_css = (ROOT / "f/dhr/o1.raw_app/index.css").read_text(encoding="utf-8")
+    app_entry = (ROOT / "f/dhr/o1.raw_app/index.tsx").read_text(encoding="utf-8")
+    caddy = (ROOT / "caddy/Caddyfile").read_text(encoding="utf-8")
+
+    assert 'class="hero-webgl"' in landing
+    assert 'src="/assets/motion.js"' in landing
+    assert "window.addEventListener('scroll', updateProgress, { passive: true })" in landing_motion
+    assert "behavior: reduceMotion ? 'auto' : 'smooth'" in landing_motion
+    assert "addEventListener('wheel'" not in landing_motion
+    assert "getContext('webgl'" in landing_motion
+    assert "prefers-reduced-motion: reduce" in landing_css
+
+    assert "<MotionCanvas />" in app
+    assert "motion-card" in app
+    assert "view-mask-in" in app_css
+    assert "prefers-reduced-motion: reduce" in app_css
+    assert "rshields.xyz" not in app_css
+    assert "/brand-assets/fonts/" in app_entry
+    assert "handle_path /brand-assets/*" in caddy

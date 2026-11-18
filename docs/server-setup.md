@@ -96,7 +96,15 @@ Secrets and variables > Actions**, and add:
 
 The token is also kept in `/opt/dhr/.env` as `WINDMILL_DEPLOY_TOKEN`. Then deploy for the
 first time: **Actions > deploy > Run workflow**. From now on every merge to `main` deploys
-by itself.
+by itself. When that first deployment has finished, run this once on the server:
+
+```
+sudo /opt/dhr/server/update.sh
+```
+
+That discovers this Windmill instance's public O1 share ID and writes the ignored runtime
+configuration used by the landing-page embed. Later app versions keep the same app-level
+share ID, and ordinary `server/update.sh` runs refresh and verify it.
 
 Edits made in Windmill's web editor come back to GitHub as a pull request (the **windmill to
 github** workflow, every 15 minutes). For that, GitHub must let workflows open pull
@@ -112,7 +120,8 @@ never approves them, so a person still has to.)
    with `OK` lines: downloaded, checksums, read 100 reviews, stored, logged to MLflow.
 3. Open `https://mlflow.<domain>`. The `corpus-ingest` experiment should have one run,
    tagged with the Git commit that was deployed.
-4. Open `https://<domain>`. The landing page should load, with links to everything above.
+4. Open `https://<domain>/o1/`. The O1 Windmill app should load inside the landing page
+   without asking for a Windmill login. Then check the landing page at `https://<domain>`.
 
 ## Day to day
 

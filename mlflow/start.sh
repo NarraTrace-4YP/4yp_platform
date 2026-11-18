@@ -1,5 +1,6 @@
 #!/bin/sh
-# Starts MLflow with logins switched on. The settings come from compose.yaml.
+# Runs inside the Linux MLflow container with logins switched on.
+# The settings come from compose.yaml.
 set -eu
 
 # MLflow reads its login settings from a small file; write it from the environment.
