@@ -173,7 +173,8 @@ code {
 }
 
 .wrap {
-  max-width: var(--wrap);
+  width: var(--wrap);
+  max-width: 100%;
   margin: 0 auto;
   padding: 0 var(--margin);
 }
@@ -203,7 +204,16 @@ code {
   max-width: 100%;
   margin-inline: auto;
   background: var(--paper);
-  border-bottom: 3px solid var(--ink);
+}
+
+.masthead::before {
+  content: '';
+  position: absolute;
+  inset: auto auto 0 50%;
+  width: calc(var(--wrap) - var(--margin) - var(--margin));
+  height: 3px;
+  background: var(--ink);
+  transform: translateX(-50%);
 }
 
 .masthead .wrap {
