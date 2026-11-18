@@ -192,11 +192,14 @@ def test_landing_and_o1_share_the_progressive_motion_system():
     landing_motion = (SITE / "assets/motion.js").read_text(encoding="utf-8")
     app = (ROOT / "f/dhr/o1.raw_app/App.tsx").read_text(encoding="utf-8")
     app_css = (ROOT / "f/dhr/o1.raw_app/index.css").read_text(encoding="utf-8")
+    app_entry = (ROOT / "f/dhr/o1.raw_app/index.tsx").read_text(encoding="utf-8")
     caddy = (ROOT / "caddy/Caddyfile").read_text(encoding="utf-8")
 
     assert 'class="hero-webgl"' in landing
     assert 'src="/assets/motion.js"' in landing
-    assert "class MomentumScroll" in landing_motion
+    assert "window.addEventListener('scroll', updateProgress, { passive: true })" in landing_motion
+    assert "behavior: reduceMotion ? 'auto' : 'smooth'" in landing_motion
+    assert "addEventListener('wheel'" not in landing_motion
     assert "getContext('webgl'" in landing_motion
     assert "prefers-reduced-motion: reduce" in landing_css
 
@@ -205,5 +208,5 @@ def test_landing_and_o1_share_the_progressive_motion_system():
     assert "view-mask-in" in app_css
     assert "prefers-reduced-motion: reduce" in app_css
     assert "rshields.xyz" not in app_css
-    assert "/brand-assets/fonts/" in app_css
+    assert "/brand-assets/fonts/" in app_entry
     assert "handle_path /brand-assets/*" in caddy
