@@ -129,6 +129,34 @@ wm_variable() { # path value is_secret description
 	fi
 }
 
+wm_objective_embed() { # app-path config-name public-origin
+	local app_path=$1 name=$2 public_origin=$3 secret public_app runtime_dir
+	if ! wm_exists GET "/w/$WM_WORKSPACE/apps/exists/$app_path"; then
+		echo "  $app_path is not deployed yet; run server/update.sh after its first GitHub deploy"
+		return 0
+	fi
+
+	# Community Edition does not route public custom paths. Its app-level share ID is
+	# stable across app versions but intentionally differs between Windmill instances.
+	wm_api POST "/w/$WM_WORKSPACE/apps/update/$app_path" \
+		'{"execution_mode":"anonymous","skip_draft_deletion":true}' >/dev/null
+	secret=$(wm_api GET "/w/$WM_WORKSPACE/apps/secret_of/$app_path")
+	[[ "$secret" =~ ^[0-9a-f]{32}$ ]] || wm_die "Windmill returned an invalid share ID for $app_path."
+	public_app=$(curl -fsS --max-time 20 \
+		"$WM_API/w/$WM_WORKSPACE/apps_u/public_app/$secret") ||
+		wm_die "Windmill did not expose the public share for $app_path."
+	[[ "$(jq -r .path <<<"$public_app")" == "$app_path" ]] ||
+		wm_die "The public share for $app_path points at a different app."
+
+	runtime_dir="$WM_REPO_DIR/runtime"
+	mkdir -p "$runtime_dir"
+	jq -n --arg url "$public_origin/public/$WM_WORKSPACE/$secret" '{url: $url}' \
+		>"$runtime_dir/$name.json.tmp"
+	mv "$runtime_dir/$name.json.tmp" "$runtime_dir/$name.json"
+	chmod 644 "$runtime_dir/$name.json"
+	echo "  published the $name landing-page embed"
+}
+
 # ---------------------------------------------------------------- people (used by team.sh)
 
 wm_user_email() { echo "$1@$DOMAIN"; } # windmill username -> login email
@@ -206,6 +234,8 @@ wm_configure() {
 	wm_variable f/dhr/mlflow_username "admin" false "MLflow login the pipelines use"
 	wm_variable f/dhr/mlflow_password "$MLFLOW_ADMIN_PASSWORD" true "MLflow password the pipelines use"
 	echo "  stored the pipelines' settings as secret variables in f/dhr"
+
+	wm_objective_embed f/dhr/o1 o1 "$public_origin"
 
 	# The token GitHub Actions uses to deploy. Made once; kept in .env.
 	local saved_token=$WM_TOKEN

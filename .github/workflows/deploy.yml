@@ -80,6 +80,22 @@ jobs:
             --workspace dhr --base-url "$WINDMILL_URL" --token "$WINDMILL_TOKEN" \
             --message "GitHub ${GITHUB_SHA::7}: ${COMMIT_MESSAGE%%$'\n'*}"
 
+      # The app-level share ID is stable across versions but differs by Windmill instance.
+      # server/update.sh writes it into the landing page's ignored runtime configuration.
+      - name: Publish and verify embedded objective apps
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $WINDMILL_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"execution_mode":"anonymous","skip_draft_deletion":true}' \
+            "${WINDMILL_URL%/}/api/w/dhr/apps/update/f/dhr/o1"
+          secret=$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $WINDMILL_TOKEN" \
+            "${WINDMILL_URL%/}/api/w/dhr/apps/secret_of/f/dhr/o1")
+          test "$(curl --fail-with-body --silent --show-error \
+            "${WINDMILL_URL%/}/api/w/dhr/apps_u/public_app/$secret" | jq -r .path)" = "f/dhr/o1"
+
       # So that later edits made in Windmill can be told apart from this deploy.
       - name: Remember what Windmill holds now
         run: python3 .github/windmill_sync.py snapshot

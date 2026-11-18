@@ -1,5 +1,6 @@
 summary: 'O1: corpus preparation artefact'
 data:
   tables: []
+public: true
 labels: []
 sandbox: true

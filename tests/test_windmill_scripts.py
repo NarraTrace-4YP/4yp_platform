@@ -91,6 +91,7 @@ def test_migrations_are_numbered_in_order():
 def test_windmill_versions_match():
     files = [
         "compose.yaml",
+        "local/Dockerfile",
         ".github/workflows/checks.yml",
         ".github/workflows/deploy.yml",
         ".github/workflows/windmill-to-github.yml",

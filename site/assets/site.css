@@ -1094,3 +1094,393 @@ main {
     padding-bottom: 0;
   }
 }
+
+/* ---------------------------------------------------------- tactile motion layer */
+
+.scroll-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: 120;
+  pointer-events: none;
+  background: var(--grey-200);
+}
+
+.scroll-progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--blue);
+  transform: scaleX(var(--scroll-progress, 0));
+  transform-origin: left;
+  will-change: transform;
+}
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+}
+
+.masthead::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -9px;
+  height: 9px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgb(32 30 29 / 8%), transparent);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+html[data-scroll='moved'] .masthead::after {
+  opacity: 1;
+}
+
+.wordmark {
+  position: relative;
+  isolation: isolate;
+}
+
+.wordmark::before {
+  content: '';
+  position: absolute;
+  inset: -7px -9px;
+  z-index: -1;
+  background: var(--wash);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wordmark:hover::before,
+.wordmark:focus-visible::before {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.nav a:not(.btn) {
+  position: relative;
+  overflow: hidden;
+}
+
+.nav a:not(.btn)::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 3px;
+  height: 2px;
+  background: var(--blue);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav a:not(.btn):hover::after,
+.nav a:not(.btn):focus-visible::after,
+.nav a[aria-current='page']::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.hero {
+  position: relative;
+  min-height: min(720px, calc(100vh - 152px));
+  min-height: min(720px, calc(100svh - 152px));
+}
+
+.hero-text {
+  position: relative;
+  z-index: 2;
+  justify-content: center;
+}
+
+.hero-text::before {
+  content: '01 / TRACE THE EVIDENCE';
+  align-self: flex-start;
+  margin-bottom: 4px;
+  font: 700 11px/1.4 var(--mono);
+  color: var(--blue-deep);
+}
+
+.word-reveal {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+.hero-figure {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  --hero-x: 50%;
+  --hero-y: 50%;
+}
+
+.hero-figure::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at var(--hero-x) var(--hero-y), var(--wash), transparent 42%);
+  opacity: 0.76;
+}
+
+.hero-webgl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  opacity: 0.72;
+}
+
+.hero-figure svg {
+  transform: perspective(900px) rotateX(var(--hero-rx, 0deg)) rotateY(var(--hero-ry, 0deg));
+  transform-origin: center;
+  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+  filter: drop-shadow(0 18px 24px rgb(32 30 29 / 8%));
+}
+
+.hero-figure figcaption {
+  position: relative;
+  z-index: 2;
+}
+
+.section {
+  position: relative;
+}
+
+.section::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 72px;
+  height: 3px;
+  background: var(--blue);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.section:has(.is-visible)::before {
+  transform: scaleX(1);
+}
+
+.motion-reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 620ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: calc(var(--reveal-order, 0) * 55ms);
+}
+
+.motion-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.motion-tilt {
+  position: relative;
+  isolation: isolate;
+  transform: perspective(1100px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform-style: preserve-3d;
+  transition:
+    transform 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 220ms ease;
+  will-change: transform;
+}
+
+.motion-tilt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--spot-x, 50%) var(--spot-y, 50%), var(--wash), transparent 46%);
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+
+.motion-tilt:hover::before,
+.motion-tilt:focus-within::before {
+  opacity: 0.58;
+}
+
+.motion-tilt > * {
+  transform: translateZ(1px);
+}
+
+.motion-magnetic {
+  transform: translate(var(--magnetic-x, 0), var(--magnetic-y, 0));
+  transition:
+    transform 380ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+  will-change: transform;
+}
+
+.btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--wash);
+  transform: translateY(105%);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn:hover::before,
+.btn:focus-visible::before {
+  transform: translateY(0);
+}
+
+.btn-primary::before {
+  background: var(--blue-pressed);
+}
+
+.tool h3 a,
+.doc-group a,
+.section-head a,
+.step-list a,
+.ref-table a,
+.footer a {
+  background-image: linear-gradient(var(--blue), var(--blue));
+  background-repeat: no-repeat;
+  background-position: 100% 100%;
+  background-size: 0 1px;
+  transition: background-size 280ms cubic-bezier(0.16, 1, 0.3, 1), color 180ms ease;
+}
+
+.tool h3 a:hover,
+.doc-group a:hover,
+.section-head a:hover,
+.step-list a:hover,
+.ref-table a:hover,
+.footer a:hover {
+  background-position: 0 100%;
+  background-size: 100% 1px;
+}
+
+.step-list li {
+  transition: background-color 220ms ease, padding-left 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.step-list li:hover {
+  background: var(--wash);
+  padding-left: 28px;
+}
+
+.ref-table tbody tr {
+  transition: background-color 200ms ease;
+}
+
+.ref-table tbody tr:hover {
+  background: var(--wash);
+}
+
+html::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--ink);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 320ms cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+html.is-leaving::after {
+  transform: scaleY(1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body {
+    animation: page-arrive 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .word-reveal {
+    animation: word-rise 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(80ms + var(--word-index) * 55ms);
+  }
+
+  .hero-figure {
+    animation: figure-arrive 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+  }
+}
+
+@keyframes page-arrive {
+  from { opacity: 0; }
+}
+
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.72em) rotate(1.5deg);
+  }
+}
+
+@keyframes figure-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+  }
+}
+
+@media (max-width: 900px) {
+  .hero {
+    min-height: auto;
+  }
+
+  .hero-figure {
+    min-height: 540px;
+  }
+}
+
+@media (max-width: 640px) {
+  .masthead {
+    position: relative;
+  }
+
+  .hero-figure {
+    min-height: 420px;
+  }
+
+  .scroll-progress {
+    height: 2px;
+  }
+
+  .step-list li:hover {
+    padding-left: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .motion-tilt,
+  .motion-magnetic,
+  .hero-figure svg,
+  html::after {
+    transform: none;
+    transition: none;
+  }
+
+  .hero-webgl {
+    display: none;
+  }
+}
