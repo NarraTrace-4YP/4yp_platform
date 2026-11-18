@@ -75,7 +75,8 @@ export default function App() {
         // Hiding the header makes the content area taller, which uses up scrolling room.
         // On a page with little to scroll, that would push the header straight back.
         const header = headerRef.current
-        const room = available - (header?.classList.contains('is-collapsed') ? 0 : (header?.scrollHeight ?? 0))
+        const headerSpace = header ? header.offsetHeight + parseFloat(getComputedStyle(header).marginTop) : 0
+        const room = available - headerSpace
         if (scrollTop < 48 || scrollTop < lastScrollTop - 2 || room < 48) {
           setHeaderCollapsed(false)
         } else if (scrollTop > lastScrollTop + 2) {
