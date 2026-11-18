@@ -213,6 +213,35 @@ code {
   padding-bottom: 18px;
 }
 
+.nav-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px 28px;
+  flex-wrap: wrap;
+}
+
+.nav-toggle {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.nav-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.nav-toggle .when-closed,
+.nav-disclosure:not([open]) .nav-toggle .when-open {
+  display: none;
+}
+
+.nav-disclosure:not([open]) .nav-toggle .when-closed {
+  display: inline;
+}
+
 .wordmark {
   font-family: var(--mono);
   font-size: 18px;
