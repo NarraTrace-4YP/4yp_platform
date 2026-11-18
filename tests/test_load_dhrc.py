@@ -1,11 +1,11 @@
-"""Tests for f/dhr/load_dhrc.py, using small made-up reviews (no real DHR text in the repo)."""
+"""Tests for f/dhr/O1/load_reviews/load_reviews.py, using small made-up reviews (no real DHR text in the repo)."""
 
 import hashlib
 import json
 
 import pytest
 
-from f.dhr import load_dhrc as ingest
+from f.dhr.O1.load_reviews import load_reviews as ingest
 
 
 def make_review(pages):

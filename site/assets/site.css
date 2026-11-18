@@ -1,7 +1,5 @@
-/* NarraTrace landing page.
-   Colours, type and rules come from the NarraTrace web scheme (the "NarraTrace Logo
-   Directions" design): paper, ink, one signal blue, and the grey of unhighlighted text.
-   Zero radius, rules not shadows, flush left, blue only where it means something. */
+/* Shared styles for the static landing, about, and objective pages.
+   Colour and spacing tokens keep the site aligned with the embedded O1 app. */
 
 @font-face {
   font-family: 'Archivo';
@@ -49,12 +47,8 @@
   --sans: 'Archivo', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --margin: 56px;
-  --inset: 28px; /* text inside a panel; the header text lines up with it */
-  /* 70% of a large screen, without getting cramped on a laptop. */
-  --wrap: min(100vw, max(70vw, 1240px));
-  --content-width: calc(var(--wrap) - var(--margin) - var(--margin));
-  /* Measured from the viewport, so pages with and without a scrollbar line up. */
-  --content-start: calc((100vw - var(--content-width)) / 2);
+  --wrap: 70vw;
+  --content-width: var(--wrap);
 }
 
 *,
@@ -184,8 +178,10 @@ code {
 }
 
 .wrap {
-  width: var(--content-width);
-  margin-inline-start: var(--content-start);
+  width: var(--wrap);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
 }
 
 /* Small uppercase mono: logo, labels, data. Always normal tracking. */
@@ -206,7 +202,7 @@ code {
   color: var(--grey-700);
 }
 
-/* ------------------------------------------------------------------ masthead */
+/* Masthead. */
 
 .masthead {
   width: var(--content-width);
@@ -218,7 +214,7 @@ code {
   content: '';
   position: absolute;
   inset: auto auto 0 50%;
-  width: 100%;
+  width: var(--content-width);
   height: 3px;
   background: var(--ink);
   transform: translateX(-50%);
@@ -226,8 +222,8 @@ code {
 
 .masthead .wrap {
   width: 100%;
-  margin-inline-start: 0;
-  padding-inline: calc(var(--inset) + 2px); /* the grid's border, then the cell's padding */
+  max-width: 100%;
+  padding-inline: clamp(16px, 2vw, 32px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -277,7 +273,7 @@ code {
   color: var(--blue-deep);
 }
 
-/* ------------------------------------------------------------------- buttons */
+/* Buttons. */
 
 .btn {
   display: inline-block;
@@ -327,7 +323,7 @@ code {
   gap: 2px;
 }
 
-/* ---------------------------------------------- the grid, with its gutters on show */
+/* The grid, with its gutters on show. */
 
 .grid {
   display: grid;
@@ -354,7 +350,7 @@ code {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-/* ---------------------------------------------------------------------- hero */
+/* Hero. */
 
 .hero {
   margin-top: 40px;
@@ -418,7 +414,8 @@ code {
   gap: 24px;
   padding: 44px var(--inset) 28px;
   background-color: var(--paper);
-  background-image: linear-gradient(to right, #0b5e8a0d 1px, transparent 1px),
+  background-image:
+    linear-gradient(to right, #0b5e8a0d 1px, transparent 1px),
     linear-gradient(to bottom, #0b5e8a0d 1px, transparent 1px);
   background-size: 24px 24px;
 }
@@ -476,14 +473,23 @@ code {
     animation: rise-in 420ms ease-out both;
   }
 
-  .hero-text > :nth-child(2) { animation-delay: 60ms; }
-  .hero-text > :nth-child(3) { animation-delay: 120ms; }
-  .hero-text > :nth-child(4) { animation-delay: 180ms; }
+  .hero-text > :nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .hero-text > :nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .hero-text > :nth-child(4) {
+    animation-delay: 180ms;
+  }
 
   .nav a,
   .btn,
   .tool {
-    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease;
   }
 
   .action-arrow {
@@ -562,7 +568,7 @@ code {
   }
 }
 
-/* ------------------------------------------------------------------ sections */
+/* Sections. */
 
 main {
   padding-bottom: 96px;
@@ -627,7 +633,7 @@ main {
   gap: 16px;
 }
 
-/* -------------------------------------------------------------------- tools */
+/* Tools. */
 
 .tool {
   position: relative;
@@ -700,7 +706,7 @@ main {
   color: var(--ink);
 }
 
-/* --------------------------------------------------------------------- docs */
+/* Docs. */
 
 .doc-group h3 {
   font-size: 17px;
@@ -724,7 +730,7 @@ main {
   border-bottom: 1px solid var(--grey-300);
 }
 
-/* ----------------------------------------------------------------- progress */
+/* Progress. */
 
 .stages {
   list-style: none;
@@ -826,7 +832,7 @@ main {
   color: var(--grey-700);
 }
 
-/* ---------------------------------------------------------------- reference */
+/* Reference. */
 
 .ref-table {
   width: 100%;
@@ -862,7 +868,7 @@ main {
   white-space: nowrap;
 }
 
-/* -------------------------------------------------------------------- about */
+/* About. */
 
 .page-head {
   margin-top: 40px;
@@ -969,7 +975,7 @@ main {
   color: var(--grey-800);
 }
 
-/* ----------------------------------------------------------------- not found */
+/* Not found. */
 
 .not-found {
   margin-top: 40px;
@@ -982,7 +988,7 @@ main {
   padding: 56px var(--inset);
 }
 
-/* -------------------------------------------------------------------- footer */
+/* Footer. */
 
 .footer {
   background: var(--ink);
@@ -1036,7 +1042,7 @@ main {
   color: var(--wash);
 }
 
-/* ---------------------------------------------------------------- responsive */
+/* Responsive. */
 
 @media (max-width: 1100px) {
   .cols-4 {
@@ -1142,7 +1148,7 @@ main {
   }
 }
 
-/* ---------------------------------------------------------- tactile motion layer */
+/* Tactile motion layer. */
 
 .scroll-progress {
   position: fixed;
@@ -1331,7 +1337,11 @@ main {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: radial-gradient(circle at var(--spot-x, 50%) var(--spot-y, 50%), var(--wash), transparent 46%);
+  background: radial-gradient(
+    circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    var(--wash),
+    transparent 46%
+  );
   opacity: 0;
   transition: opacity 240ms ease;
 }
@@ -1377,7 +1387,9 @@ main {
 }
 
 .step-list li {
-  transition: background-color 220ms ease, box-shadow 220ms ease;
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .step-list li:hover {
@@ -1409,7 +1421,9 @@ main {
 }
 
 @keyframes page-arrive {
-  from { opacity: 0; }
+  from {
+    opacity: 0;
+  }
 }
 
 @keyframes word-rise {

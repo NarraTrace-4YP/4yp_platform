@@ -3,9 +3,10 @@
 //   npm install --no-save windmill-cli@<version> && node .github/check_windmill_scripts.mjs
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const parserDir = "node_modules/windmill-parser-wasm-py";
-const parser = await import(path.resolve(parserDir, "windmill_parser_wasm.js"));
+const parser = await import(pathToFileURL(path.resolve(parserDir, "windmill_parser_wasm.js")).href);
 parser.initSync({ module: fs.readFileSync(path.join(parserDir, "windmill_parser_wasm_bg.wasm")) });
 
 const scripts = fs

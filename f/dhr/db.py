@@ -32,13 +32,13 @@ def apply_migrations(
         " name text PRIMARY KEY,"
         " applied_at timestamptz NOT NULL DEFAULT now())"
     )
-    done = {row[0] for row in conn.execute("SELECT name FROM public.schema_migrations")}
-    ran = []
+    applied_names = {row[0] for row in conn.execute("SELECT name FROM public.schema_migrations")}
+    newly_applied = []
     for name, sql in migrations:
-        if name in done:
+        if name in applied_names:
             continue
         with conn.transaction():
             conn.execute(sql)
             conn.execute("INSERT INTO public.schema_migrations (name) VALUES (%s)", (name,))
-        ran.append(name)
-    return ran
+        newly_applied.append(name)
+    return newly_applied

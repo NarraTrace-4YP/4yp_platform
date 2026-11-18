@@ -6,7 +6,12 @@ import types
 
 import pytest
 
-from f.dhr import load_dhrc, o1_attributes, o1_candidates, o1_run_status, o1_sections, o1_status
+from f.dhr.O1.app_backend import get_run_status as o1_run_status
+from f.dhr.O1.app_backend import get_status as o1_status
+from f.dhr.O1.find_candidate_template_sections import get_candidates as o1_candidates
+from f.dhr.O1.group_blocks_by_section import get_sections as o1_sections
+from f.dhr.O1.link_case_metadata import get_attribute_counts as o1_attributes
+from f.dhr.O1.load_reviews import load_reviews as load_dhrc
 from tests.test_load_dhrc import NESTED, TEXT, make_dataset, make_review
 
 # ----------------------------------------------------------------- o1_run_status
@@ -44,7 +49,7 @@ FLOW_JOB = {
     "type": "QueuedJob",
     "running": True,
     "job_kind": "flow",
-    "script_path": "f/dhr/o1_pipeline",
+    "script_path": "f/dhr/O1/pipeline",
     "logs": "",
     "flow_status": {
         "modules": [
@@ -107,7 +112,7 @@ def test_finished_script_gives_its_result(fake_wmill):
             "id": "j",
             "type": "CompletedJob",
             "success": True,
-            "script_path": "f/dhr/load_dhrc",
+            "script_path": "f/dhr/O1/load_reviews/load_reviews",
             "logs": LOG,
             "result": {"n_documents": 100},
             "duration_ms": 61000,
@@ -250,7 +255,7 @@ def test_candidates_are_attached_to_their_sections_in_reading_order():
         ("b", "dhr-2016/overview-report", 6, "Terms of reference", 100.0, 2, 0.7, 2),
         ("b", "dhr-2016/overview-report", 4, "Timescales", 30.0, 9, 0.6, 3),
     ]
-    result = o1_candidates.attach(sections, candidates, k=5, min_heading_score=60)
+    result = o1_candidates.attach_candidates(sections, candidates, k=5, min_heading_score=60)
     assert [s["section_id"] for s in result] == ["a", "b", "c"]
     found = result[1]["candidates"]
     assert [c["template_position"] for c in found] == [3, 6, 4]
@@ -274,7 +279,7 @@ def test_template_sections_carry_how_often_they_are_the_best_match():
          "", 44),
     ]  # fmt: skip
     counts = [("dhr-2016/imr", 2, 7, 3, 2)]
-    templates = o1_candidates.with_counts(rows, counts)
+    templates = o1_candidates.attach_template_counts(rows, counts)
     assert [t["template"] for t in templates] == ["dhr-2016/imr", "dhr-2016/action-plan"]
     first, second = templates[0]["sections"]
     assert (first["n_best_by_text"], first["n_best_by_heading"]) == (0, 0)

@@ -9,7 +9,7 @@ import pytest
 
 from f.dhr.datasets import DATASETS, check_dataset
 
-APP = Path(__file__).parent.parent / "f" / "dhr" / "o1.raw_app" / "shared.ts"
+APP = Path(__file__).parent.parent / "f/dhr/O1/app.raw_app/shared.ts"
 
 
 def test_known_dataset_gives_its_settings():
@@ -29,7 +29,13 @@ def test_o1_app_offers_the_same_datasets():
 
 
 @pytest.mark.parametrize(
-    "module", ["load_dhrc", "group_sections", "case_viewer_reviews", "case_viewer_details"]
+    "module",
+    [
+        "O1.load_reviews.load_reviews",
+        "O1.group_blocks_by_section.group_blocks_by_section",
+        "O1.link_case_metadata.get_reviews",
+        "O1.link_case_metadata.get_case_details",
+    ],
 )
 def test_windmill_dropdowns_offer_the_same_datasets(module):
     # Windmill shows main's Literal[...] as a dropdown; it must list exactly these datasets.

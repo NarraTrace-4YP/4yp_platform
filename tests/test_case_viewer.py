@@ -1,7 +1,7 @@
 """Tests for the case viewer's scripts (the database parts are checked by hand on the server)."""
 
-from f.dhr.case_viewer_details import group_details, split_detail
-from f.dhr.case_viewer_reviews import build_facets, review_facts, year
+from f.dhr.O1.link_case_metadata.get_case_details import group_details, split_detail
+from f.dhr.O1.link_case_metadata.get_reviews import build_facets, review_facts, year
 
 
 def test_plain_heading():

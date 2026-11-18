@@ -1,0 +1,11 @@
+{
+  "name": "dhr-source-tools",
+  "private": true,
+  "scripts": {
+    "format": "prettier --write \"f/dhr/**/*.{ts,tsx,css,json,yaml}\" \"site/**/*.{html,css,js}\"",
+    "format:check": "prettier --check \"f/dhr/**/*.{ts,tsx,css,json,yaml}\" \"site/**/*.{html,css,js}\""
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
+  }
+}

@@ -315,7 +315,7 @@ Open:
 
 Sign in using the email address and password in your `ACCOUNTS.txt`.
 
-Select the `dhr` workspace, open `f/dhr/load_dhrc` and click **Run**.
+Select the `dhr` workspace, open `f/dhr/O1/load_reviews/load_reviews` and click **Run**.
 
 The script should download the DHRC-100 dataset from Hugging Face, verify its checksums, read the 100 reviews and store them in PostgreSQL.
 
