@@ -15,7 +15,6 @@
     const available = document.documentElement.scrollHeight - window.innerHeight;
     scrollProgress = available > 0 ? window.scrollY / available : 0;
     progress.style.setProperty('--scroll-progress', String(scrollProgress));
-    document.documentElement.dataset.scroll = window.scrollY < 8 ? 'top' : 'moved';
   };
   window.addEventListener('scroll', updateProgress, { passive: true });
   window.addEventListener('resize', updateProgress, { passive: true });
@@ -39,7 +38,7 @@
 
   const revealTargets = [
     ...document.querySelectorAll(
-      '.section-head > *, .grid:not(.hero) > .cell, .steps > *, .ref-table tr, .two-col > *, .term-list > *, .footer .wrap > *'
+      '.section-head > *, .grid:not(.hero) > .cell, .steps > *, .ref-table tr, .two-col > *, .term-list > *'
     ),
   ];
   revealTargets.forEach((element, index) => {
@@ -58,7 +57,7 @@
           observer.unobserve(entry.target);
         });
       },
-      { rootMargin: '0px 0px -10% 0px', threshold: 0.08 }
+      { rootMargin: '0px 0px -40px 0px', threshold: 0.08 }
     );
     revealTargets.forEach((element) => observer.observe(element));
   }
@@ -94,19 +93,11 @@
     });
 
     document.querySelectorAll('.tool, .stage, .doc-group').forEach((card) => {
-      card.classList.add('motion-tilt');
+      card.classList.add('motion-spot');
       card.addEventListener('pointermove', (event) => {
         const rect = card.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width - 0.5;
-        const y = (event.clientY - rect.top) / rect.height - 0.5;
-        card.style.setProperty('--tilt-x', `${(-y * 2.4).toFixed(2)}deg`);
-        card.style.setProperty('--tilt-y', `${(x * 2.4).toFixed(2)}deg`);
-        card.style.setProperty('--spot-x', `${((x + 0.5) * 100).toFixed(1)}%`);
-        card.style.setProperty('--spot-y', `${((y + 0.5) * 100).toFixed(1)}%`);
-      });
-      card.addEventListener('pointerleave', () => {
-        card.style.setProperty('--tilt-x', '0deg');
-        card.style.setProperty('--tilt-y', '0deg');
+        card.style.setProperty('--spot-x', `${(((event.clientX - rect.left) / rect.width) * 100).toFixed(1)}%`);
+        card.style.setProperty('--spot-y', `${(((event.clientY - rect.top) / rect.height) * 100).toFixed(1)}%`);
       });
     });
   }

@@ -72,7 +72,11 @@ export default function App() {
           String(available > 0 ? root.scrollTop / available : 0)
         )
         const scrollTop = root.scrollTop
-        if (scrollTop < 48 || scrollTop < lastScrollTop - 2) {
+        // Hiding the header makes the content area taller, which uses up scrolling room.
+        // On a page with little to scroll, that would push the header straight back.
+        const header = headerRef.current
+        const room = available - (header?.classList.contains('is-collapsed') ? 0 : (header?.scrollHeight ?? 0))
+        if (scrollTop < 48 || scrollTop < lastScrollTop - 2 || room < 48) {
           setHeaderCollapsed(false)
         } else if (scrollTop > lastScrollTop + 2) {
           setHeaderCollapsed(true)
@@ -120,7 +124,7 @@ export default function App() {
               observer?.unobserve(entry.target)
             })
           },
-          { root, rootMargin: '0px 0px -8% 0px', threshold: 0.06 }
+          { root, threshold: 0.06 }
         )
     items.forEach((item) => (observer ? observer.observe(item) : item.classList.add('is-visible')))
 
@@ -135,12 +139,8 @@ export default function App() {
       const target = (event.target as Element).closest<HTMLElement>('.motion-card')
       if (!target) return
       const rect = target.getBoundingClientRect()
-      const x = (event.clientX - rect.left) / rect.width - 0.5
-      const y = (event.clientY - rect.top) / rect.height - 0.5
-      target.style.setProperty('--card-rx', `${(-y * 1.6).toFixed(2)}deg`)
-      target.style.setProperty('--card-ry', `${(x * 1.6).toFixed(2)}deg`)
-      target.style.setProperty('--card-x', `${((x + 0.5) * 100).toFixed(1)}%`)
-      target.style.setProperty('--card-y', `${((y + 0.5) * 100).toFixed(1)}%`)
+      target.style.setProperty('--card-x', `${(((event.clientX - rect.left) / rect.width) * 100).toFixed(1)}%`)
+      target.style.setProperty('--card-y', `${(((event.clientY - rect.top) / rect.height) * 100).toFixed(1)}%`)
     }
     const leave = (event: PointerEvent) => {
       const button = (event.target as Element).closest<HTMLElement>('button.primary, .link-button')
@@ -148,10 +148,6 @@ export default function App() {
         button.style.setProperty('--button-x', '0px')
         button.style.setProperty('--button-y', '0px')
       }
-      const target = (event.target as Element).closest<HTMLElement>('.motion-card')
-      if (!target || (event.relatedTarget instanceof Node && target.contains(event.relatedTarget))) return
-      target.style.setProperty('--card-rx', '0deg')
-      target.style.setProperty('--card-ry', '0deg')
     }
     root.addEventListener('pointermove', move)
     root.addEventListener('pointerout', leave)
