@@ -137,6 +137,16 @@ def test_landing_navigation_places_o1_last():
     assert '<details class="nav-disclosure"' not in landing
 
 
+def test_landing_and_o1_headers_share_the_content_width():
+    site_css = (SITE / "assets" / "site.css").read_text(encoding="utf-8")
+    app_css = (ROOT / "f/dhr/o1.raw_app/index.css").read_text(encoding="utf-8")
+    assert "--content-width: calc(var(--wrap) - var(--margin) - var(--margin));" in site_css
+    assert "--content-width: calc(var(--wrap) - var(--gutter) - var(--gutter));" in app_css
+    assert ".masthead::before" in site_css and "width: var(--content-width);" in site_css
+    assert ".top::before" in app_css and "width: var(--content-width);" in app_css
+    assert ".content > * {\n  width: var(--content-width);" in app_css
+
+
 def test_caddy_serves_the_site():
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     caddyfile = (ROOT / "caddy" / "Caddyfile").read_text(encoding="utf-8")

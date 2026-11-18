@@ -50,6 +50,7 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --margin: 56px;
   --wrap: 70vw;
+  --content-width: calc(var(--wrap) - var(--margin) - var(--margin));
 }
 
 *,
@@ -210,7 +211,7 @@ code {
   content: '';
   position: absolute;
   inset: auto auto 0 50%;
-  width: calc(var(--wrap) - var(--margin) - var(--margin));
+  width: var(--content-width);
   height: 3px;
   background: var(--ink);
   transform: translateX(-50%);
