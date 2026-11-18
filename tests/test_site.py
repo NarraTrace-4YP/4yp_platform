@@ -130,11 +130,11 @@ def test_stylesheet_files_exist():
     assert not missing, f"site.css points to missing files: {missing}"
 
 
-def test_landing_navigation_places_o1_last_and_can_be_collapsed():
+def test_landing_navigation_places_o1_last():
     landing = (SITE / "index.html").read_text(encoding="utf-8")
     nav = landing.split('<nav class="nav" aria-label="Main">', 1)[1].split("</nav>", 1)[0]
     assert nav.index('href="/about/"') < nav.index('href="/o1/"')
-    assert '<details class="nav-disclosure" open>' in landing
+    assert '<details class="nav-disclosure"' not in landing
 
 
 def test_caddy_serves_the_site():
