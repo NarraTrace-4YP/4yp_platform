@@ -18,6 +18,7 @@ on:
       - "wmill.yaml"
       - ".github/workflows/deploy.yml"
       - ".github/windmill_sync.py"
+      - ".github/check_objective_embed.py"
   workflow_dispatch:
     inputs:
       overwrite_windmill_edits:
@@ -83,6 +84,7 @@ jobs:
       # The app-level share ID is stable across versions but differs by Windmill instance.
       # server/update.sh writes it into the landing page's ignored runtime configuration.
       - name: Publish and verify embedded objective apps
+        id: objective_apps
         run: |
           curl --fail-with-body --silent --show-error \
             -X POST \
@@ -95,7 +97,16 @@ jobs:
             "${WINDMILL_URL%/}/api/w/dhr/apps/secret_of/f/dhr/O1/app")
           test "$(curl --fail-with-body --silent --show-error \
             "${WINDMILL_URL%/}/api/w/dhr/apps_u/public_app/$secret" | jq -r .path)" = "f/dhr/O1/app"
+          echo "public_url=${WINDMILL_URL%/}/public/dhr/$secret" >> "$GITHUB_OUTPUT"
 
       # So that later edits made in Windmill can be told apart from this deploy.
       - name: Remember what Windmill holds now
         run: python3 .github/windmill_sync.py snapshot
+
+      # A moved app receives a new share ID. The website's runtime file lives on the
+      # server, outside this runner. Catch a stale URL rather than report a healthy embed.
+      # Snapshot first: the app is already deployed and must not appear as a web edit.
+      - name: Verify the website embeds the current O1 app
+        env:
+          O1_PUBLIC_URL: ${{ steps.objective_apps.outputs.public_url }}
+        run: python3 .github/check_objective_embed.py --windmill-url "$WINDMILL_URL" --public-url "$O1_PUBLIC_URL"
