@@ -23,7 +23,7 @@
   --none: #d7d3d3;
   --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
   --gutter: 56px;
-  --wrap: calc(80vw + var(--gutter) + var(--gutter));
+  --wrap: 70vw;
   font-family: 'Archivo', system-ui, sans-serif;
   color: var(--text);
 }
@@ -123,8 +123,15 @@ button {
   border-bottom-width: 0;
 }
 
+.app-header-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-block: 6px;
+}
+
 .app-heading {
-  padding-block: 12px;
+  flex: none;
 }
 
 .top h1 {
@@ -151,7 +158,16 @@ button {
 .app-nav {
   display: flex;
   gap: 0 4px;
-  flex-wrap: wrap;
+  flex: 1;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.app-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -182,6 +198,12 @@ button {
   min-height: 0;
   background: var(--soft);
   scrollbar-gutter: stable both-edges;
+}
+
+.content > * {
+  width: 100%;
+  max-width: var(--wrap);
+  margin-inline: auto;
 }
 
 .page {
@@ -1339,10 +1361,6 @@ input[type='search'] {
     --gutter: 16px;
   }
 
-  .app-heading {
-    padding-block: 16px 10px;
-  }
-
   .tab {
     padding: 7px 8px;
   }
@@ -1482,10 +1500,6 @@ body {
   z-index: 2;
 }
 
-.app-header-content {
-  padding-bottom: 12px;
-}
-
 .app-kicker {
   display: flex;
   align-items: center;
@@ -1517,6 +1531,10 @@ body {
 .app-nav {
   gap: 0 2px;
   padding-bottom: 0;
+}
+
+.app-nav .tab {
+  padding-block: 7px;
 }
 
 .tab {
@@ -1838,22 +1856,12 @@ button.primary:focus-visible::after {
 }
 
 @media (max-width: 640px) {
-  .app-heading {
-    padding-block: 12px;
+  .app-header-row {
+    gap: 8px;
   }
 
   .app-kicker {
     font-size: 10px !important;
-  }
-
-  .app-nav {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .app-nav::-webkit-scrollbar {
-    display: none;
   }
 
   .tab {
