@@ -47,6 +47,7 @@
   --sans: 'Archivo', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --margin: 56px;
+  --inset: 28px;
   --wrap: 70vw;
   --content-width: var(--wrap);
 }
@@ -206,7 +207,7 @@ code {
 
 .masthead {
   width: var(--content-width);
-  margin-inline-start: var(--content-start);
+  margin-inline: auto;
   background: var(--paper);
 }
 
@@ -582,8 +583,9 @@ main {
 }
 
 .app-main {
-  padding: 0;
-  background: var(--paper);
+  min-height: 0;
+  padding: 24px 0 0;
+  background: var(--ground);
 }
 
 .app-main iframe {
@@ -601,7 +603,7 @@ main {
 
 .embed-error {
   width: var(--content-width);
-  margin-inline-start: var(--content-start);
+  margin-inline: auto;
   padding: 28px calc(var(--inset) + 2px);
   color: var(--grey-800);
 }
@@ -1045,6 +1047,10 @@ main {
 /* Responsive. */
 
 @media (max-width: 1100px) {
+  :root {
+    --wrap: calc(100vw - 2 * var(--margin));
+  }
+
   .cols-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
