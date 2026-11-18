@@ -145,7 +145,6 @@ def test_landing_and_o1_headers_share_the_content_width():
     assert ".masthead {\n  width: var(--content-width);" in site_css
     assert ".masthead::before" in site_css and "width: 100%;" in site_css
     assert ".top {\n  flex: none;\n  width: var(--content-width);" in app_css
-    assert ".top::before" in app_css and "width: var(--content-width);" in app_css
     assert ".content > * {\n  width: var(--content-width);" in app_css
 
 

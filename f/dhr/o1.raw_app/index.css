@@ -136,15 +136,18 @@ select {
   flex: none;
   width: var(--content-width);
   max-width: 100%;
-  margin-inline: auto;
-  max-height: var(--app-header-height, 500px);
+  margin: clamp(12px, 2.5vw, 24px) auto 0; /* the space below the site's header */
+  max-height: calc(var(--app-header-height, 500px) + 2px); /* its content and borders */
   overflow: hidden;
-  transition: max-height 220ms ease;
+  transition: max-height 220ms ease, margin-top 220ms ease;
+  border: 1px solid var(--line);
   background: var(--paper);
 }
 
 .top.is-collapsed {
   max-height: 0;
+  margin-top: 0;
+  border-block-width: 0;
 }
 
 .app-header-row {
@@ -154,7 +157,7 @@ select {
   flex-wrap: nowrap;
   width: 100%;
   max-width: none;
-  padding-inline: calc(var(--inset) + 1px); /* a card's border, then its padding */
+  padding-inline: var(--inset);
   padding-block: 6px;
 }
 
@@ -251,10 +254,16 @@ select {
   margin-top: 0;
 }
 
+/* The rule divides sections, so the first one on a page doesn't need it. */
+.page > section:first-child:not(.intro) {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .page .intro {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-top: 3px solid var(--text);
+  border-top: 2px solid var(--accent);
   padding: 28px var(--inset);
 }
 
@@ -1527,20 +1536,6 @@ body {
   background-size: 24px 24px;
 }
 
-.top::before {
-  content: '';
-  position: absolute;
-  inset: auto auto 0 50%;
-  width: var(--content-width);
-  height: 3px;
-  background: var(--text);
-  transform: translateX(-50%);
-}
-
-.top.is-collapsed::before {
-  display: none;
-}
-
 .top::after {
   content: '';
   position: absolute;
@@ -1694,32 +1689,11 @@ body {
   padding-block-start: 30px;
 }
 
-.page .intro {
-  position: relative;
-  overflow: hidden;
-  border-top-width: 4px;
-}
-
-.page .intro::after {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 4px;
-  background: var(--accent);
-  transform: scaleX(0.16);
-  transform-origin: left;
-  transition: transform 720ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.page .intro:hover::after {
-  transform: scaleX(1);
-}
-
 .page section {
   position: relative;
 }
 
-.page > section:not(.intro)::before {
+.page > section:not(.intro, :first-child)::before {
   content: '';
   position: absolute;
   top: -2px;
