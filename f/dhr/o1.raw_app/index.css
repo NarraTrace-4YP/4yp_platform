@@ -102,11 +102,15 @@ button {
   height: 100dvh;
 }
 
-.app-wrap,
-.page {
-  max-width: var(--wrap);
+.app-wrap {
+  width: var(--wrap);
+  max-width: 100%;
   margin-inline: auto;
   padding-inline: var(--gutter);
+}
+
+.page {
+  margin-inline: auto;
 }
 
 .top {
@@ -116,14 +120,12 @@ button {
   margin-inline: auto;
   max-height: var(--app-header-height, 500px);
   overflow: hidden;
-  transition: max-height 220ms ease, border-bottom-width 220ms ease;
-  border-bottom: 1px solid var(--line);
+  transition: max-height 220ms ease;
   background: var(--paper);
 }
 
 .top.is-collapsed {
   max-height: 0;
-  border-bottom-width: 0;
 }
 
 .app-header-row {
@@ -208,8 +210,8 @@ button {
 }
 
 .content > * {
-  width: 100%;
-  max-width: var(--wrap);
+  width: calc(var(--wrap) - var(--gutter) - var(--gutter));
+  max-width: 100%;
   margin-inline: auto;
 }
 
@@ -1467,11 +1469,24 @@ body {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border-bottom: 3px solid var(--text);
   background-image:
     linear-gradient(to right, rgb(11 94 138 / 4%) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(11 94 138 / 4%) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+.top::before {
+  content: '';
+  position: absolute;
+  inset: auto auto 0 50%;
+  width: calc(var(--wrap) - var(--gutter) - var(--gutter));
+  height: 3px;
+  background: var(--text);
+  transform: translateX(-50%);
+}
+
+.top.is-collapsed::before {
+  display: none;
 }
 
 .top::after {
@@ -1571,11 +1586,13 @@ body {
 
 .app-scroll-progress {
   position: absolute;
-  inset: auto 0 0;
+  inset: auto auto 0 50%;
   z-index: 5;
+  width: calc(var(--wrap) - var(--gutter) - var(--gutter));
   height: 3px;
   pointer-events: none;
   background: var(--line);
+  transform: translateX(-50%);
 }
 
 .app-scroll-progress span {
