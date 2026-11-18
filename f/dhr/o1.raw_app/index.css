@@ -127,6 +127,7 @@ button {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: nowrap;
   padding-block: 6px;
 }
 
@@ -140,6 +141,7 @@ button {
   line-height: 1.3;
   letter-spacing: 0;
   margin: 0;
+  white-space: nowrap;
 }
 
 .top p {
@@ -171,6 +173,7 @@ button {
 }
 
 .tab {
+  flex: none;
   border: 0;
   background: transparent;
   padding: 10px 12px;
@@ -179,6 +182,7 @@ button {
   color: var(--muted);
   font: 500 12px/1.4 var(--mono);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .tab:hover {
@@ -1306,10 +1310,6 @@ input[type='search'] {
   cursor: pointer;
 }
 
-.candidates tbody tr:hover {
-  background: var(--soft);
-}
-
 .candidates tbody tr.selected {
   background: var(--accent-soft);
 }
@@ -1810,18 +1810,6 @@ button.primary:focus-visible::after {
   transform: translateX(4px);
 }
 
-.tables tbody tr,
-.shares tbody tr,
-.details tbody tr {
-  transition: background-color 180ms ease;
-}
-
-.tables tbody tr:hover,
-.shares tbody tr:hover,
-.details tbody tr:hover {
-  background: var(--accent-soft);
-}
-
 .content > .page,
 .content > .run-view,
 .content > .cases,
@@ -1864,9 +1852,6 @@ button.primary:focus-visible::after {
     font-size: 10px !important;
   }
 
-  .tab {
-    flex: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

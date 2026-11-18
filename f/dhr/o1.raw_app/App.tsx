@@ -182,7 +182,7 @@ export default function App() {
         <div className="app-header">
           <div className="app-wrap app-header-row">
             <div className="app-heading">
-              <h1><span>O1:</span> Corpus preparation</h1>
+              <h1>O1: Corpus preparation</h1>
             </div>
             <nav className="app-nav" aria-label="O1 views">
               {TABS.map((t) => (
