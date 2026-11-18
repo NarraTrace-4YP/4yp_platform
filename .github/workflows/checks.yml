@@ -19,7 +19,20 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen
       - run: uv run ruff check .
+      - run: uv run ruff format --check f/dhr
       - run: uv run pytest
+
+  formatting:
+    name: Frontend formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run format:check
 
   windmill:
     name: Windmill scripts are valid
@@ -37,9 +50,9 @@ jobs:
       # Each app: its structure, and that its frontend builds.
       - name: Check the apps
         run: |
-          for app in f/*/*.raw_app; do
+          while IFS= read -r -d '' app; do
             npx --no-install wmill app lint "$app"
-          done
+          done < <(find f -type d -name '*.raw_app' -not -path '*/node_modules/*' -print0)
 
   server-config:
     # Keep this display name stable: the repository ruleset may require it by name.

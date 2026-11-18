@@ -1,4 +1,4 @@
-"""Checks the O1 pipeline (f/dhr/o1_pipeline.flow) and the O1 app (f/dhr/o1.raw_app) fit the
+"""Checks the O1 pipeline (f/dhr/O1/pipeline.flow) and the O1 app (f/dhr/O1/app.raw_app) fit the
 scripts they run. Windmill only finds a mismatch when someone presses Run, so these catch a
 renamed script, a renamed argument or a misspelt dataset before it is merged."""
 
@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from f.dhr.o1_run_status import RUNNABLE_PATHS
+from f.dhr.O1.app_backend.get_run_status import RUNNABLE_PATHS
 
 ROOT = Path(__file__).resolve().parents[1]
-FLOW = yaml.safe_load((ROOT / "f/dhr/o1_pipeline.flow/flow.yaml").read_text(encoding="utf-8"))
+FLOW = yaml.safe_load((ROOT / "f/dhr/O1/pipeline.flow/flow.yaml").read_text(encoding="utf-8"))
 STEPS = FLOW["value"]["modules"]
-APP = ROOT / "f/dhr/o1.raw_app"
+APP = ROOT / "f/dhr/O1/app.raw_app"
 RUNNABLES = {
     path.stem: yaml.safe_load(path.read_text(encoding="utf-8"))
     for path in sorted((APP / "backend").glob("*.yaml"))
@@ -24,7 +24,7 @@ RUNNABLES = {
 
 
 def script_main(windmill_path: str):
-    """The main function of a script in f/, e.g. f/dhr/load_dhrc."""
+    """The main function of a script in f/, e.g. f/dhr/O1/load_reviews/load_reviews."""
     module = importlib.import_module(windmill_path.replace("/", "."))
     return module.main
 
@@ -96,6 +96,26 @@ def test_app_runnables_exist(name):
         assert (ROOT / f"{runnable['path']}.flow" / "flow.yaml").is_file()
 
 
+def test_frontend_backend_calls_have_bindings():
+    """A renamed YAML binding must also be renamed in frontend calls."""
+    called = set()
+    for path in [*APP.glob("*.ts"), *APP.glob("*.tsx")]:
+        called.update(
+            re.findall(r"backend(?:Async)?\s*\.\s*(\w+)\s*\(", path.read_text(encoding="utf-8"))
+        )
+    assert called == set(RUNNABLES)
+
+
+def test_run_cards_link_to_their_bound_script_or_flow():
+    """Check relative source links as well as the absolute backend paths."""
+    text = (APP / "RunTab.tsx").read_text(encoding="utf-8")
+    cards = re.findall(r'<Card\s+title="[^"]+"\s+path="([^"]+)"\s+kind="(script|flow)"', text)
+    assert len(cards) == 5
+    for path, kind in cards:
+        suffix = ".py" if kind == "script" else ".flow/flow.yaml"
+        assert (ROOT / f"f/dhr/O1/{path}{suffix}").is_file()
+
+
 def test_app_names_the_flow_steps():
     text = (APP / "RunTab.tsx").read_text(encoding="utf-8")
     block = re.search(r"const FLOW_STEPS[^{]*\{(.*?)\}", text, re.DOTALL)
@@ -106,20 +126,20 @@ def test_app_names_the_flow_steps():
 
 def test_app_can_follow_every_run_it_starts():
     started = {r["path"] for r in RUNNABLES.values()} - {
-        "f/dhr/o1_status",
-        "f/dhr/o1_attributes",
-        "f/dhr/o1_run_status",
-        "f/dhr/case_viewer_reviews",
-        "f/dhr/case_viewer_details",
-        "f/dhr/o1_sections",
-        "f/dhr/o1_candidates",
+        "f/dhr/O1/app_backend/get_status",
+        "f/dhr/O1/link_case_metadata/get_attribute_counts",
+        "f/dhr/O1/app_backend/get_run_status",
+        "f/dhr/O1/link_case_metadata/get_reviews",
+        "f/dhr/O1/link_case_metadata/get_case_details",
+        "f/dhr/O1/group_blocks_by_section/get_sections",
+        "f/dhr/O1/find_candidate_template_sections/get_candidates",
     }
     assert started == {
-        "f/dhr/load_dhrc",
-        "f/dhr/collect_case_metadata",
-        "f/dhr/group_sections",
-        "f/dhr/find_template_candidates",
-        "f/dhr/o1_pipeline",
+        "f/dhr/O1/load_reviews/load_reviews",
+        "f/dhr/O1/link_case_metadata/link_case_metadata",
+        "f/dhr/O1/group_blocks_by_section/group_blocks_by_section",
+        "f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections",
+        "f/dhr/O1/pipeline",
     }
     flow_steps = {step["value"]["path"] for step in STEPS}
     assert started | flow_steps <= RUNNABLE_PATHS

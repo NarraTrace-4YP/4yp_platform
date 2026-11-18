@@ -30,15 +30,15 @@ def test_only_files_git_keeps_are_compared(tmp_path):
             "f/dhr/a.script.yaml": b"made by wmill",
             "f/dhr/a.script.lock": b"made by wmill",
             "f/dhr/x.flow/step.inline_script.lock": b"made by wmill",
-            "f/dhr/o1.raw_app/App.tsx": b"app",
-            "f/dhr/o1.raw_app/node_modules/react/index.js": b"package",
-            "f/dhr/o1.raw_app/dist/bundle.js": b"built",
-            "f/dhr/o1.raw_app/package-lock.json": b"made by npm",
+            "f/dhr/O1/app.raw_app/App.tsx": b"app",
+            "f/dhr/O1/app.raw_app/node_modules/react/index.js": b"package",
+            "f/dhr/O1/app.raw_app/dist/bundle.js": b"built",
+            "f/dhr/O1/app.raw_app/package-lock.json": b"made by npm",
             "f/dhr/version.py": b'GIT_COMMIT = "abc"',  # written by each deploy
             "README.md": b"not under f/",
         },
     )
-    assert sorted(sync.files(tmp_path)) == ["f/dhr/a.py", "f/dhr/o1.raw_app/App.tsx"]
+    assert sorted(sync.files(tmp_path)) == ["f/dhr/O1/app.raw_app/App.tsx", "f/dhr/a.py"]
 
 
 def test_nothing_edited_in_windmill_lets_the_deploy_go_ahead():
@@ -81,9 +81,9 @@ def test_windmill_edits_are_copied_into_the_repo(tmp_path):
 
 
 def test_files_map_to_windmill_items():
-    assert sync.windmill_item("f/dhr/load_dhrc.py") == ("script", "f/dhr/load_dhrc")
-    assert sync.windmill_item("f/dhr/o1_pipeline.flow/flow.yaml") == ("flow", "f/dhr/o1_pipeline")
-    assert sync.windmill_item("f/dhr/o1.raw_app/backend/status.yaml") == ("app", "f/dhr/o1")
+    assert sync.windmill_item("f/dhr/O1/load_reviews/load_reviews.py") == ("script", "f/dhr/O1/load_reviews/load_reviews")
+    assert sync.windmill_item("f/dhr/O1/pipeline.flow/flow.yaml") == ("flow", "f/dhr/O1/pipeline")
+    assert sync.windmill_item("f/dhr/O1/app.raw_app/backend/status.yaml") == ("app", "f/dhr/O1/app")
     assert sync.windmill_item("f/dhr/notes.txt") is None
 
 

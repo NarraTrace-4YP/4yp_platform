@@ -89,12 +89,12 @@ jobs:
             -H "Authorization: Bearer $WINDMILL_TOKEN" \
             -H "Content-Type: application/json" \
             --data '{"execution_mode":"anonymous","skip_draft_deletion":true}' \
-            "${WINDMILL_URL%/}/api/w/dhr/apps/update/f/dhr/o1"
+            "${WINDMILL_URL%/}/api/w/dhr/apps/update/f/dhr/O1/app"
           secret=$(curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $WINDMILL_TOKEN" \
-            "${WINDMILL_URL%/}/api/w/dhr/apps/secret_of/f/dhr/o1")
+            "${WINDMILL_URL%/}/api/w/dhr/apps/secret_of/f/dhr/O1/app")
           test "$(curl --fail-with-body --silent --show-error \
-            "${WINDMILL_URL%/}/api/w/dhr/apps_u/public_app/$secret" | jq -r .path)" = "f/dhr/o1"
+            "${WINDMILL_URL%/}/api/w/dhr/apps_u/public_app/$secret" | jq -r .path)" = "f/dhr/O1/app"
 
       # So that later edits made in Windmill can be told apart from this deploy.
       - name: Remember what Windmill holds now

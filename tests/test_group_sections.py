@@ -1,9 +1,15 @@
-"""Tests for f/dhr/group_sections.py, using small made-up reviews (no real DHR text in the repo).
+"""Tests for f/dhr/O1/group_blocks_by_section/group_blocks_by_section.py, using small made-up reviews (no real DHR text in the repo).
 Storing in the database is checked against a real database by hand."""
 
 import pytest
 
-from f.dhr.group_sections import GroupError, Totals, group, outline, plain_text
+from f.dhr.O1.group_blocks_by_section.group_blocks_by_section import (
+    GroupError,
+    Totals,
+    group,
+    outline,
+    plain_text,
+)
 
 
 def heading(page, n, text, level=None, parent=None, trail=None, tag="h2"):

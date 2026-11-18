@@ -1,0 +1,6 @@
+**/node_modules/**
+**/dist/**
+**/wmill.ts
+**/*.script.yaml
+**/*.script.lock
+site/assets/fonts/**

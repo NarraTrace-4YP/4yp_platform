@@ -1,4 +1,4 @@
-"""Tests for f/dhr/collect_case_metadata.py, against a made-up imitation of the DHR Library.
+"""Tests for f/dhr/O1/link_case_metadata/link_case_metadata.py, against a made-up imitation of the DHR Library.
 
 The pages here copy the real site's markup (as of November 2026) but hold invented reviews,
 so no real DHR content goes in the repo. If the real site changes its markup, update the
@@ -14,8 +14,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from f.dhr import collect_case_metadata as library
 from f.dhr import settings
+from f.dhr.O1.link_case_metadata import link_case_metadata as library
 
 BASE = "https://library.example/"
 SEX = "Victim-Specific Information.Victims.Sex of victim[]"

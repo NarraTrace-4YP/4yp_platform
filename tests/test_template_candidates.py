@@ -1,4 +1,4 @@
-"""Tests for f/dhr/templates.py and f/dhr/find_template_candidates.py.
+"""Tests for f/dhr/O1/find_candidate_template_sections/templates.py and f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections.py.
 
 The guidance files are made up here, laid out the way the real ones read: the PDFs as
 pypdf reads them (2016: headings in capitals, page numbers on their own line, bullet points
@@ -15,14 +15,14 @@ import zipfile
 import numpy as np
 import pytest
 
-from f.dhr.find_template_candidates import (
+from f.dhr.O1.find_candidate_template_sections.find_candidate_template_sections import (
     Section,
-    choose,
     heading_scores,
     heading_words,
-    ranks,
+    rank_scores,
+    select_candidates,
 )
-from f.dhr.templates import (
+from f.dhr.O1.find_candidate_template_sections.templates import (
     BULLETS,
     DARDR_2026,
     DHR_2016,
@@ -129,10 +129,11 @@ def paragraph(text, listed=False):
 
 def word_file(rows, before="Annex A: DARDR Template"):
     """A made-up Word file: a paragraph, then a table of rows (number, [paragraphs])."""
-    cells = "".join(
-        f"<w:tr><w:tc>{paragraph(number)}</w:tc><w:tc>{''.join(paragraph(t, l) for t, l in texts)}</w:tc></w:tr>"
-        for number, texts in rows
-    )
+    table_rows = []
+    for number, texts in rows:
+        paragraphs = "".join(paragraph(text, is_listed) for text, is_listed in texts)
+        table_rows.append(f"<w:tr><w:tc>{paragraph(number)}</w:tc><w:tc>{paragraphs}</w:tc></w:tr>")
+    cells = "".join(table_rows)
     xml = f"<w:document {WORD_NS}><w:body>{paragraph(before)}<w:tbl>{cells}</w:tbl></w:body></w:document>"
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -337,7 +338,7 @@ def test_the_2026_imr_front_sheet_goes_with_its_first_section():
 
 
 def test_a_whole_guidance_is_read_from_its_files_with_their_checksums(monkeypatch):
-    monkeypatch.setattr("f.dhr.templates.pdf_lines", lambda pdf: pdf_2026())
+    monkeypatch.setattr("f.dhr.O1.find_candidate_template_sections.templates.pdf_lines", lambda pdf: pdf_2026())
     files = {"guidance": b"made-up 2026 pdf", "annex-a": dardr_word_file()}
     guidance = read_guidance(DARDR_2026, files)
     assert [t.key for t in guidance.templates] == [t.key for t in DARDR_2026.templates]
@@ -408,19 +409,19 @@ def test_heading_scores_with_no_sections():
 
 
 def test_ranks_count_from_the_highest_and_keep_template_order_on_ties():
-    assert ranks(np.array([[0.2, 0.9, 0.2, 0.5]])).tolist() == [[3, 1, 4, 2]]
+    assert rank_scores(np.array([[0.2, 0.9, 0.2, 0.5]])).tolist() == [[3, 1, 4, 2]]
 
 
 def test_candidates_are_the_best_by_text_and_the_best_by_heading_if_alike_enough():
     heading = np.array([[100.0, 70.0, 10.0, 0.0], [50.0, 40.0, 30.0, 20.0]])
     text = np.array([[0.1, 0.2, 0.9, 0.3], [0.4, 0.3, 0.2, 0.8]])
-    found = choose(heading, text, k=1, min_heading_score=60)
+    found = select_candidates(heading, text, k=1, min_heading_score=60)
     assert {(c.section, c.template_section) for c in found} == {(0, 0), (0, 2), (1, 3)}
     first = next(c for c in found if (c.section, c.template_section) == (0, 0))
     assert (first.heading_score, first.heading_rank, first.text_rank) == (100.0, 1, 4)
     assert first.text_score == pytest.approx(0.1)
     # With k = 2 the second-best of each way joins, if alike enough by heading.
-    found = choose(heading, text, k=2, min_heading_score=60)
+    found = select_candidates(heading, text, k=2, min_heading_score=60)
     assert {(c.section, c.template_section) for c in found} == {
         (0, 0), (0, 1), (0, 2), (0, 3), (1, 3), (1, 0)
     }  # fmt: skip

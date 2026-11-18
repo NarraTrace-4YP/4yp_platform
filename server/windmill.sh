@@ -235,7 +235,7 @@ wm_configure() {
 	wm_variable f/dhr/mlflow_password "$MLFLOW_ADMIN_PASSWORD" true "MLflow password the pipelines use"
 	echo "  stored the pipelines' settings as secret variables in f/dhr"
 
-	wm_objective_embed f/dhr/o1 o1 "$public_origin"
+	wm_objective_embed f/dhr/O1/app o1 "$public_origin"
 
 	# The token GitHub Actions uses to deploy. Made once; kept in .env.
 	local saved_token=$WM_TOKEN

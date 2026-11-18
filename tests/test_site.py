@@ -139,13 +139,15 @@ def test_landing_navigation_places_o1_last():
 
 def test_landing_and_o1_headers_share_the_content_width():
     site_css = (SITE / "assets" / "site.css").read_text(encoding="utf-8")
-    app_css = (ROOT / "f/dhr/o1.raw_app/index.css").read_text(encoding="utf-8")
-    assert "--content-width: calc(var(--wrap) - var(--margin) - var(--margin));" in site_css
-    assert "--content-width: calc(var(--wrap) - var(--gutter) - var(--gutter));" in app_css
+    app_css = (ROOT / "f/dhr/O1/app.raw_app/index.css").read_text(encoding="utf-8")
+    assert "--content-width: var(--wrap);" in site_css
+    assert "--content-width: var(--wrap);" in app_css
     assert ".masthead {\n  width: var(--content-width);" in site_css
-    assert ".masthead::before" in site_css and "width: 100%;" in site_css
+    assert ".masthead::before" in site_css and "width: var(--content-width);" in site_css
     assert ".top {\n  flex: none;\n  width: var(--content-width);" in app_css
     assert ".content > * {\n  width: var(--content-width);" in app_css
+    assert ".content > .page,\n.content > .run-view," in app_css
+    assert "width: var(--content-width);\n  max-width: 100%;" in app_css
 
 
 def test_caddy_serves_the_site():
@@ -194,7 +196,7 @@ def test_local_environment_selects_localhost_over_http():
 
 
 def test_embedded_o1_app_uses_generated_instance_specific_public_url():
-    metadata = (ROOT / "f/dhr/o1.raw_app/raw_app.yaml").read_text(encoding="utf-8")
+    metadata = (ROOT / "f/dhr/O1/app.raw_app/raw_app.yaml").read_text(encoding="utf-8")
     page = (SITE / "o1/index.html").read_text(encoding="utf-8")
     script = (SITE / "assets/objective-embed.js").read_text(encoding="utf-8")
     assert "public: true" in metadata
@@ -208,15 +210,15 @@ def test_landing_and_o1_share_the_progressive_motion_system():
     landing = (SITE / "index.html").read_text(encoding="utf-8")
     landing_css = (SITE / "assets/site.css").read_text(encoding="utf-8")
     landing_motion = (SITE / "assets/motion.js").read_text(encoding="utf-8")
-    app = (ROOT / "f/dhr/o1.raw_app/App.tsx").read_text(encoding="utf-8")
-    app_css = (ROOT / "f/dhr/o1.raw_app/index.css").read_text(encoding="utf-8")
-    app_entry = (ROOT / "f/dhr/o1.raw_app/index.tsx").read_text(encoding="utf-8")
+    app = (ROOT / "f/dhr/O1/app.raw_app/App.tsx").read_text(encoding="utf-8")
+    app_css = (ROOT / "f/dhr/O1/app.raw_app/index.css").read_text(encoding="utf-8")
+    app_entry = (ROOT / "f/dhr/O1/app.raw_app/index.tsx").read_text(encoding="utf-8")
     caddy = (ROOT / "caddy/Caddyfile").read_text(encoding="utf-8")
 
     assert 'class="hero-webgl"' in landing
     assert 'src="/assets/motion.js"' in landing
-    assert "window.addEventListener('scroll', updateProgress, { passive: true })" in landing_motion
-    assert "behavior: reduceMotion ? 'auto' : 'smooth'" in landing_motion
+    assert "window.addEventListener('scroll', updateScrollProgress, { passive: true })" in landing_motion
+    assert "behavior: prefersReducedMotion ? 'auto' : 'smooth'" in landing_motion
     assert "addEventListener('wheel'" not in landing_motion
     assert "getContext('webgl'" in landing_motion
     assert "prefers-reduced-motion: reduce" in landing_css

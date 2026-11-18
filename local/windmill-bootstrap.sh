@@ -113,13 +113,13 @@ wmill sync push --yes --workspace "$workspace" --base-url "$WINDMILL_INTERNAL_UR
 
 # Windmill CLI 1.875 can deploy a raw app without persisting `public: true`.
 # Enforce anonymous access without changing the deployed source.
-call POST "/w/$workspace/apps/update/f/dhr/o1" \
+call POST "/w/$workspace/apps/update/f/dhr/O1/app" \
 	'{"execution_mode":"anonymous","skip_draft_deletion":true}' >/dev/null
 
 # Custom public paths are an Enterprise-only Windmill route. Community Edition instead
 # provides a stable, instance-specific app share ID. Discover it after deployment and
 # publish only its URL to Caddy's ignored runtime directory.
-public_secret=$(call GET "/w/$workspace/apps/secret_of/f/dhr/o1") ||
+public_secret=$(call GET "/w/$workspace/apps/secret_of/f/dhr/O1/app") ||
 	die "Windmill did not create the public O1 share URL."
 [[ "$public_secret" =~ ^[0-9a-f]{32}$ ]] || die "Windmill returned an invalid O1 share ID."
 public_url="$WINDMILL_PUBLIC_URL/public/$workspace/$public_secret"
@@ -129,7 +129,7 @@ mv /runtime/o1.json.tmp /runtime/o1.json
 public_app=$(curl -fsS --max-time 20 \
 	"$WINDMILL_INTERNAL_URL/api/w/$workspace/apps_u/public_app/$public_secret") ||
 	die "Windmill did not expose the generated public O1 share URL."
-[[ "$(jq -r .path <<<"$public_app")" == f/dhr/o1 ]] ||
+[[ "$(jq -r .path <<<"$public_app")" == f/dhr/O1/app ]] ||
 	die "The generated public O1 share URL points at the wrong app."
 printf '  O1 embed: %s\n' "$public_url"
 

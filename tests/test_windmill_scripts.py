@@ -41,7 +41,7 @@ def normalise(name: str) -> str:
 
 
 def test_there_are_scripts():
-    assert {p.stem for p in RUNNABLE} >= {"load_dhrc", "collect_case_metadata"}
+    assert {p.stem for p in RUNNABLE} >= {"load_reviews", "link_case_metadata"}
 
 
 @pytest.mark.parametrize("path", RUNNABLE, ids=lambda p: p.stem)

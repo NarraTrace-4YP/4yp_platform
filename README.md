@@ -165,7 +165,7 @@ The team's scripts are stored in the `f/dhr` folder.
 To run one:
 
 1. Open Windmill and navigate to `f/dhr`.
-2. Select a script, such as `f/dhr/load_dhrc`.
+2. Select a script, such as `f/dhr/O1/load_reviews/load_reviews`.
 3. Fill in the input form.
 4. Click **Run**.
 
@@ -175,7 +175,7 @@ Scripts can be edited through GitHub or Windmill's web editor. The process for k
 
 ### The Objective 1 application
 
-The main starting point for Objective 1 (O1) is the application at `f/dhr/o1`, under **Apps**.
+The main starting point for Objective 1 (O1) is the application at `f/dhr/O1/app`, under **Apps**.
 
 O1 covers the preparation and standardisation of the source reviews. The application provides a single place to understand the work, inspect its data and run the relevant pipelines.
 
@@ -187,13 +187,13 @@ It includes:
 - **Case viewer:** Displays the case details available from the Home Office DHR Library.
 - **Dataset comparisons:** Shows how the attributes of each dataset compare with the wider Home Office library.
 
-The application is a small React application defined in `f/dhr/o1.raw_app`. Its backend uses the `o1_*` and `case_viewer_*` scripts.
+The application is a small React application defined in `f/dhr/O1/app.raw_app`. Its backend uses the stage-specific `get_*` scripts and the status scripts in `f/dhr/O1/app_backend`. See the [code layout and editing conventions](f/dhr/README.md).
 
 Like the Python pipelines, the application is maintained through GitHub and deployed automatically.
 
 ### Running the complete O1 pipeline
 
-The `f/dhr/o1_pipeline` Windmill flow runs the existing O1 processing steps in order:
+The `f/dhr/O1/pipeline` Windmill flow runs the existing O1 processing steps in order:
 
 1. Load DHRC-100.
 2. Load DHRC-RAW.
@@ -234,7 +234,7 @@ Once a script is ready for the team to use:
 
 If it introduces a new O1 step, also update:
 
-- `f/dhr/o1_pipeline.flow/flow.yaml` to include the step in the complete pipeline.
+- `f/dhr/O1/pipeline.flow/flow.yaml` to include the step in the complete pipeline.
 - `Overview.tsx` and `RunTab.tsx` in the O1 application to explain and expose the new functionality.
 
 The automated tests check that the application's description and the pipeline's contents remain consistent.
@@ -361,10 +361,11 @@ This prevents differences between environments from affecting the results.
 
 Reusable code should be placed in separate Python modules without a `main` function.
 
-Within `f/dhr`, import shared functions explicitly:
+From an O1 stage or `app_backend` module, import shared functions explicitly. Three
+leading dots reach the shared `f/dhr` package; use one dot for a sibling module:
 
 ```python
-from .db import connect
+from ...db import connect
 ```
 
 Avoid module-level relative imports such as:
@@ -432,7 +433,7 @@ Python scripts can be executed directly without using the Windmill interface.
 For example, to test the case metadata collector:
 
 ```bash
-uv run python -m f.dhr.collect_case_metadata --max-filters 10 --dry-run
+uv run python -m f.dhr.O1.link_case_metadata.link_case_metadata --max-filters 10 --dry-run
 ```
 
 This is useful for debugging and testing individual pipeline stages.
@@ -517,7 +518,7 @@ Both datasets are defined in `f/dhr/datasets.py`.
 
 ### Loading the reviews
 
-The `f/dhr/load_dhrc` script imports reviews into PostgreSQL.
+The `f/dhr/O1/load_reviews/load_reviews` script imports reviews into PostgreSQL.
 
 Select the dataset using the script's Windmill input form.
 
@@ -554,7 +555,7 @@ The source reviews are stored as page-based JSON, but pages do not necessarily c
 
 For example, a section might begin halfway down one page and continue across several more. Analysing those pages independently would separate text that belongs together.
 
-The `f/dhr/group_sections` script reconstructs each review's document hierarchy.
+The `f/dhr/O1/group_blocks_by_section/group_blocks_by_section` script reconstructs each review's document hierarchy.
 
 It identifies which headings and sections each text block belongs to, then places the blocks in reading order. This produces a structure that follows the content of the report rather than its page boundaries.
 
@@ -596,7 +597,7 @@ SELECT corpus.section_text(
 To inspect the structure of a single review without changing the database, run:
 
 ```bash
-uv run python -m f.dhr.group_sections --file <review.json>
+uv run python -m f.dhr.O1.group_blocks_by_section.group_blocks_by_section --file <review.json>
 ```
 
 This prints the review's reconstructed outline.
@@ -609,7 +610,7 @@ To address this, the project maps review sections to a common structure based on
 
 Rather than asking an LLM to choose from every possible template section, the pipeline first identifies a short list of likely matches. This reduces the amount of information the LLM needs to consider and allows us to use more expensive inference only where it is needed.
 
-The `f/dhr/find_template_candidates` script produces these candidate lists.
+The `f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections` script produces these candidate lists.
 
 It supports two sets of guidance:
 
@@ -664,7 +665,7 @@ This information is useful for understanding the datasets and evaluating the pro
 
 However, the library does not provide a bulk download of these records.
 
-The `f/dhr/collect_case_metadata` script therefore queries the library using its available search filters. By recording which reviews match each filter, it reconstructs the available case attributes.
+The `f/dhr/O1/link_case_metadata/link_case_metadata` script therefore queries the library using its available search filters. By recording which reviews match each filter, it reconstructs the available case attributes.
 
 For example, the script can identify reviews associated with a particular age range or relationship category without manually opening every record.
 
