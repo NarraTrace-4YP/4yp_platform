@@ -180,27 +180,25 @@ export default function App() {
         <MotionCanvas />
         <div className="app-scroll-progress" aria-hidden="true"><span /></div>
         <div className="app-header">
-          <div className="app-wrap app-heading">
-            <h1><span>O1:</span> Corpus preparation</h1>
+          <div className="app-wrap app-header-row">
+            <div className="app-heading">
+              <h1><span>O1:</span> Corpus preparation</h1>
+            </div>
+            <nav className="app-nav" aria-label="O1 views">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  className={t.id === tab ? 'tab selected' : 'tab'}
+                  aria-pressed={t.id === tab}
+                  onClick={() => goTo(t.id)}
+                  onPointerMove={moveMagnet}
+                  onPointerLeave={resetMagnet}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </nav>
           </div>
-          <div className="app-wrap app-header-content">
-            <p className="app-kicker"><span aria-hidden="true" /> Objective 01 / live workspace</p>
-            <p>Turning the DHR corpus into a hierarchical, standardised database linked to the Home Office case metadata</p>
-          </div>
-          <nav className="app-wrap app-nav" aria-label="O1 views">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                className={t.id === tab ? 'tab selected' : 'tab'}
-                aria-pressed={t.id === tab}
-                onClick={() => goTo(t.id)}
-                onPointerMove={moveMagnet}
-                onPointerLeave={resetMagnet}
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
         </div>
       </header>
       <main className="content" ref={contentRef}>
