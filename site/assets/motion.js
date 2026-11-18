@@ -1,7 +1,6 @@
 (() => {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const finePointer = window.matchMedia('(pointer: fine)').matches;
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   document.documentElement.classList.add('motion-ready');
 
@@ -64,52 +63,6 @@
     revealTargets.forEach((element) => observer.observe(element));
   }
 
-  class MomentumScroll {
-    constructor() {
-      this.current = window.scrollY;
-      this.target = this.current;
-      this.running = false;
-      this.tick = this.tick.bind(this);
-      window.addEventListener('scroll', () => {
-        if (!this.running) this.current = this.target = window.scrollY;
-      }, { passive: true });
-      window.addEventListener('wheel', (event) => this.onWheel(event), { passive: false });
-    }
-
-    onWheel(event) {
-      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-      const nested = event.target.closest('[data-native-scroll], textarea, select');
-      if (nested) return;
-      event.preventDefault();
-      const maximum = document.documentElement.scrollHeight - window.innerHeight;
-      this.target = clamp(this.target + event.deltaY, 0, maximum);
-      if (!this.running) {
-        this.running = true;
-        requestAnimationFrame(this.tick);
-      }
-    }
-
-    tick() {
-      this.current += (this.target - this.current) * 0.115;
-      if (Math.abs(this.target - this.current) < 0.35) {
-        this.current = this.target;
-        this.running = false;
-      }
-      window.scrollTo(0, this.current);
-      if (this.running) requestAnimationFrame(this.tick);
-    }
-
-    to(value) {
-      this.target = clamp(value, 0, document.documentElement.scrollHeight - window.innerHeight);
-      if (!this.running) {
-        this.running = true;
-        requestAnimationFrame(this.tick);
-      }
-    }
-  }
-
-  const scroller = !reduceMotion && finePointer ? new MomentumScroll() : null;
-
   document.addEventListener('click', (event) => {
     const anchor = event.target.closest('a[href]');
     if (!anchor || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey) return;
@@ -120,20 +73,9 @@
       if (!target) return;
       event.preventDefault();
       const y = target.getBoundingClientRect().top + window.scrollY - 88;
-      scroller ? scroller.to(y) : window.scrollTo({ top: y, behavior: reduceMotion ? 'auto' : 'smooth' });
+      window.scrollTo({ top: y, behavior: reduceMotion ? 'auto' : 'smooth' });
       history.pushState(null, '', url.hash);
       return;
-    }
-
-    if (
-      url.origin === window.location.origin &&
-      !url.hash &&
-      anchor.target !== '_blank' &&
-      !anchor.hasAttribute('download')
-    ) {
-      event.preventDefault();
-      document.documentElement.classList.add('is-leaving');
-      window.setTimeout(() => window.location.assign(url.href), reduceMotion ? 0 : 320);
     }
   });
 

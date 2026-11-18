@@ -14,6 +14,7 @@
       if (target.host !== expectedHost || !target.pathname.startsWith("/public/dhr/")) {
         throw new Error("embed configuration contains an unexpected Windmill URL");
       }
+      frame.addEventListener("load", () => frame.classList.add("is-loaded"), { once: true });
       frame.src = target.href;
     })
     .catch((error) => {

@@ -31,7 +31,8 @@ export default function App() {
   const goTo = useCallback((id: string) => {
     setTab(id)
     remember('tab', id)
-    requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior }))
   }, [])
 
   const refresh = useCallback(() => setVersion((v) => v + 1), [])

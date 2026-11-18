@@ -474,40 +474,42 @@ export default function CandidatesTab({ goTo }: { goTo: (tab: string) => void })
 
               <section>
                 <h3>Candidates from the {GUIDANCES[guidance]}</h3>
-                <table className="candidates">
-                  <thead>
-                    <tr>
-                      <th>Template section</th>
-                      <th>Template</th>
-                      <th className="number">Heading</th>
-                      <th className="number">Text</th>
-                      <th>Found by</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {section.candidates.map((c) => {
-                      const key = keyOf(c.template, c.template_position)
-                      return (
-                        <tr
-                          key={key}
-                          className={key === candidateKey ? 'selected' : ''}
-                          onClick={() => setCandidateKey(key)}
-                          title="Show what the template says goes here"
-                        >
-                          <td>{c.template_heading}</td>
-                          <td className="muted">{templateName(c.template)}</td>
-                          <td className={c.best_by_heading ? 'number best' : 'number'}>
-                            {Math.round(c.heading_score)} <span className="rank">#{c.heading_rank}</span>
-                          </td>
-                          <td className={c.best_by_text ? 'number best' : 'number'}>
-                            {c.text_score.toFixed(2)} <span className="rank">#{c.text_rank}</span>
-                          </td>
-                          <td className="muted">{c.found_by}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div className="candidate-table" role="region" aria-label="Candidate scores table" tabIndex={0}>
+                  <table className="candidates">
+                    <thead>
+                      <tr>
+                        <th>Template section</th>
+                        <th>Template</th>
+                        <th className="number">Heading</th>
+                        <th className="number">Text</th>
+                        <th>Found by</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.candidates.map((c) => {
+                        const key = keyOf(c.template, c.template_position)
+                        return (
+                          <tr
+                            key={key}
+                            className={key === candidateKey ? 'selected' : ''}
+                            onClick={() => setCandidateKey(key)}
+                            title="Show what the template says goes here"
+                          >
+                            <td>{c.template_heading}</td>
+                            <td className="muted">{templateName(c.template)}</td>
+                            <td className={c.best_by_heading ? 'number best' : 'number'}>
+                              {Math.round(c.heading_score)} <span className="rank">#{c.heading_rank}</span>
+                            </td>
+                            <td className={c.best_by_text ? 'number best' : 'number'}>
+                              {c.text_score.toFixed(2)} <span className="rank">#{c.text_rank}</span>
+                            </td>
+                            <td className="muted">{c.found_by}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 <p className="muted small">
                   Bold: the section’s best match by that score. # is the rank among all{' '}
                   {number(templateSections.size)} template sections. Click a row to read that template section.
@@ -568,34 +570,36 @@ export default function CandidatesTab({ goTo }: { goTo: (tab: string) => void })
                         then by heading score and text score.
                       </p>
                     )}
-                    <table className="candidates">
-                      <thead>
-                        <tr>
-                          <th>Review</th>
-                          <th>Section</th>
-                          <th className="number">Heading</th>
-                          <th className="number">Text</th>
-                          <th>Best by</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matches.matches.map((m) => (
-                          <tr
-                            key={`${m.doc_id}#${m.section_id}`}
-                            onClick={() => openMatch(m)}
-                            title="Open this section with all its candidates"
-                          >
-                            <td className="muted">{m.doc_id}</td>
-                            <td>{m.heading}</td>
-                            <td className={m.best_by_heading ? 'number best' : 'number'}>
-                              {Math.round(m.heading_score)}
-                            </td>
-                            <td className={m.best_by_text ? 'number best' : 'number'}>{m.text_score.toFixed(2)}</td>
-                            <td className="muted">{bestBy(m)}</td>
+                    <div className="candidate-table" role="region" aria-label="Matching review sections table" tabIndex={0}>
+                      <table className="candidates">
+                        <thead>
+                          <tr>
+                            <th>Review</th>
+                            <th>Section</th>
+                            <th className="number">Heading</th>
+                            <th className="number">Text</th>
+                            <th>Best by</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {matches.matches.map((m) => (
+                            <tr
+                              key={`${m.doc_id}#${m.section_id}`}
+                              onClick={() => openMatch(m)}
+                              title="Open this section with all its candidates"
+                            >
+                              <td className="muted">{m.doc_id}</td>
+                              <td>{m.heading}</td>
+                              <td className={m.best_by_heading ? 'number best' : 'number'}>
+                                {Math.round(m.heading_score)}
+                              </td>
+                              <td className={m.best_by_text ? 'number best' : 'number'}>{m.text_score.toFixed(2)}</td>
+                              <td className="muted">{bestBy(m)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </>
                 )}
               </section>
