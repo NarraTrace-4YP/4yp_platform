@@ -43,7 +43,7 @@ type Review = { doc_id: string; sections: GroupedSection[]; before: Block[] }
 
 const BEFORE = '(before the first heading)'
 
-export default function SectionsTab({ goTo }: { goTo: (tab: string) => void }) {
+export default function SectionsTab() {
   const [dataset, setDataset] = useState(() => {
     const saved = readStoredValue<string>('sections:dataset')
     return saved && DATASETS.includes(saved) ? saved : DATASETS[0]
@@ -136,10 +136,7 @@ export default function SectionsTab({ goTo }: { goTo: (tab: string) => void }) {
         {!overview ? (
           <p className="count">Loading…</p>
         ) : !overview.grouped ? (
-          <p className="message">
-            {dataset} hasn’t been grouped by section yet. Run “Group blocks by section” on the{' '}
-            <a onClick={() => goTo('run')}>Run</a> tab.
-          </p>
+          <p className="message">{dataset} hasn’t been grouped by section yet.</p>
         ) : (
           <>
             <p className="count">

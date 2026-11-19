@@ -178,7 +178,7 @@ function TemplateText({ template, section }: { template: Template; section: Temp
   )
 }
 
-export default function CandidatesTab({ goTo }: { goTo: (tab: string) => void }) {
+export default function CandidatesTab() {
   const [dataset, setDataset] = useState(() => {
     const saved = readStoredValue<string>('candidates:dataset')
     return saved && DATASETS.includes(saved) ? saved : DATASETS[0]
@@ -391,8 +391,7 @@ export default function CandidatesTab({ goTo }: { goTo: (tab: string) => void })
           <p className="count">Loading…</p>
         ) : !run ? (
           <p className="message">
-            No template candidates for {dataset} against the {GUIDANCES[guidance]} yet. Run “Find
-            candidate template sections” on the <a onClick={() => goTo('run')}>Run</a> tab.
+            No template candidates for {dataset} against the {GUIDANCES[guidance]} yet.
           </p>
         ) : (
           <>

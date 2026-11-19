@@ -9,7 +9,6 @@ type Step = {
   what: string
   built: boolean
   now?: (status: Status) => React.ReactNode
-  run?: boolean
   see?: { tab: string; label: string } // the tab that shows what the step produced
 }
 
@@ -20,7 +19,6 @@ const STEPS: Step[] = [
       'Import the reviews from Hugging Face and verify the files against the dataset checksums. ' +
       'Keep the original page-based JSON, with the dataset name and version recorded for each review.',
     built: true,
-    run: true,
     now: (status) => (
       <ul className="facts-list">
         {status.datasets.map((dataset) => (
@@ -41,7 +39,6 @@ const STEPS: Step[] = [
       'and relationship. These details are stored separately for evaluation and are excluded from ' +
       'the wiki agent’s input.',
     built: true,
-    run: true,
     now: (status) =>
       status.case_metadata ? (
         <p>
@@ -60,7 +57,6 @@ const STEPS: Step[] = [
       'Rebuild each review’s section structure from its headings. Group text across page breaks ' +
       'so a section can be read with its subsections and traced back to the original pages.',
     built: true,
-    run: true,
     see: { tab: 'sections', label: 'See the sections' },
     now: (status) => (
       <ul className="facts-list">
@@ -90,7 +86,6 @@ const STEPS: Step[] = [
       'management review and action plan templates from the 2016 guidance. Templates from the ' +
       '2026 guidance are also available for comparison.',
     built: true,
-    run: true,
     see: { tab: 'candidates', label: 'See the candidates' },
     now: (status) => (
       <ul className="facts-list">
@@ -201,8 +196,8 @@ export default function Overview({ status, goTo }: Props) {
       <section>
         <h2>How the reviews are prepared</h2>
         <p className="muted">
-          Follow the process from source files to comparable sections. Available steps can be
-          started from the <a onClick={() => goTo('run')}>Run</a> view.
+          Follow the process from source files to comparable sections. The team runs these steps in
+          Windmill, which needs a team login.
         </p>
         <ol className="pipeline">
           {STEPS.map((step, index) => (
@@ -223,18 +218,11 @@ export default function Overview({ status, goTo }: Props) {
                 {step.built && status && step.now && (
                   <div className="step-now">{step.now(status)}</div>
                 )}
-                {(step.see || step.run) && (
+                {step.see && (
                   <div className="step-actions">
-                    {step.see && (
-                      <button className="link-button" onClick={() => goTo(step.see!.tab)}>
-                        {step.see.label}
-                      </button>
-                    )}
-                    {step.run && (
-                      <button className="link-button" onClick={() => goTo('run')}>
-                        Open run controls
-                      </button>
-                    )}
+                    <button className="link-button" onClick={() => goTo(step.see!.tab)}>
+                      {step.see.label}
+                    </button>
                   </div>
                 )}
               </div>

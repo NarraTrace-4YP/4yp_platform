@@ -3,7 +3,6 @@ import { backend } from './wmill'
 import { Status, errorMessage, readStoredValue, writeStoredValue } from './shared'
 import Overview, { STEP_BUILT } from './Overview'
 import DataTab from './DataTab'
-import RunTab from './RunTab'
 import CasesTab from './CasesTab'
 import AttributesTab from './AttributesTab'
 import SectionsTab from './SectionsTab'
@@ -17,10 +16,6 @@ const GROUPS = [
       { id: 'overview', label: 'Overview', hint: 'How the reviews are prepared' },
       { id: 'data', label: 'Data', hint: 'Datasets, sources and coverage' },
     ],
-  },
-  {
-    name: 'Pipelines',
-    tabs: [{ id: 'run', label: 'Run', hint: 'Run processing steps and track progress' }],
   },
   {
     name: 'Results',
@@ -46,16 +41,12 @@ export default function App() {
   })
   const [status, setStatus] = useState<Status | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
-  // Goes up each time a run finishes, so every tab reloads what it shows.
-  const [version, setVersion] = useState(0)
 
   const goTo = useCallback((id: string) => {
     setTab(id)
     writeStoredValue('tab', id)
     requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: 'auto' }))
   }, [])
-
-  const refresh = useCallback(() => setVersion((v) => v + 1), [])
 
   useEffect(() => {
     document.title = 'O1: Corpus preparation'
@@ -74,7 +65,7 @@ export default function App() {
     return () => {
       current = false
     }
-  }, [version])
+  }, [])
 
   const built = STEP_BUILT.filter(Boolean).length
 
@@ -126,15 +117,11 @@ export default function App() {
           <p className="message error">Couldn’t load the pipeline status: {statusError}</p>
         )}
         {tab === 'overview' && <Overview status={status} goTo={goTo} />}
-        {tab === 'data' && <DataTab status={status} error={statusError} goTo={goTo} />}
-        {/* Kept mounted (just hidden) so runs keep being followed while you look at other tabs. */}
-        <div className="run-view" hidden={tab !== 'run'}>
-          <RunTab status={status} refresh={refresh} />
-        </div>
-        {tab === 'cases' && <CasesTab key={version} />}
-        {tab === 'attributes' && <AttributesTab version={version} />}
-        {tab === 'sections' && <SectionsTab key={version} goTo={goTo} />}
-        {tab === 'candidates' && <CandidatesTab key={version} goTo={goTo} />}
+        {tab === 'data' && <DataTab status={status} error={statusError} />}
+        {tab === 'cases' && <CasesTab />}
+        {tab === 'attributes' && <AttributesTab />}
+        {tab === 'sections' && <SectionsTab />}
+        {tab === 'candidates' && <CandidatesTab />}
       </main>
     </div>
   )

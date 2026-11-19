@@ -92,23 +92,6 @@ export type Status = {
   workspace: string | null
 }
 
-// f/dhr/O1/app_backend/get_run_status
-export type RunState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
-export type RunStatus = {
-  job_id: string
-  path: string
-  state: RunState
-  created_at: string | null
-  started_at: string | null
-  duration_ms: number | null
-  progress: number | null
-  log: string[]
-  result: any
-  error: string | null
-  steps: { id: string; state: string; job_id: string | null }[] | null
-  current_step?: string | null
-}
-
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -138,20 +121,6 @@ export function formatDateTime(iso: string | null | undefined): string {
 export function shortenId(id: string | null | undefined): string {
   if (!id) return '—'
   return id.startsWith('local-') ? id : id.slice(0, 8)
-}
-
-export function formatDuration(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return '—'
-  const seconds = Math.round(ms / 1000)
-  if (seconds < 60) return `${seconds} s`
-  return `${Math.floor(seconds / 60)} min ${seconds % 60} s`
-}
-
-// Links into Windmill, when the server told us its address.
-export function buildWindmillLink(status: Status | null, path: string): string | null {
-  if (!status?.windmill_url) return null
-  const workspace = status.workspace ? `?workspace=${status.workspace}` : ''
-  return `${status.windmill_url.replace(/\/$/, '')}${path}${workspace}`
 }
 
 // Storage is optional: private windows or quota limits must not prevent running the app.
