@@ -30,6 +30,8 @@ type Version = {
   n_matched: number
   n_unmatched: number
   n_no_answer: number
+  n_reviews_doubtful: number
+  n_doubtful: number
   run: {
     vllm: string | null
     gpu: string | null
@@ -65,6 +67,8 @@ type ReviewRow = {
   template_title: string | null
   probability: number | null
   error: string | null
+  fallback: boolean // the model said "none of these" but wasn't sure: given its likeliest template
+  doubtful: boolean // its template is doubtful: check by hand
   n_sections: number
   n_matched: number
   n_unmatched: number
@@ -95,6 +99,8 @@ type DocumentChoice = {
   answer: string | null
   probability: number | null
   error: string | null
+  fallback: boolean
+  doubtful: boolean
   weighed: WeighedTemplate[]
 }
 type Weighed = {
@@ -118,6 +124,7 @@ type ChoiceSection = Section & {
   none_probability: number | null
   n_options: number | null
   error: string | null
+  doubtful: boolean // under 50%, or its review's template is doubtful: check by hand
   weighed: Weighed[]
 }
 // One part of the review in its template's order (corpus.current_standardised).
@@ -147,6 +154,8 @@ type Found = {
   probability: number | null
   none_probability: number | null
   error: string | null
+  doubtful: boolean
+  template_heading: string | null
 }
 type FoundList = { n_found: number; found: Found[] }
 
@@ -162,6 +171,7 @@ const ORDERS: [Order, string][] = [
 ]
 // The template-section list also offers the flagged sections.
 const FLAGGED: [string, string][] = [
+  ['doubtful', 'Doubtful: check by hand'],
   ['unmatched', 'Unmatched'],
   ['no answer', 'No answer from the model'],
 ]
@@ -213,14 +223,40 @@ function Confidence({ p }: { p: number | null | undefined }) {
   )
 }
 
+// The mark every doubtful answer carries, so none is missed.
+function DoubtBadge({ title }: { title?: string }) {
+  return (
+    <span className="doubt-badge" title={title ?? 'Doubtful: check this answer by hand'}>
+      ⚠ Doubtful
+    </span>
+  )
+}
+
+// Why an answer is doubtful, in a sentence.
+function doubtReason(section: ChoiceSection, document: DocumentChoice | null): string {
+  const own = section.probability !== null && section.probability < DOUBTFUL
+  const review = document?.doubtful
+  if (own && review)
+    return `The model was only ${percent(section.probability)} sure, and this review’s template is itself doubtful.`
+  if (own) return `The model was only ${percent(section.probability)} sure of this answer.`
+  return 'This review’s template is doubtful, so every section mapped onto it needs checking.'
+}
+
+// The probability the model gave a review's template (a fallback's own, not "none of these").
+function templateProbability(document: DocumentChoice | ReviewRow): number | null {
+  if (!document.fallback) return document.probability
+  const weighed = 'weighed' in document ? document.weighed : []
+  return weighed.find((w) => w.template === document.template)?.probability ?? null
+}
+
 // A section's choice in a line, for the outline.
 function ChoiceLine({ section, short }: { section: ChoiceSection; short?: boolean }) {
   if (section.status === 'matched')
     return (
-      <span className={(section.probability ?? 0) < DOUBTFUL ? 'match doubtful' : 'match agree'}>
+      <span className={section.doubtful ? 'match doubtful' : 'match agree'}>
+        {section.doubtful && <DoubtBadge />}
         {short ? '' : `→ ${section.template_heading} (${section.template_title}) · `}
         {percent(section.probability)}
-        {short && (section.probability ?? 0) < DOUBTFUL ? ' · doubtful' : ''}
       </span>
     )
   if (section.status === 'unmatched')
@@ -238,14 +274,30 @@ function ChoiceLine({ section, short }: { section: ChoiceSection; short?: boolea
 // The review's template, for the top of the outline.
 function DocumentLine({ document }: { document: DocumentChoice | null }) {
   if (!document) return <p className="muted small">Not asked about: outside this pilot run.</p>
+  if (document.status === 'matched' && document.fallback)
+    return (
+      <div className="choice-card compact doubtful">
+        <p>
+          <DoubtBadge /> Mapped onto the <strong>{document.template_title}</strong> as a fallback
+        </p>
+        <p>
+          The model said this review follows none of the templates, but was only{' '}
+          {percent(document.probability)} sure, so it was given its likeliest template (
+          {percent(templateProbability(document))}). Often a review is only part of a report. Check
+          it, and every section below, by hand.
+        </p>
+      </div>
+    )
   if (document.status === 'matched')
     return (
-      <div className="choice-card compact">
+      <div className={document.doubtful ? 'choice-card compact doubtful' : 'choice-card compact'}>
         <p>
-          Written to the <strong>{document.template_title}</strong>
+          {document.doubtful && <DoubtBadge />} Written to the{' '}
+          <strong>{document.template_title}</strong>
         </p>
         <p>
           Confidence <Confidence p={document.probability} />
+          {document.doubtful && ' · check by hand, with every section below'}
         </p>
       </div>
     )
@@ -443,7 +495,11 @@ export default function ChoicesTab() {
       : undefined
   const term = search.trim().toLowerCase()
   const flaggedCount = (key: string) =>
-    key === 'unmatched' ? (version?.n_unmatched ?? 0) : (version?.n_no_answer ?? 0)
+    key === 'doubtful'
+      ? (version?.n_doubtful ?? 0)
+      : key === 'unmatched'
+        ? (version?.n_unmatched ?? 0)
+        : (version?.n_no_answer ?? 0)
   const picked = listKey ? templateSections.get(listKey) : undefined
   const pickedFlag = FLAGGED.find(([k]) => k === listKey)
 
@@ -476,8 +532,11 @@ export default function ChoicesTab() {
       them, lettered in the guidance’s own order, from the section’s heading, where it sits, its
       subsections and the start of its text. Several sections can share one template section; their
       text is never changed. <strong>Confidence</strong> is the probability the model gave its
-      letter (from its first-token probabilities); below {percent(DOUBTFUL)} the answer is marked as
-      doubtful. Prompt {version.prompt_version}.
+      letter (from its first-token probabilities). An answer is marked <strong>⚠ Doubtful</strong>{' '}
+      when it is under {percent(DOUBTFUL)}, or when its review’s template is: a review the model
+      said follows none of the templates, but with under 80% confidence, is given its likeliest
+      template as a fallback, and it and all its sections are doubtful. Prompt{' '}
+      {version.prompt_version}.
     </p>
   )
 
@@ -512,6 +571,10 @@ export default function ChoicesTab() {
                 {p.n_sections === 0
                   ? 'Not in this review'
                   : `${formatNumber(p.n_sections)} section${p.n_sections === 1 ? '' : 's'}`}
+                {p.status === 'template section' &&
+                  p.section_ids.some((id) => byId.get(id)?.doubtful) && (
+                    <span className="doubt-inline"> · ⚠ doubtful</span>
+                  )}
               </span>
             </button>
             {p.section_ids.length > 0 && (
@@ -616,6 +679,12 @@ export default function ChoicesTab() {
                     <Confidence p={s.probability} />
                   </>
                 )}
+                {s.doubtful && (
+                  <>
+                    {' '}
+                    <DoubtBadge title={doubtReason(s, review.document)} />
+                  </>
+                )}
               </p>
               <SectionText dataset={dataset} docId={review.doc_id} section={s} ownOnly />
             </div>
@@ -649,9 +718,26 @@ export default function ChoicesTab() {
               {version.n_no_answer
                 ? `, ${formatNumber(version.n_no_answer)} without an answer`
                 : ''}
-              . {formatNumber(overview.n_doubtful)} doubtful. Chosen{' '}
-              {formatDateTime(version.chosen_at)} by code {shortenId(version.git_commit)}.
+              . Chosen {formatDateTime(version.chosen_at)} by code {shortenId(version.git_commit)}.
             </p>
+            {(version.n_doubtful > 0 || version.n_reviews_doubtful > 0) && (
+              <button
+                className="doubt-banner"
+                onClick={() => {
+                  chooseMode('templates')
+                  chooseList('doubtful')
+                }}
+              >
+                <strong>
+                  ⚠ {formatNumber(version.n_doubtful)} doubtful section
+                  {version.n_doubtful === 1 ? '' : 's'}
+                  {version.n_reviews_doubtful
+                    ? ` and ${formatNumber(version.n_reviews_doubtful)} doubtful review${version.n_reviews_doubtful === 1 ? '' : 's'}`
+                    : ''}
+                </strong>
+                <span>Check these by hand before relying on them. Show the list →</span>
+              </button>
+            )}
             {mode === 'reviews' ? (
               <>
                 <input
@@ -664,21 +750,29 @@ export default function ChoicesTab() {
                   {reviews.map((r) => (
                     <li key={r.doc_id}>
                       <button
-                        className={r.doc_id === docId ? 'review selected' : 'review'}
+                        className={
+                          (r.doc_id === docId ? 'review selected' : 'review') +
+                          (r.doubtful ? ' doubtful' : '')
+                        }
                         onClick={() => chooseReview(r.doc_id)}
                       >
-                        <span className="title">{r.doc_id}</span>
+                        <span className="title">
+                          {r.doubtful && <DoubtBadge title="Its template is doubtful: check it" />}
+                          {r.doc_id}
+                        </span>
                         <span
                           className={
                             r.status === 'matched'
-                              ? (r.probability ?? 0) < DOUBTFUL
+                              ? r.doubtful
                                 ? 'meta doubtful'
                                 : 'meta'
                               : 'meta flagged'
                           }
                         >
                           {r.status === 'matched'
-                            ? `${r.template_title} · ${percent(r.probability)}`
+                            ? r.fallback
+                              ? `Fallback: ${r.template_title} (model said none of them, ${percent(r.probability)})`
+                              : `${r.template_title} · ${percent(r.probability)}`
                             : r.status === 'unmatched'
                               ? 'No template: matches none of them'
                               : 'No answer for its template'}
@@ -687,8 +781,13 @@ export default function ChoicesTab() {
                           {formatNumber(r.n_matched)} of {formatNumber(r.n_sections)} sections
                           matched · {formatNumber(r.n_unmatched)} unmatched
                           {r.n_no_answer ? ` · ${formatNumber(r.n_no_answer)} no answer` : ''}
-                          {r.n_doubtful ? ` · ${formatNumber(r.n_doubtful)} doubtful` : ''}
                         </span>
+                        {r.n_doubtful > 0 && (
+                          <span className="meta doubtful">
+                            ⚠ {formatNumber(r.n_doubtful)} doubtful section
+                            {r.n_doubtful === 1 ? '' : 's'}
+                          </span>
+                        )}
                       </button>
                     </li>
                   ))}
@@ -813,16 +912,18 @@ export default function ChoicesTab() {
               <section>
                 <h3>Mapped to, in the {GUIDANCES[guidance]}</h3>
                 {section.status === 'matched' && chosen ? (
-                  <div className="choice-card">
+                  <div className={section.doubtful ? 'choice-card doubtful' : 'choice-card'}>
+                    {section.doubtful && (
+                      <p className="doubt-line">
+                        <DoubtBadge /> Check this by hand. {doubtReason(section, review.document)}
+                      </p>
+                    )}
                     <p className="choice-name">
                       <strong>{chosen.section.heading}</strong>{' '}
                       <span className="muted">in the {chosen.template.title}</span>
                     </p>
                     <p>
                       Confidence <Confidence p={section.probability} />
-                      {(section.probability ?? 0) < DOUBTFUL && (
-                        <span className="muted"> · doubtful: worth checking by hand</span>
-                      )}
                     </p>
                     {chosen.section.guidance ? (
                       <p className="guidance-text">{chosen.section.guidance}</p>
@@ -984,10 +1085,12 @@ export default function ChoicesTab() {
                   <p className="muted">The template gives only the heading here.</p>
                 )
               ) : (
-                <p className="muted">
-                  {listKey === 'unmatched'
-                    ? 'Sections the model said are none of their template’s sections, and every section of a review that matches none of the templates.'
-                    : 'Sections the model gave no usable answer for (see the reason beside each).'}
+                <p className={listKey === 'doubtful' ? 'doubt-line' : 'muted'}>
+                  {listKey === 'doubtful'
+                    ? `Answers to check by hand: the model was under ${percent(DOUBTFUL)} sure, or the section’s review was only given its template as a fallback or with under ${percent(DOUBTFUL)} confidence.`
+                    : listKey === 'unmatched'
+                      ? 'Sections the model said are none of their template’s sections, and every section of a review that matches none of the templates.'
+                      : 'Sections the model gave no usable answer for (see the reason beside each).'}
                 </p>
               )}
               <section>
@@ -1016,6 +1119,7 @@ export default function ChoicesTab() {
                           <tr>
                             <th>Review</th>
                             <th>Section</th>
+                            {listKey === 'doubtful' && <th>Mapped to</th>}
                             <th className="number">Confidence</th>
                           </tr>
                         </thead>
@@ -1027,7 +1131,13 @@ export default function ChoicesTab() {
                               title="Open this section"
                             >
                               <td className="muted">{f.doc_id}</td>
-                              <td>{f.heading}</td>
+                              <td>
+                                {f.doubtful && listKey !== 'doubtful' && <DoubtBadge />}
+                                {f.heading}
+                              </td>
+                              {listKey === 'doubtful' && (
+                                <td className="muted">{f.template_heading}</td>
+                              )}
                               <td className="number">
                                 {f.error ? (
                                   <span className="muted">{f.error}</span>

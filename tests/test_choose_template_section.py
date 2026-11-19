@@ -264,9 +264,63 @@ def test_choice_rows_cover_every_section_once_and_say_why_one_wasnt_asked():
         "n_matched": 1,
         "n_unmatched": 1,
         "n_no_answer": 2,
+        "n_reviews_doubtful": 0,
+        "n_doubtful": 0,
     }
     with pytest.raises(ValueError):
         stage.choice_rows([section_answer("A")], sections[1:], documents)  # not asked for
+
+
+def test_an_unsure_none_falls_back_to_the_likeliest_template():
+    rows = [
+        {
+            "doc_id": "D",
+            "template": None,
+            "answer": NONE,
+            "probability": 0.6,
+            "probabilities": {"none": 0.6, "t/report": 0.17, "t/summary": 0.19},
+        },
+        {
+            "doc_id": "E",
+            "template": None,
+            "answer": NONE,
+            "probability": 0.9,
+            "probabilities": {"none": 0.9, "t/report": 0.05},
+        },
+        {
+            "doc_id": "F",
+            "template": "t/report",
+            "answer": "B",
+            "probability": 0.99,
+            "probabilities": {"t/report": 0.99},
+        },
+    ]
+    stage.apply_fallback(rows)
+    assert (rows[0]["template"], rows[0]["fallback"]) == ("t/summary", True)
+    assert rows[0]["answer"] == NONE and rows[0]["probability"] == 0.6  # what the model said
+    assert (rows[1]["template"], rows[1]["fallback"]) == (None, False)  # sure: stays unmatched
+    assert (rows[2]["template"], rows[2]["fallback"]) == ("t/report", False)
+
+
+def test_a_fallback_review_and_all_its_sections_are_doubtful():
+    documents = [
+        {"doc_id": "D", "template": "t", "answer": NONE, "probability": 0.6, "fallback": True},
+        {"doc_id": "E", "template": "t", "answer": "A", "probability": 0.99, "fallback": False},
+    ]
+    sections = [Section(d, s, "h", [], "", "") for d in "DE" for s in "st"]
+    answers = [section_answer("A", {"A": 0.95})]
+    answers[0]["meta"] = {**answers[0]["meta"], "doc_id": "D", "section_id": "s"}
+    more = [
+        {
+            **section_answer(letter, {letter: p}),
+            "meta": {"doc_id": d, "section_id": sid, "options": {"A": ["t", 3], "B": ["t", 7]}},
+        }
+        for d, sid, letter, p in [("D", "t", "B", 0.9), ("E", "s", "A", 0.4), ("E", "t", "B", 0.9)]
+    ]
+    rows = stage.choice_rows(answers + more, sections, {d["doc_id"]: d for d in documents})
+    tally = stage.counts(documents, rows)
+    assert tally["n_reviews_doubtful"] == 1 and tally["n_matched"] == 4
+    assert tally["n_doubtful"] == 3  # both of D's sections, and E's 40% one
 
 
 def test_section_prompts_only_for_reviews_with_a_template():
@@ -540,6 +594,13 @@ def test_choices_tables_and_views(database):
         " ORDER BY doc_id",
         (rev,),
     ).fetchall() == [("D", "matched"), ("E", "unmatched")]
+
+    doubtful = conn.execute(
+        "SELECT section_id FROM corpus.current_template_choices WHERE revision = %s"
+        " AND doubtful ORDER BY doc_id, section_position",
+        (rev,),
+    ).fetchall()
+    assert doubtful == [("s2",)]  # the 40% answer; unmatched sections are never "doubtful"
 
     parts = conn.execute(
         "SELECT doc_id, status, template_heading, section_ids FROM corpus.current_standardised"

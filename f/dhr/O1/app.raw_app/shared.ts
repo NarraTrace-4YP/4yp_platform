@@ -63,6 +63,8 @@ export type ChoicesStatus = {
   n_matched: number
   n_unmatched: number
   n_no_answer: number
+  n_reviews_doubtful: number
+  n_doubtful: number // sections to check by hand
 }
 export type DatasetStatus = {
   name: string

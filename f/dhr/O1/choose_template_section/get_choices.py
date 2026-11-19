@@ -14,7 +14,10 @@ review's template and the templates the model weighed, its sections (each with i
 the template sections the model weighed), and the review in standardised order (its
 template's sections, each with the review sections mapped to it). With template and
 template_position: the review sections mapped to that template section. With status
-('unmatched' or 'no answer'): the sections flagged that way.
+('doubtful', 'unmatched' or 'no answer'): the sections flagged that way. Doubtful: the model
+gave its answer less than 50%, or the section's review has a doubtful template (also under
+50%, or a fallback: the model said "none of these" but wasn't sure, so the review was given
+its likeliest template). Doubtful answers are the ones to check by hand.
 """
 
 import json
@@ -31,8 +34,8 @@ WEIGHED = 0.01  # options the model gave less probability than this aren't liste
 VERSION_SQL = """
 SELECT c.revision, c.reviews, c.model, c.model_revision, c.prompt_version, c.chosen_at,
        c.git_commit, c.slurm_job_ids, c.blythe_runs, c.n_reviews, c.n_reviews_matched,
-       c.n_sections, c.n_matched, c.n_unmatched, c.n_no_answer,
-       c.run_details, g.title, g.source_url
+       c.n_sections, c.n_matched, c.n_unmatched, c.n_no_answer, c.n_reviews_doubtful,
+       c.n_doubtful, c.run_details, g.title, g.source_url
 FROM corpus.current_versions AS v
 JOIN corpus.choice_versions AS c USING (revision)
 JOIN corpus.guidance_documents AS g ON g.guidance = c.guidance
@@ -54,6 +57,8 @@ VERSION_COLUMNS = (
     "n_matched",
     "n_unmatched",
     "n_no_answer",
+    "n_reviews_doubtful",
+    "n_doubtful",
 )
 RUN_DETAILS = ("vllm", "gpu", "driver", "prompt_tokens_per_second", "seconds_generating")
 
@@ -61,13 +66,13 @@ TEMPLATES_SQL = """
 SELECT t.template, t.appendix, t.title, t.kind, ts.position, ts.heading, ts.printed,
        ts.guidance, ts.page,
        count(c.*) AS n_chosen,
-       count(c.*) FILTER (WHERE c.probability < %(doubtful)s) AS n_doubtful,
+       count(c.*) FILTER (WHERE c.doubtful) AS n_doubtful,
        (SELECT count(*) FROM corpus.document_choices AS d
         WHERE d.revision = %(revision)s AND d.guidance = %(guidance)s
           AND d.template = t.template) AS n_reviews
 FROM corpus.templates AS t
 JOIN corpus.template_sections AS ts USING (template)
-LEFT JOIN corpus.template_choices AS c
+LEFT JOIN corpus.current_template_choices AS c
   ON c.revision = %(revision)s AND c.guidance = %(guidance)s
  AND c.template = ts.template AND c.template_position = ts.position
 WHERE t.guidance = %(guidance)s
@@ -77,15 +82,17 @@ ORDER BY t.appendix, ts.position
 """
 REVIEWS_SQL = """
 SELECT d.doc_id, d.status, d.template, d.template_title, d.probability, d.error,
+       d.fallback, d.doubtful,
        count(c.*), count(c.*) FILTER (WHERE c.status = 'matched'),
        count(c.*) FILTER (WHERE c.status = 'unmatched'),
        count(c.*) FILTER (WHERE c.status = 'no answer'),
-       count(c.*) FILTER (WHERE c.probability < %(doubtful)s)
+       count(c.*) FILTER (WHERE c.doubtful)
 FROM corpus.current_document_choices AS d
 LEFT JOIN corpus.current_template_choices AS c USING (revision, guidance, doc_id)
 WHERE d.revision = %(revision)s AND d.guidance = %(guidance)s
-GROUP BY d.doc_id, d.status, d.template, d.template_title, d.probability, d.error
-ORDER BY d.doc_id
+GROUP BY d.doc_id, d.status, d.template, d.template_title, d.probability, d.error,
+         d.fallback, d.doubtful
+ORDER BY d.doubtful DESC, d.doc_id
 """
 REVIEW_COLUMNS = (
     "doc_id",
@@ -94,6 +101,8 @@ REVIEW_COLUMNS = (
     "template_title",
     "probability",
     "error",
+    "fallback",  # the model said "none of these" but wasn't sure: given its likeliest template
+    "doubtful",  # its template is doubtful: check by hand (listed first)
     "n_sections",
     "n_matched",
     "n_unmatched",
@@ -103,7 +112,7 @@ REVIEW_COLUMNS = (
 
 DOCUMENT_SQL = """
 SELECT status, template, template_title, template_kind, answer, probability, probabilities,
-       error
+       error, fallback, doubtful
 FROM corpus.current_document_choices
 WHERE revision = %(revision)s AND guidance = %(guidance)s AND doc_id = %(doc_id)s
 """
@@ -116,11 +125,14 @@ DOCUMENT_COLUMNS = (
     "probability",
     "probabilities",
     "error",
+    "fallback",
+    "doubtful",
 )
 SECTIONS_SQL = """
 SELECT s.section_id, s.parent_id, s.level, s.heading, s.position, s.first_page, s.last_page,
        c.status, c.template, c.template_position, c.template_title, c.template_heading,
-       c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error
+       c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error,
+       coalesce(c.doubtful, false)
 FROM corpus.sections AS s
 LEFT JOIN corpus.current_template_choices AS c
   ON c.revision = s.revision AND c.doc_id = s.doc_id AND c.section_id = s.section_id
@@ -147,6 +159,7 @@ SECTION_COLUMNS = (
     "probabilities",
     "n_options",
     "error",
+    "doubtful",
 )
 # Stage 4's ranks for each section's candidates, to compare with what the model chose.
 RANKS_SQL = """
@@ -177,7 +190,7 @@ STANDARDISED_COLUMNS = (
 # Review sections mapped to one template section, or flagged with one status.
 FOUND_SQL = """
 SELECT c.doc_id, c.section_id, c.section_level, c.section_heading, c.section_position,
-       c.probability, c.none_probability, c.error
+       c.probability, c.none_probability, c.error, c.doubtful, c.template_heading
 FROM corpus.current_template_choices AS c
 WHERE c.revision = %(revision)s AND c.guidance = %(guidance)s AND {where}
 ORDER BY c.probability {order} NULLS LAST, c.doc_id, c.section_position
@@ -189,6 +202,7 @@ WHERE c.revision = %(revision)s AND c.guidance = %(guidance)s AND {where}
 """
 WHERE = {
     "template": "c.template = %(template)s AND c.template_position = %(position)s",
+    "doubtful": "c.doubtful",
     "unmatched": "c.status = 'unmatched'",
     "no answer": "c.status = 'no answer'",
 }
@@ -201,6 +215,8 @@ FOUND_COLUMNS = (
     "probability",
     "none_probability",
     "error",
+    "doubtful",
+    "template_heading",  # what it was mapped to
 )
 
 
@@ -340,7 +356,7 @@ def main(
     doc_id: str = "",
     template: str = "",
     template_position: int = 0,
-    status: Literal["", "unmatched", "no answer"] = "",
+    status: Literal["", "doubtful", "unmatched", "no answer"] = "",
 ):
     check_dataset(dataset)
     if guidance not in GUIDANCES:
@@ -389,7 +405,7 @@ def main(
         "guidance": guidance,
         "version": version,
         "doubtful_below": DOUBTFUL,
-        "n_doubtful": sum(r["n_doubtful"] for r in reviews),
+        "n_doubtful": version["n_doubtful"],
         "templates": templates,
         "reviews": reviews,
     }

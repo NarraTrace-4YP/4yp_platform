@@ -20,7 +20,10 @@ For the newest grouped version of a dataset, against one guidance, in two GPU jo
      candidates, so a right answer is never left out; stage 4's ranks are kept to compare.
 Each job is the fixed llm_batch job on Blythe (llm_batch.py in narratrace-slurm), answering
 with vLLM on one GPU. The answers go into corpus.document_choices and corpus.template_choices;
-sections that match none are kept and flagged as unmatched. Choosing again for the same
+sections that match none are kept and flagged as unmatched. If the model says a review is
+written to none of the templates but is less than FALLBACK_BELOW sure, the review is given its
+likeliest template anyway (Rowan, 19 Nov 2026: a review is often only part of a report) and
+marked doubtful, like every answer under 50%. Choosing again for the same
 dataset version and guidance replaces its choices. reviews="pilot" does only the
 specification's 10 pilot reviews, to check the answers and the speed first.
 
@@ -93,6 +96,9 @@ LLM_SETTINGS = {
     "seed": 0,
 }
 DOUBTFUL = 0.5  # answers the model gave less probability than this are counted as doubtful
+# A review the model says matches none of the templates, with less probability than this, is
+# given its likeliest template anyway, and it and its sections are marked doubtful.
+FALLBACK_BELOW = 0.8
 NOT_ASKED = "not asked: its review matched none of the templates"
 NO_DOCUMENT = "not asked: there was no answer for its review's template"
 
@@ -312,6 +318,21 @@ def document_rows(results: list[dict], documents: list[Document]) -> list[dict]:
     return rows
 
 
+def apply_fallback(rows: list[dict]) -> list[dict]:
+    """A review answered "none of these" with less than FALLBACK_BELOW probability gets its
+    likeliest template instead (marked fallback, so doubtful). "none" itself is kept as the
+    answer and its probability, so the record shows what the model said."""
+    for row in rows:
+        row.setdefault("fallback", False)
+        if row["answer"] != NONE or (row["probability"] or 0) >= FALLBACK_BELOW:
+            continue
+        templates = {k: p for k, p in row["probabilities"].items() if k != "none"}
+        if templates:
+            row["template"] = max(templates, key=templates.get)
+            row["fallback"] = True
+    return rows
+
+
 def choice_rows(
     results: list[dict], sections: list[Section], documents: dict[str, dict]
 ) -> list[dict]:
@@ -512,7 +533,12 @@ async def submit_sections(
             f"{dataset} has been reloaded or regrouped since the document prompts"
             " were made. Nothing stored."
         )
-    documents = document_rows(results, inputs["documents"])
+    documents = apply_fallback(document_rows(results, inputs["documents"]))
+    fallbacks = [d["doc_id"] for d in documents if d["fallback"]]
+    if fallbacks:
+        log(
+            f"DOUBT {len(fallbacks)} reviews given their likeliest template as a fallback: {fallbacks}"
+        )
     by_kind: dict[str, int] = {}
     for row in documents:
         kind = (
@@ -540,11 +566,12 @@ async def submit_sections(
 STORE_VERSION_SQL = """
 INSERT INTO corpus.choice_versions (revision, guidance, reviews, model, model_revision,
     prompt_version, prompts_sha256, run_details, slurm_job_ids, blythe_runs, git_commit,
-    n_reviews, n_reviews_matched, n_sections, n_matched, n_unmatched, n_no_answer)
+    n_reviews, n_reviews_matched, n_sections, n_matched, n_unmatched, n_no_answer,
+    n_reviews_doubtful, n_doubtful)
 VALUES (%(revision)s, %(guidance)s, %(reviews)s, %(model)s, %(model_revision)s,
     %(prompt_version)s, %(prompts_sha256)s, %(run_details)s, %(slurm_job_ids)s, %(blythe_runs)s,
     %(git_commit)s, %(n_reviews)s, %(n_reviews_matched)s, %(n_sections)s, %(n_matched)s,
-    %(n_unmatched)s, %(n_no_answer)s)
+    %(n_unmatched)s, %(n_no_answer)s, %(n_reviews_doubtful)s, %(n_doubtful)s)
 """
 # How often the LLM's choice is also the candidate stage 4 ranked first.
 AGREEMENT_SQL = """
@@ -571,7 +598,7 @@ def store(conn, version: dict, documents: list[dict], rows: list[dict]) -> None:
         with conn.cursor() as cursor:
             with cursor.copy(
                 "COPY corpus.document_choices (revision, doc_id, guidance, template, answer,"
-                " probability, probabilities, error) FROM STDIN"
+                " probability, probabilities, error, fallback) FROM STDIN"
             ) as copy:
                 for d in documents:
                     copy.write_row(
@@ -584,6 +611,7 @@ def store(conn, version: dict, documents: list[dict], rows: list[dict]) -> None:
                             d["probability"],
                             json.dumps(d["probabilities"]),
                             d["error"],
+                            d.get("fallback", False),
                         )
                     )
             with cursor.copy(
@@ -610,8 +638,18 @@ def store(conn, version: dict, documents: list[dict], rows: list[dict]) -> None:
                     )
 
 
+def doubtful_review(document: dict) -> bool:
+    probability = document.get("probability")
+    return document["template"] is not None and (
+        document.get("fallback", False) or (probability is not None and probability < DOUBTFUL)
+    )
+
+
 def counts(documents: list[dict], rows: list[dict]) -> dict:
-    unmatched_docs = {d["doc_id"] for d in documents if d["answer"] == NONE}
+    unmatched_docs = {
+        d["doc_id"] for d in documents if d["answer"] == NONE and d["template"] is None
+    }
+    doubtful_docs = {d["doc_id"] for d in documents if doubtful_review(d)}
     return {
         "n_reviews": len(documents),
         "n_reviews_matched": sum(1 for d in documents if d["template"] is not None),
@@ -624,6 +662,13 @@ def counts(documents: list[dict], rows: list[dict]) -> dict:
         ),
         "n_no_answer": sum(
             1 for r in rows if r["answer"] is None and r["doc_id"] not in unmatched_docs
+        ),
+        "n_reviews_doubtful": len(doubtful_docs),
+        "n_doubtful": sum(
+            1
+            for r in rows
+            if r["template"] is not None
+            and ((r["probability"] or 0) < DOUBTFUL or r["doc_id"] in doubtful_docs)
         ),
     }
 
@@ -668,6 +713,8 @@ async def load_results(
                     "sections": summary,
                     "sections_state": sections_state,
                     "hours": [j["hours"] for j in jobs],
+                    "doubtful_below": DOUBTFUL,
+                    "fallback_below": FALLBACK_BELOW,
                 }
             ),
             "slurm_job_ids": [j["slurm_job_id"] for j in jobs],
@@ -703,12 +750,7 @@ async def load_results(
         "blythe_runs": version["blythe_runs"],
         "reviews_by_kind": sections["reviews_by_kind"],
         **tally,
-        "n_doubtful": sum(
-            1 for r in rows if r["probability"] is not None and r["probability"] < DOUBTFUL
-        ),
-        "n_reviews_doubtful": sum(
-            1 for d in documents if d["probability"] is not None and d["probability"] < DOUBTFUL
-        ),
+        "reviews_fallback": [d["doc_id"] for d in documents if d.get("fallback")],
         "n_matched_text_top1": same_text,
         "n_matched_heading_top1": same_heading,
         "mean_probability_matched": round(
@@ -737,6 +779,13 @@ async def load_results(
     if mlflow_run:
         result["mlflow_run_id"] = mlflow_run
         log(f"OK    Logged to MLflow: run {mlflow_run} in experiment 'template-choices'")
+    if tally["n_doubtful"] or tally["n_reviews_doubtful"]:
+        result["check_by_hand"] = (
+            f"DOUBTFUL: {tally['n_reviews_doubtful']} reviews and {tally['n_doubtful']} sections"
+            " (see the Standardised tab's Doubtful list, or corpus.current_template_choices"
+            " WHERE doubtful)"
+        )
+        log(f"DOUBT {result['check_by_hand']}")
     if tally["n_no_answer"]:
         result["note"] = (
             f"{tally['n_no_answer']} sections have no answer (see"
