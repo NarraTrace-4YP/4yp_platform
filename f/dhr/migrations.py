@@ -678,4 +678,58 @@ JOIN corpus.current_versions AS v USING (revision)
 WHERE m.status <> 'matched';
 """,
     ),
+    (
+        "009_doubtful_choices",
+        """
+-- O1 stage 5: doubtful answers are marked, and a review the model wasn't sure matched no
+-- template falls back to its likeliest template (Rowan, 19 Nov 2026).
+--   * document_choices.fallback: the model's answer was "none of these" but with less
+--     probability than the fallback threshold, so the review was given its likeliest
+--     template anyway, and its sections were mapped onto it.
+--   * doubtful (in the views): the model gave its answer less than 50%, the review's
+--     template is a fallback, or (for a section) its review's template is doubtful. These
+--     are the answers to check by hand.
+ALTER TABLE corpus.document_choices ADD COLUMN fallback boolean NOT NULL DEFAULT false;
+ALTER TABLE corpus.choice_versions ADD COLUMN n_reviews_doubtful integer NOT NULL DEFAULT 0;
+ALTER TABLE corpus.choice_versions ADD COLUMN n_doubtful integer NOT NULL DEFAULT 0;
+
+CREATE OR REPLACE VIEW corpus.current_document_choices AS
+SELECT d.revision, v.dataset, d.guidance, d.doc_id,
+       CASE WHEN d.template IS NOT NULL THEN 'matched'
+            WHEN d.answer IS NOT NULL THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template, t.title AS template_title, t.kind AS template_kind,
+       d.answer, d.probability, d.probabilities, d.error,
+       cv.model, cv.prompt_version, cv.reviews,
+       d.fallback,
+       d.template IS NOT NULL AND (d.fallback OR d.probability < 0.5) AS doubtful
+FROM corpus.document_choices AS d
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+LEFT JOIN corpus.templates AS t ON t.template = d.template;
+
+CREATE OR REPLACE VIEW corpus.current_template_choices AS
+SELECT c.revision, v.dataset, c.guidance, c.doc_id, c.section_id,
+       s.position AS section_position, s.level AS section_level, s.heading AS section_heading,
+       CASE WHEN c.template IS NOT NULL THEN 'matched'
+            WHEN c.answer IS NOT NULL OR d.answer = 'Z' THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template AS document_template, dt.title AS document_template_title,
+       c.template, t.title AS template_title, t.kind AS template_kind,
+       c.template_position, ts.heading AS template_heading,
+       c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error,
+       cv.model, cv.prompt_version, cv.reviews,
+       c.template IS NOT NULL
+           AND (c.probability < 0.5 OR d.fallback OR d.probability < 0.5) AS doubtful
+FROM corpus.template_choices AS c
+JOIN corpus.document_choices AS d USING (revision, doc_id, guidance)
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.sections AS s USING (revision, doc_id, section_id)
+LEFT JOIN corpus.templates AS dt ON dt.template = d.template
+LEFT JOIN corpus.templates AS t ON t.template = c.template
+LEFT JOIN corpus.template_sections AS ts
+  ON ts.template = c.template AND ts.position = c.template_position;
+""",
+    ),
 ]

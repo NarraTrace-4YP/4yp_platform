@@ -125,8 +125,9 @@ const STEPS: Step[] = [
       'report, executive summary…), then which section of that template, or of its action plan, ' +
       'each of the review’s sections is. Several sections can share one template section (a ' +
       'timeline and a timeline analysis, say); their text is never changed. Sections that fit ' +
-      'none are kept and flagged as unmatched, and every answer keeps the model’s confidence, ' +
-      'so doubtful ones can be checked. The same type of material can then be found ' +
+      'none are kept and flagged as unmatched. Every answer keeps the model’s confidence; ' +
+      'answers under 50%, and reviews it was unsure about, are marked doubtful, to be checked ' +
+      'by hand. The same type of material can then be found ' +
       'consistently across reviews.',
     built: true,
     see: { tab: 'choices', label: 'See the standardised sections' },
@@ -144,6 +145,9 @@ const STEPS: Step[] = [
                       `${formatNumber(c.n_matched)} of ${formatNumber(c.n_sections)} sections matched and ` +
                       `${formatNumber(c.n_unmatched)} flagged as unmatched` +
                       (c.n_no_answer ? `, ${formatNumber(c.n_no_answer)} without an answer` : '') +
+                      (c.n_doubtful
+                        ? `, ⚠ ${formatNumber(c.n_doubtful)} doubtful (to check by hand)`
+                        : '') +
                       (c.reviews === 'pilot' ? ' (pilot reviews only)' : '') +
                       `, chosen ${formatDateTime(c.chosen_at)}`,
                   )

@@ -115,7 +115,8 @@ CANDIDATES_COLUMNS = (
 # guidance they were made against (none if not made yet).
 CHOICES_SQL = """
 SELECT v.dataset, c.guidance, c.reviews, c.chosen_at, c.git_commit, c.model, c.prompt_version,
-       c.n_reviews, c.n_reviews_matched, c.n_sections, c.n_matched, c.n_unmatched, c.n_no_answer
+       c.n_reviews, c.n_reviews_matched, c.n_sections, c.n_matched, c.n_unmatched, c.n_no_answer,
+       c.n_reviews_doubtful, c.n_doubtful
 FROM corpus.current_versions AS v
 JOIN corpus.choice_versions AS c ON c.revision = v.revision
 ORDER BY v.dataset, c.guidance
@@ -133,6 +134,8 @@ CHOICES_COLUMNS = (
     "n_matched",
     "n_unmatched",
     "n_no_answer",
+    "n_reviews_doubtful",
+    "n_doubtful",  # sections to check by hand
 )
 
 # Each guidance document whose templates are stored (each is stored by the first candidates
