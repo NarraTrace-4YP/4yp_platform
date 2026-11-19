@@ -6,7 +6,7 @@
     <title>Workspace | NarraTrace</title>
     <meta
       name="description"
-      content="Links for the NarraTrace team: the O1 app, Windmill, MLflow, GitHub, the datasets, the database and the documentation."
+      content="An overview of the tools behind NarraTrace and how they support data preparation, analysis and evaluation."
     />
     <meta name="robots" content="noindex" />
     <meta name="theme-color" content="#f3f2f2" />
@@ -14,7 +14,7 @@
     <meta property="og:title" content="NarraTrace" />
     <meta
       property="og:description"
-      content="A novel application of LLM wikis to the analysis of Domestic Homicide Reviews. A CS407 group project, University of Warwick."
+      content="The tools and data behind NarraTrace, a University of Warwick project exploring LLM wikis for Domestic Homicide Review analysis."
     />
     <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/workspace/' />
     <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png' />
@@ -52,9 +52,8 @@
       <section class="wrap page-head" aria-labelledby="title">
         <h1 id="title">Workspace</h1>
         <p class="lede">
-          Everything the team works with. Windmill, MLflow and the database share one sign-in per
-          person: your details are in <code>~/ACCOUNTS.txt</code> on the server. Ask an admin if you
-          don’t have one.
+          The tools behind NarraTrace: how reviews are prepared, processing runs are managed and
+          experiments are compared.
         </p>
       </section>
 
@@ -66,9 +65,9 @@
           <li class="tool">
             <h3><a href="/o1/">O1 app</a></h3>
             <p>
-              Start here. Explains Stage 1 and where it stands, shows the datasets and where their
-              reviews came from, runs each pipeline with its progress, and lets you browse cases,
-              sections and template matches.
+              The interface for corpus preparation. Browse reviews, inspect their section structure
+              and compare suggested template matches. The app also shows processing progress and
+              dataset coverage.
             </p>
             <div class="tool-meta">
               <span class="access">Public page</span>
@@ -83,11 +82,11 @@
           <li class="tool">
             <h3><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'>Windmill</a></h3>
             <p>
-              Runs the pipeline scripts and keeps every run. The team’s code is in
-              <code>f/dhr</code>; your own experiments go in <code>u/&lt;username&gt;</code>.
+              Coordinates the processing pipeline, from importing reviews to preparing sections for
+              analysis. Run histories help the team track progress and investigate failures.
             </p>
             <div class="tool-meta">
-              <span class="access">Team sign-in</span>
+              <span class="access">Pipeline orchestration</span>
               <span class="data">windmill.{{env "DOMAIN"}}</span>
               <div class="tool-also">
                 <a
@@ -102,19 +101,19 @@
           <li class="tool">
             <h3><a href='{{env "PUBLIC_SCHEME"}}://mlflow.{{env "DOMAIN"}}/'>MLflow</a></h3>
             <p>
-              Records every experiment run and LLM call: the settings it used, the commit that ran
-              it and what it produced.
+              Tracks experiments and model calls, recording their settings, code versions and
+              outputs so results can be reproduced and compared.
             </p>
             <div class="tool-meta">
-              <span class="access">Team sign-in</span>
+              <span class="access">Experiment tracking</span>
               <span class="data">mlflow.{{env "DOMAIN"}}</span>
             </div>
           </li>
           <li class="tool">
             <h3><a href="https://github.com/NarraTrace-4YP/4yp_platform">GitHub</a></h3>
             <p>
-              All the code and the server setup. Every change goes in through a pull request that
-              passes the checks and has one approval.
+              Keeps the project’s code and configuration under version control. Pull requests,
+              automated checks and peer review help the team develop the pipeline together.
             </p>
             <div class="tool-meta">
               <span class="access">Public</span>
@@ -128,11 +127,11 @@
           <li class="tool">
             <h3><a href="https://huggingface.co/datasets/4YP/dhr-corpus-100-copy">Datasets</a></h3>
             <p>
-              Where the reviews come from. DHRC-100 holds 100 reviews checked by hand; DHRC-RAW
-              holds all 702 gathered, as unchecked automated output.
+              The source collections used by the pipeline. DHRC-100 contains 100 manually checked
+              reviews; DHRC-RAW contains 702 automated extractions, including the same 100 reviews.
             </p>
             <div class="tool-meta">
-              <span class="access">Team access</span>
+              <span class="access">Source datasets</span>
               <span class="data">huggingface.co/4YP</span>
               <div class="tool-also">
                 <a href="https://huggingface.co/datasets/4YP/dhr-corpus-100-copy">DHRC-100</a
@@ -142,18 +141,18 @@
           </li>
           <li class="tool">
             <h3>
-              <a
-                href="https://github.com/NarraTrace-4YP/4yp_platform#using-the-database-from-your-laptop"
-                >Database</a
+              <a href="https://github.com/NarraTrace-4YP/4yp_platform#database-organisation"
+                >How the data is organised</a
               >
             </h3>
             <p>
-              PostgreSQL, holding the reviews and everything built from them. It isn’t open to the
-              internet: reach it from your laptop through an SSH tunnel.
+              PostgreSQL stores the source reviews, reconstructed sections and processing results.
+              Keeping these together allows each result to be traced back to the material it came
+              from.
             </p>
             <div class="tool-meta">
-              <span class="access">Team sign-in</span>
-              <span class="data">SSH tunnel, port 5432</span>
+              <span class="access">Data storage</span>
+              <span class="data">PostgreSQL</span>
             </div>
           </li>
         </ul>
@@ -163,8 +162,8 @@
         <div class="sub-head">
           <h2 id="docs-title">Documentation</h2>
           <p>
-            The guides live in the repository’s README, next to the code they describe, so a change
-            to how something works and its instructions go in together.
+            More about the platform, the datasets and the planned wiki, documented alongside the
+            project code.
           </p>
         </div>
         <div class="docs">
@@ -172,8 +171,8 @@
             <h3>Getting started</h3>
             <ul>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#getting-access"
-                  >Getting access</a
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#1-how-the-platform-works"
+                  >Platform overview</a
                 >
               </li>
               <li>
@@ -182,13 +181,14 @@
                 >
               </li>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#using-windmill"
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#4-using-windmill"
                   >Using Windmill</a
                 >
               </li>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#working-on-your-laptop"
-                  >Working on your laptop</a
+                <a
+                  href="https://github.com/NarraTrace-4YP/4yp_platform#how-the-services-fit-together"
+                  >How the services fit together</a
                 >
               </li>
             </ul>
@@ -197,18 +197,18 @@
             <h3>Changing the code</h3>
             <ul>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#how-work-reaches-the-server"
-                  >How work reaches the server</a
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-normal-github-workflow"
+                  >Reviewing code changes</a
                 >
               </li>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#writing-a-pipeline-script"
-                  >Writing a pipeline script</a
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#running-a-team-pipeline"
+                  >Processing pipelines</a
                 >
               </li>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#where-things-go"
-                  >Where things go</a
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#10-repository-structure"
+                  >Project structure</a
                 >
               </li>
             </ul>
@@ -217,51 +217,50 @@
             <h3>Data and results</h3>
             <ul>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-data">The data</a>
+                <a
+                  href="https://github.com/NarraTrace-4YP/4yp_platform#8-the-datasets-and-processing-pipeline"
+                  >The data</a
+                >
               </li>
               <li>
-                <a
-                  href="https://github.com/NarraTrace-4YP/4yp_platform#using-the-database-from-your-laptop"
-                  >Using the database from your laptop</a
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#database-organisation"
+                  >How the data is organised</a
                 >
               </li>
               <li>
                 <a
-                  href="https://github.com/NarraTrace-4YP/4yp_platform#logging-to-mlflow-from-your-laptop"
-                  >Logging to MLflow from your laptop</a
+                  href="https://github.com/NarraTrace-4YP/4yp_platform#logging-experiments-to-mlflow"
+                  >Experiment records</a
                 >
               </li>
               <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-llm-wiki"
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#9-the-llm-wiki"
                   >The LLM wiki</a
                 >
               </li>
             </ul>
           </div>
           <div class="doc-group">
-            <h3>Running the server</h3>
+            <h3>How it fits together</h3>
             <ul>
               <li>
                 <a
-                  href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md"
-                  >Setting up the server</a
+                  href="https://github.com/NarraTrace-4YP/4yp_platform#how-the-services-fit-together"
+                  >How services work together</a
                 >
+              </li>
+              <li>
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-tools">Tool overview</a>
               </li>
               <li>
                 <a
-                  href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md#day-to-day"
-                  >Day to day</a
+                  href="https://github.com/NarraTrace-4YP/4yp_platform#running-the-complete-o1-pipeline"
+                  >The O1 workflow</a
                 >
               </li>
               <li>
-                <a
-                  href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md#upgrading-windmill"
-                  >Upgrading Windmill</a
-                >
-              </li>
-              <li>
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform#not-set-up-yet"
-                  >Not set up yet</a
+                <a href="https://github.com/NarraTrace-4YP/4yp_platform#11-blythe-integration"
+                  >Planned GPU processing</a
                 >
               </li>
             </ul>
@@ -273,8 +272,8 @@
         <div class="sub-head">
           <h2 id="sources-title">Sources and guidance</h2>
           <p>
-            The documents the project works from. The reviews and the DHR Library are published
-            under the Open Government Licence.
+            The source library and guidance used to organise the reviews, alongside background on
+            LLM wikis and reuse terms.
           </p>
         </div>
         <div class="table-scroll">

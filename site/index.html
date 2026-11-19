@@ -6,7 +6,7 @@
     <title>NarraTrace: LLM wikis and Domestic Homicide Reviews</title>
     <meta
       name="description"
-      content="A CS407 group project at the University of Warwick asking whether an LLM wiki helps forensic researchers identify connections and recurring patterns across Domestic Homicide Reviews."
+      content="NarraTrace explores how an LLM wiki could help researchers compare Domestic Homicide Reviews and find recurring patterns and lessons."
     />
     <meta name="robots" content="noindex" />
     <meta name="theme-color" content="#f3f2f2" />
@@ -14,7 +14,7 @@
     <meta property="og:title" content="NarraTrace" />
     <meta
       property="og:description"
-      content="A novel application of LLM wikis to the analysis of Domestic Homicide Reviews. A CS407 group project, University of Warwick."
+      content="Exploring how linked knowledge pages can help researchers compare Domestic Homicide Reviews. A University of Warwick project with the Forensic Capability Network."
     />
     <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/' />
     <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png' />
@@ -93,12 +93,9 @@
           <div class="chapter chapter--hero" data-scene="0">
             <div class="wrap">
               <div class="hero-copy">
-                <p class="hero-title">
-                  A novel application of LLM wikis to the analysis of Domestic Homicide Reviews
-                </p>
+                <p class="hero-title">Exploring patterns across Domestic Homicide Reviews</p>
                 <h1 class="hero-question" data-sweep>
-                  To what extent can an LLM wiki help forensic researchers identify connections and
-                  recurring patterns across Domestic Homicide Reviews?
+                  Can an LLM wiki help researchers connect the lessons across reviews?
                 </h1>
                 <dl class="hero-facts">
                   <div>
@@ -122,27 +119,21 @@
           <article class="chapter" id="one-death" data-scene="1" aria-labelledby="one-death-title">
             <div class="wrap">
               <div class="chapter-body">
-                <h2 id="one-death-title">One review for each death</h2>
+                <h2 id="one-death-title">What a review can tell us</h2>
                 <p>
-                  Since 2011, Community Safety Partnerships in England and Wales have had to
-                  commission a Domestic Homicide Review after someone aged 16 or over dies from
-                  violence, abuse or neglect by a relative, partner or member of their household.<a
-                    class="cite"
-                    href="#ref-1"
-                    >[1]</a
-                  >
+                  Domestic Homicide Reviews examine the circumstances leading up to a death linked
+                  to domestic abuse. They bring together accounts from the agencies involved,
+                  including the police, health services and social care.
                 </p>
                 <p>
-                  The agencies involved examine the events that led to the death.
                   <span class="reading"
-                    >The aim is to improve how organisations safeguard people, not to decide who was
-                    at fault.</span
+                    >Each review asks what can be learned to improve safeguarding.</span
                   >
+                  It records agency contact, decisions and recommendations for future practice.
                 </p>
                 <p>
-                  On 15 September 2026 the reviews were renamed Domestic Abuse Related Death
-                  Reviews, because they also cover suicides and unexplained deaths linked to
-                  domestic abuse.<a class="cite" href="#ref-2">[2]</a>
+                  NarraTrace works with DHRC-100, a collection of 100 reviews converted from PDF
+                  into structured text and checked by researchers.
                 </p>
               </div>
             </div>
@@ -151,30 +142,26 @@
           <article class="chapter" id="by-hand" data-scene="2" aria-labelledby="by-hand-title">
             <div class="wrap">
               <div class="chapter-body">
-                <h2 id="by-hand-title">Patterns only show across many reviews</h2>
+                <h2 id="by-hand-title">Looking across cases</h2>
                 <p>
-                  Each review examines a single death, so
+                  A single review tells one case’s story.
                   <span class="reading"
-                    >failings that keep recurring only come to light once many reviews are
-                    compared.</span
+                    >Comparing reviews can reveal recurring circumstances, gaps in agency responses
+                    and lessons that appear again and again.</span
                   >
-                  The Forensic Capability Network, which coordinates forensic science across the 43
-                  police forces of England and Wales, has typically done that by hand.
                 </p>
                 <p>
-                  Reading by hand is slow and costly: one 2023 report collected 302 documents and
-                  drew its results from only 46 of them.<a class="cite" href="#ref-5">[5]</a> Cook
-                  et al. name that time and cost as the main bottleneck and propose language
-                  processing instead.<a class="cite" href="#ref-6">[6]</a>
+                  That comparison takes time. Researchers have to read long reports, find comparable
+                  passages and keep track of how the cases differ. In one previous study, 302
+                  documents were collected, but the findings drew on 46.
                 </p>
                 <figure class="halt" aria-label="302 documents collected, 46 used">
                   <div class="halt-dots" data-total="302" data-used="46"></div>
                   <figcaption class="data">302 documents collected, results from 46</figcaption>
                 </figure>
                 <p>
-                  Pergola et al. produced DHRC-100: 100 reviews converted from PDF into structured
-                  files and checked by people.<a class="cite" href="#ref-7">[7]</a> This project
-                  builds on it.
+                  We are working with the Forensic Capability Network to explore whether language
+                  models can help researchers make these comparisons across a larger collection.
                 </p>
               </div>
             </div>
@@ -183,27 +170,22 @@
           <article class="chapter" id="two-ways" data-scene="3" aria-labelledby="two-ways-title">
             <div class="wrap">
               <div class="chapter-body">
-                <h2 id="two-ways-title">Two ways to question a collection</h2>
+                <h2 id="two-ways-title">Why build a wiki?</h2>
                 <p>
-                  Retrieval-augmented generation (RAG) finds the passages that best match a question
-                  and hands them to a language model.<a class="cite" href="#ref-3">[3]</a> It suits
-                  specific questions, but not ideas spread across a whole collection.
+                  A common approach, retrieval-augmented generation (RAG), searches for passages
+                  relevant to a question and gives them to a language model to produce an answer.
                 </p>
                 <p>
-                  Karpathy’s LLM wiki works differently.<a class="cite" href="#ref-8">[8]</a> An
-                  agent writes each document into linked pages as it reads it, so
+                  An LLM wiki organises the material before a question is asked. An agent reads the
+                  reviews and builds linked pages about people, agencies, events and
+                  recommendations.
                   <span class="reading"
-                    >a connection is noted once and reused wherever it applies.</span
+                    >Related information from different reviews can then be explored together.</span
                   >
                 </p>
                 <p>
-                  In a small preprint, Cochran found a wiki connected findings better than
-                  single-round vector RAG, at about 21 times the tokens per query.<a
-                    class="cite"
-                    href="#ref-4"
-                    >[4]</a
-                  >
-                  This project repeats that comparison on DHRC-100.
+                  We will compare the wiki with RAG on the same analysis tasks to test whether those
+                  links help, and what they cost to build and use.
                 </p>
               </div>
             </div>
@@ -219,22 +201,20 @@
               <div class="chapter-body">
                 <h2 id="linked-pages-title">A wiki of agencies, events and recommendations</h2>
                 <p>
-                  The wiki agent reads each review section by section and writes linked pages about
-                  the relationships, events and recommendations in it. An agency page, for example,
-                  lists every review that agency appears in, what it did, and the recommendations
-                  made to it.
+                  An agency page could bring together the reviews that mention it, the actions it
+                  took and the recommendations made to it. Event and relationship pages would offer
+                  other routes through the same evidence.
                 </p>
                 <p>
-                  <span class="reading">Every claim cites the passages it came from,</span> and a
-                  separate model checks each one against its source before the wiki is used.<a
-                    class="cite"
-                    href="#ref-13"
-                    >[13]</a
+                  <span class="reading"
+                    >Generated claims will link back to the passages they came from.</span
                   >
+                  A separate model will check them against the source, with a sample also checked by
+                  people.
                 </p>
                 <p>
-                  As far as the team knows, this is the first time an agent-maintained wiki has been
-                  applied to these reviews.
+                  The aim is to make evidence across reviews easier to explore, while keeping the
+                  original reports available for checking.
                 </p>
                 <div class="actions">
                   <a class="btn" href="#stages">How the project works</a>
@@ -248,10 +228,10 @@
       <section class="part" id="stages" aria-labelledby="stages-title">
         <div class="wrap">
           <header class="part-head">
-            <h2 id="stages-title">Four stages, six objectives</h2>
+            <h2 id="stages-title">From reviews to cross-case analysis</h2>
             <p>
-              Each stage works from what the stage before it produced. Stages 2 and 3 are the heart
-              of the research.
+              The project has four stages: prepare the reviews, build the wiki, analyse patterns and
+              evaluate the results.
             </p>
           </header>
 
@@ -295,37 +275,27 @@
 
                 <div class="objective">
                   <span class="o-id">O1</span>
-                  <h4>Derive a hierarchical, standardised representation of DHRC-100</h4>
+                  <h4>Organise reviews into comparable sections</h4>
                   <div class="objective-body">
                     <p class="aim">
-                      Organise DHRC-100 by each review’s own structure, standardise it against the
-                      2016 statutory guidance template, and store the result in a database linked to
-                      the case metadata in the Home Office DHR Library.
+                      Rebuild each review’s structure and map its sections to a common report
+                      template.
                     </p>
                     <p>
-                      DHRC-100 stores each review page by page. Using its checked headings and the
-                      sections they belong to, the content is organised by the document’s own
-                      hierarchy, with each section’s text grouped across page breaks. The original
-                      content, source references and layout are kept, so later stages can retrieve a
-                      section with everything nested under it. The result is intended for release in
-                      the DHRC-100 repository.
+                      The source data is organised by page. O1 groups the text into sections and
+                      subsections, including those that span page breaks, while preserving links to
+                      the original content.
                     </p>
                     <p>
-                      A second, standardised form maps each section onto the overview report
-                      template in the 2016 guidance,<a class="cite" href="#ref-14">[14]</a> so the
-                      same material can be found in the same place in every review. Candidate
-                      template sections are found by heading, exact or fuzzy, and by meaning, using
-                      embeddings. An LLM then chooses one, following the candidate and re-ranking
-                      approach of Liu et al.<a class="cite" href="#ref-15">[15]</a> A section with
-                      no suitable match is kept and flagged as unmatched.
+                      Sections will then be mapped to the 2016 statutory guidance template, so
+                      corresponding material can be found in the same place across reviews. Heading
+                      and text similarity suggest possible matches; an LLM will make the final
+                      selection. Sections without a suitable match will be retained.
                     </p>
                     <p>
-                      All three forms go into one database, and each review is linked to its case
-                      metadata: the characteristics recorded alongside it in the DHR Library.<a
-                        class="cite"
-                        href="#ref-16"
-                        >[16]</a
-                      >
+                      The database keeps the page-based, hierarchical and standardised versions
+                      together. Reviews are also linked to the case characteristics recorded in the
+                      Home Office DHR Library. <a href="/o1/">Explore the O1 app</a>.
                     </p>
                     <figure class="flow wide">
                       <svg viewBox="0 0 820 336" role="img" aria-labelledby="flow-1-title">
@@ -428,35 +398,27 @@
 
                 <div class="objective">
                   <span class="o-id">O2</span>
-                  <h4>Construct an LLM wiki DHR knowledge base</h4>
+                  <h4>Build linked pages from the reviews</h4>
                   <div class="objective-body">
                     <p class="aim">
-                      Develop an agent-maintained LLM wiki over the DHRC-100 database that organises
-                      entities, events and recommendations into persistent, linked pages.
+                      Create a wiki that connects people, agencies, relationships, events and
+                      recommendations across the collection.
                     </p>
                     <p>
-                      The wiki is built from the Stage 1 database, which stays read-only so the
-                      original evidence is preserved. The wiki agent never reads the case metadata:
-                      that is kept back to evaluate the later objectives.
+                      The wiki will use the prepared review text from Stage 1. Case metadata will be
+                      held separately for evaluation, so it cannot supply the wiki with the answers
+                      we later test.
                     </p>
                     <p>
-                      The agent works through each review section by section, recording
-                      relationships, events and recommendations, and organises them into linked
-                      pages. Relationship and event pages connect reviews that share
-                      characteristics, which is what the analysis in Stage 3 relies on.
+                      An agent will read each review section by section and create or update the
+                      relevant pages. Links between pages will connect shared characteristics across
+                      cases.
                     </p>
                     <p>
-                      The order of events matters: the lead-up to a death often involves several
-                      agencies and a sequence of contacts and decisions. LLMs remain weaker than
-                      people at temporal reasoning and putting events in order,<a
-                        class="cite"
-                        href="#ref-17"
-                        >[17]</a
-                      ><a class="cite" href="#ref-18">[18]</a> so event pages store dates three
-                      ways, and relations such as before, after or overlapping are stored
-                      explicitly.<a class="cite" href="#ref-19">[19]</a> The overall order is worked
-                      out in code, not by the LLM, and a sample of timelines is checked against
-                      chronologies written by hand.
+                      Timelines will preserve the wording of dates alongside a normalised interval
+                      and a confidence flag. Explicit links such as “before” and “after” will help
+                      retain the order of events. A sample will be checked against manually written
+                      chronologies.
                     </p>
                     <dl class="date-example" aria-label="How one date is stored (an example)">
                       <div>
@@ -474,18 +436,9 @@
                     </dl>
                     <p class="note">An invented example, to show the three parts.</p>
                     <p>
-                      Before the wiki is used, a separate LLM judge checks every generated claim
-                      against the Stage 1 passages it cites. The judge is a different model from the
-                      wiki agent, to reduce the bias of models favouring their own output,<a
-                        class="cite"
-                        href="#ref-13"
-                        >[13]</a
-                      >
-                      and its verdicts are checked against a sample of claims labelled by hand.<a
-                        class="cite"
-                        href="#ref-12"
-                        >[12]</a
-                      >
+                      A different model will check the wiki’s claims against their cited passages.
+                      We will also check a sample of its judgements by hand before using it to
+                      assess the wiki.
                     </p>
                     <figure class="flow wide">
                       <svg viewBox="0 -14 820 314" role="img" aria-labelledby="flow-2-title">
@@ -585,20 +538,15 @@
 
                 <div class="objective">
                   <span class="o-id">O3</span>
-                  <h4>
-                    Identify case similarities, temporal patterns, recurring lessons and critical
-                    events across DHRs
-                  </h4>
+                  <h4>Compare cases, timelines and lessons</h4>
                   <div class="objective-body">
                     <p class="aim">
-                      Use the knowledge base to compare case circumstances, analyse patterns over
-                      time in behaviour and agency responses, find recurring recommendations and
-                      lessons, and extract critical events.
+                      Use the wiki to investigate similarities between cases, recurring sequences of
+                      events, shared recommendations and the evidence behind case characteristics.
                     </p>
                     <p>
-                      The wiki supports four analysis tasks. An LLM judge assesses the results of
-                      the first three against the source material, and a sample of its judgements is
-                      checked by hand.
+                      Four tasks will test how useful the wiki is for cross-case analysis. Results
+                      will be assessed against the source reviews, with manual checks on a sample.
                     </p>
                   </div>
                 </div>
@@ -614,8 +562,8 @@
                       <div>
                         <dt>Why</dt>
                         <dd>
-                          To judge whether lessons from comparable cases apply, drawing on
-                          case-based reasoning.<a class="cite" href="#ref-20">[20]</a>
+                          Find cases with relevant similarities and understand where their lessons
+                          may apply.
                         </dd>
                       </div>
                       <div>
@@ -648,20 +596,15 @@
                       <div>
                         <dt>Why</dt>
                         <dd>
-                          To find chances to recognise risk and respond, drawing on Monckton-Smith’s
-                          temporal analysis.<a class="cite" href="#ref-21">[21]</a>
+                          Examine recurring sequences that may help researchers understand how risk
+                          and agency responses develop.
                         </dd>
                       </div>
                       <div>
                         <dt>How</dt>
                         <dd>
-                          Sequential pattern mining finds orders of events that recur across
-                          timelines, even when the events aren’t consecutive.<a
-                            class="cite"
-                            href="#ref-22"
-                            >[22]</a
-                          >
-                          The intervals between them are then compared.
+                          Compare event sequences and the intervals between them, including patterns
+                          whose events are separated by other activity.
                         </dd>
                       </div>
                       <div>
@@ -687,23 +630,15 @@
                       <div>
                         <dt>Why</dt>
                         <dd>
-                          To find areas for improvement that agencies share, drawing on thematic
-                          analysis of DHR recommendations.<a class="cite" href="#ref-5">[5]</a>
+                          Identify recommendations that recur across reviews and the agencies they
+                          concern.
                         </dd>
                       </div>
                       <div>
                         <dt>How</dt>
                         <dd>
-                          A codebook from the literature sets the starting themes.<a
-                            class="cite"
-                            href="#ref-23"
-                            >[23]</a
-                          >
-                          LLM topic modelling sorts material into them and proposes new ones.<a
-                            class="cite"
-                            href="#ref-24"
-                            >[24]</a
-                          >
+                          Group recommendations under themes from previous research, and use
+                          language models to suggest additional themes.
                         </dd>
                       </div>
                       <div>
@@ -726,38 +661,34 @@
                       <div>
                         <dt>Why</dt>
                         <dd>
-                          To make the evidence for each recorded characteristic easy to inspect,
-                          following earlier work on critical events.<a class="cite" href="#ref-7"
-                            >[7]</a
-                          >
+                          Connect recorded case characteristics to the events that support them.
                         </dd>
                       </div>
                       <div>
                         <dt>How</dt>
                         <dd>
-                          An LLM looks for events in the wiki that support the case metadata, then
-                          greedy set cover keeps the smallest set that still covers it.
+                          Identify events that support the recorded characteristics, then select a
+                          compact set that covers as many of those characteristics as possible.
                         </dd>
                       </div>
                       <div>
                         <dt>Produces</dt>
                         <dd>
-                          The smallest set of events from which the case metadata can be rebuilt.
+                          A compact set of supporting events, linked to the original passages.
                         </dd>
                       </div>
                       <div>
                         <dt>Judged on</dt>
                         <dd>
-                          How much of the case metadata a model can rebuild from those events
-                          alone.<a class="cite" href="#ref-7">[7]</a>
+                          How much of the case metadata a model can rebuild from those events alone.
                         </dd>
                       </div>
                     </dl>
                   </li>
                 </ol>
                 <p class="note">
-                  Case metadata is only an input to T4. It is kept out of the wiki and the RAG
-                  index, and in T4 the wiki and RAG get the same guidance.
+                  Case metadata guides the fourth task only. It is excluded from the wiki and RAG
+                  index; both approaches receive the same guidance when that task is evaluated.
                 </p>
               </article>
 
@@ -772,17 +703,15 @@
 
                 <div class="objective">
                   <span class="o-id">O4</span>
-                  <h4>Investigate model comprehension through synthetic reconstruction</h4>
+                  <h4>Test what the wiki preserves</h4>
                   <div class="objective-body">
                     <p class="aim">
-                      Generate case narratives from structured review information to measure what is
-                      lost, how much depends on context, and where bias may lie, by hiding details
-                      in a controlled way.
+                      Ask a model to reconstruct case narratives from the wiki, then compare them
+                      with the original reviews to find omissions, errors and unsupported claims.
                     </p>
                     <p>
-                      For each review in a random sample, an LLM writes a case narrative from the
-                      parts Stage 2 extracted, without seeing the source text. It does this three
-                      times:
+                      For a sample of reviews, a model will write narratives using only the
+                      extracted information. We will compare three conditions:
                     </p>
                     <ol class="trio">
                       <li>
@@ -799,59 +728,43 @@
                         <strong>Substituted</strong
                         ><span
                           >One attribute, such as the victim’s ethnicity, is swapped and everything
-                          else is fixed.<a class="cite" href="#ref-25">[25]</a
-                          ><a class="cite" href="#ref-26">[26]</a></span
+                          else is fixed.</span
                         >
                       </li>
                     </ol>
                     <p>
-                      Each narrative is compared with the source review one atomic fact at a time,<a
-                        class="cite"
-                        href="#ref-11"
-                        >[11]</a
-                      >
-                      to see what the model keeps, leaves out or invents, and how that changes with
-                      the information it has. The LLM judges this needs have known weaknesses: their
-                      verdicts can vary on the same task, and they tend to favour text they
-                      generated themselves.<a class="cite" href="#ref-12">[12]</a
-                      ><a class="cite" href="#ref-13">[13]</a>
+                      Each narrative will be checked against the source review fact by fact.
+                      Comparing the three conditions will help show how missing or changed details
+                      affect what the model writes.
                     </p>
                   </div>
                 </div>
 
                 <div class="objective">
                   <span class="o-id">O5</span>
-                  <h4>Evaluate analytical performance</h4>
+                  <h4>Compare the wiki with RAG</h4>
                   <div class="objective-body">
                     <p class="aim">
-                      Compare the wiki with a RAG baseline over the source documents on the Stage 3
-                      tasks, measuring the difference task by task.
+                      Run the same analysis tasks using the wiki and a RAG baseline, and compare the
+                      quality of their results.
                     </p>
                     <p>
-                      The four tasks run twice, once with the wiki agent and once with conventional
-                      RAG. Following Cochran, a single-round vector RAG runs first, with stronger
-                      variants tested later.<a class="cite" href="#ref-4">[4]</a> Both use the same
-                      Stage 1 corpus, LLM and questions, so any difference reflects how knowledge is
-                      organised and retrieved, and how many tokens each uses.
+                      Both approaches will use the same source reviews, language model and
+                      questions. We will assess each task separately and record token use alongside
+                      the quality measures.
                     </p>
                   </div>
                 </div>
 
                 <div class="objective">
                   <span class="o-id">O6</span>
-                  <h4>
-                    Investigate inferred case characteristics through label-free critical event
-                    extraction
-                  </h4>
+                  <h4>Look for characteristics missing from the metadata</h4>
                   <div class="objective-body">
                     <p class="aim">
-                      Find characteristics the reviews support but their case metadata leaves out,
-                      and count the reviews affected in each existing category.
+                      Test whether the review text supports case characteristics that are absent
+                      from the library’s metadata.
                     </p>
-                    <p>
-                      Unlike T4, the model is never given the review’s case metadata. For each
-                      review:
-                    </p>
+                    <p>For this test, the model will work without seeing the case metadata:</p>
                     <ol class="numbered">
                       <li>The wiki agent selects the critical events.</li>
                       <li>
@@ -880,27 +793,23 @@
         <div class="wrap">
           <header class="part-head">
             <h2 id="work-title">How we work</h2>
-            <p>Evidence decides what gets built, and short cycles keep the project on schedule.</p>
+            <p>
+              We build and test the pipeline in two-week cycles, with regular supervisor reviews.
+            </p>
           </header>
 
           <div class="method">
             <div>
-              <h3>Build, test, learn, in two-week sprints</h3>
+              <h3>Test on a sample, then scale up</h3>
               <div class="prose">
                 <p>
-                  The project pairs Design Science Research, which builds and evaluates artefacts
-                  that address a problem,<a class="cite" href="#ref-27">[27]</a> with Agile
-                  development.<a class="cite" href="#ref-28">[28]</a> What each evaluation finds can
-                  change what is built next.
+                  We will first run a sample of about ten reviews through every stage. This lets us
+                  check that the stages work together before processing the full collection.
                 </p>
                 <p>
-                  Sprints, adapted from Scrum,<a class="cite" href="#ref-29">[29]</a> last two weeks
-                  and end in a meeting with the supervisor to review progress, deal with problems
-                  and set priorities. Following Lean principles,<a class="cite" href="#ref-30"
-                    >[30]</a
-                  >
-                  about ten reviews go through the whole pipeline before it runs on all 100, so
-                  problems joining the stages together show up early.
+                  At the end of each two-week sprint, we review progress with our supervisor,
+                  discuss problems and agree the next priorities. Evaluation results feed into that
+                  plan.
                 </p>
               </div>
             </div>
@@ -973,18 +882,13 @@
               <h3>Every change reviewed</h3>
               <div class="prose">
                 <p>
-                  The team works in one shared GitHub repository, on short-lived branches. A pull
-                  request needs passing automated tests and approval from another member before it
-                  merges.<a class="cite" href="#ref-31">[31]</a>
+                  Code is maintained in a shared GitHub repository. Changes go through automated
+                  tests and review by another team member before merging.
                 </p>
                 <p>
-                  Fixed parts such as parsers are checked against outputs already verified;<a
-                    class="cite"
-                    href="#ref-32"
-                    >[32]</a
-                  >
-                  LLM parts are tested on fixed test sets. Pipeline scripts reach a self-hosted
-                  Windmill server from Git, and models run on Warwick’s Blythe GPU cluster.
+                  Parsers are checked against verified outputs, and LLM components use fixed test
+                  sets. Windmill runs the processing pipelines; GPU inference is planned for
+                  Warwick’s Blythe cluster.
                 </p>
               </div>
             </div>
@@ -1058,8 +962,8 @@
           <header class="part-head">
             <h2 id="people-title">People</h2>
             <p>
-              Each stage has a lead, and responsibilities overlap where needed. Regular meetings
-              settle problems and record decisions.
+              A four-person team at the University of Warwick, working with the Forensic Capability
+              Network and supervised by Gabriele Pergola.
             </p>
           </header>
           <div class="people">
@@ -1076,7 +980,7 @@
             <div class="person">
               <span class="stage-tag data">Stage 3</span>
               <h3>Kieran Saphir</h3>
-              <p>Analysis. Also project manager, drawing on his experience with DHRs.</p>
+              <p>Cross-case analysis and project management.</p>
             </div>
             <div class="person">
               <span class="stage-tag data">Stage 4</span>
@@ -1113,38 +1017,30 @@
       <section class="part part--ground" id="care" aria-labelledby="care-title">
         <div class="wrap">
           <header class="part-head">
-            <h2 id="care-title">Handled with care</h2>
+            <h2 id="care-title">Working with sensitive material</h2>
             <p>
-              These are accounts of real deaths. The team treats victims, their families and the
-              reviews’ authors with respect, and never contacts victims’ families.
+              The reviews describe real deaths and the people affected by them. Respect for victims,
+              families and review authors guides how we use and present the material.
             </p>
           </header>
           <div class="care">
             <div>
-              <h3>Only Domestic Homicide Reviews</h3>
+              <h3>Project scope</h3>
               <div class="prose">
                 <p>
-                  DHRC-100 and the DHR Library hold only Domestic Homicide Reviews, so the newer
-                  Domestic Abuse Related Death Reviews are out of scope. Findings may not carry over
-                  to the wider range of deaths those reviews cover.<a class="cite" href="#ref-2"
-                    >[2]</a
-                  >
+                  The project focuses on the Domestic Homicide Reviews in DHRC-100. Its findings may
+                  not extend to the broader range of deaths covered by Domestic Abuse Related Death
+                  Reviews.
                 </p>
               </div>
             </div>
             <div>
-              <h3>The law</h3>
+              <h3>Use of source material</h3>
               <div class="prose">
+                <p>We check each report’s reuse terms and retain attribution to its source.</p>
                 <p>
-                  The reviews are published under the Open Government Licence v3.0, which allows
-                  reuse with attribution.<a class="cite" href="#ref-37">[37]</a> Each report’s terms
-                  are checked against its Community Safety Partnership’s guidelines.
-                </p>
-                <p>
-                  They contain personal information, so processing follows the UK GDPR and the Data
-                  Protection Act 2018,<a class="cite" href="#ref-38">[38]</a> with public task as
-                  the lawful basis and the research safeguards of Article 89. Synthetic data is
-                  checked for near copies of real reviews.
+                  The reviews contain personal information. We limit processing to the research
+                  purpose and check synthetic narratives for close copies of source material.
                 </p>
               </div>
             </div>
@@ -1166,404 +1062,13 @@
                   in with each other and uses the university’s wellbeing services when needed.
                 </p>
                 <p>
-                  Analysing published documents doesn’t need formal ethical review;<a
-                    class="cite"
-                    href="#ref-39"
-                    >[39]</a
-                  >
-                  the team will check again if outside annotators or experts label data. Every claim
-                  an LLM makes is treated as unverified until it has been checked, in the wiki and
-                  in any other work an agent helps with.
+                  We will reassess ethics requirements if external annotators or experts take part.
+                  Generated claims remain unverified until they have been checked against the source
+                  material.
                 </p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section class="part" id="references" aria-labelledby="references-title">
-        <div class="wrap">
-          <header class="part-head">
-            <h2 id="references-title">References</h2>
-            <p>As cited in the project specification.</p>
-          </header>
-          <ol class="refs">
-            <li id="ref-1">
-              <span class="n">[1]</span
-              ><span
-                >UK Government, Domestic Violence, Crime and Victims Act 2004, c. 28, section 9, in
-                force 13 April 2011.
-                <a href="https://www.legislation.gov.uk/ukpga/2004/28/section/9"
-                  >legislation.gov.uk</a
-                ></span
-              >
-            </li>
-            <li id="ref-2">
-              <span class="n">[2]</span
-              ><span
-                >Home Office, “Domestic abuse related death review statutory guidance,” Sep. 2026.
-                <a
-                  href="https://assets.publishing.service.gov.uk/media/6aaa9fdd086ce7c57b81859e/Domestic_abuse_related_death_review_statutory_guidance1609.pdf"
-                  >PDF</a
-                ></span
-              >
-            </li>
-            <li id="ref-3">
-              <span class="n">[3]</span
-              ><span
-                >P. Lewis et al., “Retrieval-augmented generation for knowledge-intensive NLP
-                tasks,” in Advances in Neural Information Processing Systems, vol. 33, 2020, pp.
-                9459–9474.
-                <a
-                  href="https://proceedings.neurips.cc/paper/2020/hash/6b493230205f780e1bc26945df7481e5-Abstract.html"
-                  >NeurIPS</a
-                ></span
-              >
-            </li>
-            <li id="ref-4">
-              <span class="n">[4]</span
-              ><span
-                >T. O. Cochran, “Single-round vector RAG vs an LLM-compiled wiki: A preregistered
-                comparison on a small multi-domain research corpus,” preprint, 2026.
-                <a href="https://arxiv.org/abs/2605.18490v3">arXiv:2605.18490v3</a></span
-              >
-            </li>
-            <li id="ref-5">
-              <span class="n">[5]</span
-              ><span
-                >K. Chantler, V. Baker, K. Heyes and C. Gunby, “Domestic homicide oversight
-                mechanism for the criminal justice system: Summary report,” Domestic Abuse
-                Commissioner, 2023. HALT Study Briefings.
-                <a href="https://e-space.mmu.ac.uk/633461">e-space.mmu.ac.uk</a></span
-              >
-            </li>
-            <li id="ref-6">
-              <span class="n">[6]</span
-              ><span
-                >D. Cook, E. A. Cook, S. Roy, R. Thiara and R. Selvarajah, “A collaborative approach
-                to applying natural language processing (NLP) to domestic homicide reviews (DHRs): A
-                study protocol,” PLOS ONE, vol. 21, no. 5, 2026, e0348948.
-                <a href="https://doi.org/10.1371/journal.pone.0348948"
-                  >doi:10.1371/journal.pone.0348948</a
-                ></span
-              >
-            </li>
-            <li id="ref-7">
-              <span class="n">[7]</span
-              ><span
-                >G. Pergola, K. Saphir, D. Holodnikov and C. Lyu, “DHR Corpus 100: A human-validated
-                machine-readable corpus of domestic homicide reviews,” unpublished manuscript,
-                University of Warwick, 2026.</span
-              >
-            </li>
-            <li id="ref-8">
-              <span class="n">[8]</span
-              ><span
-                >A. Karpathy, “LLM wiki,” GitHub Gist.
-                <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
-                  >gist.github.com</a
-                ></span
-              >
-            </li>
-            <li id="ref-9">
-              <span class="n">[9]</span
-              ><span
-                >B. Jiménez Gutiérrez, Y. Shu, Y. Gu, M. Yasunaga and Y. Su, “HippoRAG:
-                Neurobiologically inspired long-term memory for large language models,” in Advances
-                in Neural Information Processing Systems, vol. 37, 2024, pp. 59532–59569.
-                <a href="https://doi.org/10.52202/079017-1902">doi:10.52202/079017-1902</a></span
-              >
-            </li>
-            <li id="ref-10">
-              <span class="n">[10]</span
-              ><span
-                >W. Xu, Z. Liang, K. Mei, H. Gao, J. Tan and Y. Zhang, “A-MEM: Agentic memory for
-                LLM agents,” in Advances in Neural Information Processing Systems, vol. 38, 2025,
-                pp. 20004–20031.
-                <a href="https://doi.org/10.52202/085713-0593">doi:10.52202/085713-0593</a></span
-              >
-            </li>
-            <li id="ref-11">
-              <span class="n">[11]</span
-              ><span
-                >S. Min et al., “FActScore: Fine-grained atomic evaluation of factual precision in
-                long form text generation,” in Proc. EMNLP 2023, pp. 12076–12100.
-                <a href="https://doi.org/10.18653/v1/2023.emnlp-main.741"
-                  >doi:10.18653/v1/2023.emnlp-main.741</a
-                ></span
-              >
-            </li>
-            <li id="ref-12">
-              <span class="n">[12]</span
-              ><span
-                >A. Bavaresco et al., “LLMs instead of human judges? A large scale empirical study
-                across 20 NLP evaluation tasks,” in Proc. ACL 2025 (Volume 2: Short Papers), pp.
-                238–255.
-                <a href="https://doi.org/10.18653/v1/2025.acl-short.20"
-                  >doi:10.18653/v1/2025.acl-short.20</a
-                ></span
-              >
-            </li>
-            <li id="ref-13">
-              <span class="n">[13]</span
-              ><span
-                >A. Panickssery, S. R. Bowman and S. Feng, “LLM evaluators recognize and favor their
-                own generations,” in Advances in Neural Information Processing Systems, vol. 37,
-                2024, pp. 68772–68802.
-                <a href="https://doi.org/10.52202/079017-2197">doi:10.52202/079017-2197</a></span
-              >
-            </li>
-            <li id="ref-14">
-              <span class="n">[14]</span
-              ><span
-                >Home Office, “Multi-agency statutory guidance for the conduct of domestic homicide
-                reviews,” Dec. 2016.
-                <a
-                  href="https://assets.publishing.service.gov.uk/media/5a80be88e5274a2e87dbb923/DHR-Statutory-Guidance-161206.pdf"
-                  >PDF</a
-                ></span
-              >
-            </li>
-            <li id="ref-15">
-              <span class="n">[15]</span
-              ><span
-                >Y. Liu, E. H. Peña, A. S. R. Santos, E. Wu and J. Freire, “Magneto: Combining small
-                and large language models for schema matching,” Proceedings of the VLDB Endowment,
-                vol. 18, no. 8, pp. 2681–2694, 2025.
-                <a href="https://doi.org/10.14778/3742728.3742757"
-                  >doi:10.14778/3742728.3742757</a
-                ></span
-              >
-            </li>
-            <li id="ref-16">
-              <span class="n">[16]</span
-              ><span
-                >Home Office, “Search DHRs: Search the Domestic Homicide Review Library.”
-                <a href="https://homicide-review.homeoffice.gov.uk/"
-                  >homicide-review.homeoffice.gov.uk</a
-                ></span
-              >
-            </li>
-            <li id="ref-17">
-              <span class="n">[17]</span
-              ><span
-                >Z. Chu et al., “TimeBench: A comprehensive evaluation of temporal reasoning
-                abilities in large language models,” in Proc. ACL 2024 (Volume 1: Long Papers), pp.
-                1204–1228.
-                <a href="https://doi.org/10.18653/v1/2024.acl-long.66"
-                  >doi:10.18653/v1/2024.acl-long.66</a
-                ></span
-              >
-            </li>
-            <li id="ref-18">
-              <span class="n">[18]</span
-              ><span
-                >Y. Wang and Y. Zhao, “TRAM: Benchmarking temporal reasoning for large language
-                models,” in Findings of ACL 2024, pp. 6389–6415.
-                <a href="https://doi.org/10.18653/v1/2024.findings-acl.382"
-                  >doi:10.18653/v1/2024.findings-acl.382</a
-                ></span
-              >
-            </li>
-            <li id="ref-19">
-              <span class="n">[19]</span
-              ><span
-                >J. F. Allen, “Maintaining knowledge about temporal intervals,” Communications of
-                the ACM, vol. 26, no. 11, pp. 832–843, 1983.
-                <a href="https://doi.org/10.1145/182.358434">doi:10.1145/182.358434</a></span
-              >
-            </li>
-            <li id="ref-20">
-              <span class="n">[20]</span
-              ><span
-                >A. Aamodt and E. Plaza, “Case-based reasoning: Foundational issues, methodological
-                variations, and system approaches,” AI Communications, vol. 7, no. 1, pp. 39–59,
-                1994.
-                <a href="https://doi.org/10.3233/AIC-1994-7104">doi:10.3233/AIC-1994-7104</a></span
-              >
-            </li>
-            <li id="ref-21">
-              <span class="n">[21]</span
-              ><span
-                >J. Monckton-Smith, “Intimate partner femicide: Using Foucauldian analysis to track
-                an eight stage relationship progression to homicide,” Violence Against Women, vol.
-                26, no. 11, pp. 1267–1285, 2020.
-                <a href="https://doi.org/10.1177/1077801219863876"
-                  >doi:10.1177/1077801219863876</a
-                ></span
-              >
-            </li>
-            <li id="ref-22">
-              <span class="n">[22]</span
-              ><span
-                >R. Agrawal and R. Srikant, “Mining sequential patterns,” in Proc. 11th
-                International Conference on Data Engineering, 1995, pp. 3–14.
-                <a href="https://doi.org/10.1109/ICDE.1995.380415"
-                  >doi:10.1109/ICDE.1995.380415</a
-                ></span
-              >
-            </li>
-            <li id="ref-23">
-              <span class="n">[23]</span
-              ><span
-                >H.-F. Hsieh and S. E. Shannon, “Three approaches to qualitative content analysis,”
-                Qualitative Health Research, vol. 15, no. 9, pp. 1277–1288, 2005.
-                <a href="https://doi.org/10.1177/1049732305276687"
-                  >doi:10.1177/1049732305276687</a
-                ></span
-              >
-            </li>
-            <li id="ref-24">
-              <span class="n">[24]</span
-              ><span
-                >C. M. Pham, A. Hoyle, S. Sun, P. Resnik and M. Iyyer, “TopicGPT: A prompt-based
-                topic modeling framework,” in Proc. NAACL 2024 (Volume 1: Long Papers), pp.
-                2956–2984.
-                <a href="https://doi.org/10.18653/v1/2024.naacl-long.164"
-                  >doi:10.18653/v1/2024.naacl-long.164</a
-                ></span
-              >
-            </li>
-            <li id="ref-25">
-              <span class="n">[25]</span
-              ><span
-                >S. Garg, V. Perot, N. Limtiaco, A. Taly, E. H. Chi and A. Beutel, “Counterfactual
-                fairness in text classification through robustness,” in Proc. AAAI/ACM Conference on
-                AI, Ethics, and Society, 2019, pp. 219–226.
-                <a href="https://doi.org/10.1145/3306618.3317950"
-                  >doi:10.1145/3306618.3317950</a
-                ></span
-              >
-            </li>
-            <li id="ref-26">
-              <span class="n">[26]</span
-              ><span
-                >I. O. Gallegos et al., “Bias and fairness in large language models: A survey,”
-                Computational Linguistics, vol. 50, no. 3, pp. 1097–1179, 2024.
-                <a href="https://doi.org/10.1162/coli_a_00524">doi:10.1162/coli_a_00524</a></span
-              >
-            </li>
-            <li id="ref-27">
-              <span class="n">[27]</span
-              ><span
-                >K. Peffers, T. Tuunanen, M. A. Rothenberger and S. Chatterjee, “A design science
-                research methodology for information systems research,” Journal of Management
-                Information Systems, vol. 24, no. 3, pp. 45–77, 2007.
-                <a href="https://doi.org/10.2753/MIS0742-1222240302"
-                  >doi:10.2753/MIS0742-1222240302</a
-                ></span
-              >
-            </li>
-            <li id="ref-28">
-              <span class="n">[28]</span
-              ><span
-                >K. Beck et al., “Manifesto for agile software development.”
-                <a href="https://agilemanifesto.org/">agilemanifesto.org</a></span
-              >
-            </li>
-            <li id="ref-29">
-              <span class="n">[29]</span
-              ><span
-                >K. Schwaber and J. Sutherland, “The Scrum Guide.”
-                <a href="https://scrumguides.org/docs/scrumguide/v2020/2020-Scrum-Guide-US.pdf"
-                  >PDF</a
-                ></span
-              >
-            </li>
-            <li id="ref-30">
-              <span class="n">[30]</span
-              ><span
-                >M. Poppendieck and T. Poppendieck, Lean Software Development: An Agile Toolkit.
-                Boston, MA: Addison-Wesley, 2003.</span
-              >
-            </li>
-            <li id="ref-31">
-              <span class="n">[31]</span
-              ><span
-                >A. Bacchelli and C. Bird, “Expectations, outcomes, and challenges of modern code
-                review,” in Proc. 35th International Conference on Software Engineering, 2013, pp.
-                712–721.
-                <a href="https://doi.org/10.1109/ICSE.2013.6606617"
-                  >doi:10.1109/ICSE.2013.6606617</a
-                ></span
-              >
-            </li>
-            <li id="ref-32">
-              <span class="n">[32]</span
-              ><span
-                >M. C. Feathers, Working Effectively with Legacy Code. Upper Saddle River, NJ:
-                Prentice Hall PTR, 2004.</span
-              >
-            </li>
-            <li id="ref-33">
-              <span class="n">[33]</span
-              ><span
-                >A. L. Mendelow, “Environmental scanning: the impact of the stakeholder concept,” in
-                Proc. Second International Conference on Information Systems, 1981.
-                <a href="https://aisel.aisnet.org/icis1981/20">aisel.aisnet.org</a></span
-              >
-            </li>
-            <li id="ref-34">
-              <span class="n">[34]</span
-              ><span
-                >Z. Ji et al., “Survey of hallucination in natural language generation,” ACM
-                Computing Surveys, vol. 55, no. 12, 2023, art. 248.
-                <a href="https://doi.org/10.1145/3571730">doi:10.1145/3571730</a></span
-              >
-            </li>
-            <li id="ref-35">
-              <span class="n">[35]</span
-              ><span
-                >D. Zhang et al., “Useful memories become faulty when continuously updated by LLMs,”
-                2026.
-                <a href="https://doi.org/10.48550/arXiv.2605.12978"
-                  >doi:10.48550/arXiv.2605.12978</a
-                ></span
-              >
-            </li>
-            <li id="ref-36">
-              <span class="n">[36]</span
-              ><span
-                >Y. Chang, K. Lo, T. Goyal and M. Iyyer, “BooookScore: A systematic exploration of
-                book-length summarization in the era of LLMs,” in Proc. ICLR 2024.
-                <a href="https://openreview.net/forum?id=7Ttk3RzDeu">OpenReview</a></span
-              >
-            </li>
-            <li id="ref-37">
-              <span class="n">[37]</span
-              ><span
-                >The National Archives, “Open Government Licence v3.0.”
-                <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"
-                  >nationalarchives.gov.uk</a
-                ></span
-              >
-            </li>
-            <li id="ref-38">
-              <span class="n">[38]</span
-              ><span
-                >UK Government, “Data protection.”
-                <a href="https://www.gov.uk/data-protection">gov.uk</a></span
-              >
-            </li>
-            <li id="ref-39">
-              <span class="n">[39]</span
-              ><span
-                >University of Warwick, Department of Computer Science, “Ethical consent.”
-                <a href="https://warwick.ac.uk/fac/sci/dcs/teaching/ethics">warwick.ac.uk</a></span
-              >
-            </li>
-            <li id="ref-40">
-              <span class="n">[40]</span
-              ><span
-                >Home Office, “Multi-agency statutory guidance for the conduct of domestic homicide
-                reviews, appendix three: Overview report template,” Dec. 2016, pp. 35–38.
-                <a
-                  href="https://assets.publishing.service.gov.uk/media/5a80be88e5274a2e87dbb923/DHR-Statutory-Guidance-161206.pdf"
-                  >PDF</a
-                ></span
-              >
-            </li>
-          </ol>
         </div>
       </section>
     </main>
