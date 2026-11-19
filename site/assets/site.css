@@ -559,14 +559,18 @@ strong {
   text-wrap: pretty;
 }
 
-/* Each line of the question is highlighted in turn when the page opens (site.js). */
+/* Each line of the question is highlighted in turn when the page opens (site.js). A line's
+   box is taller than the gap between lines, so the next line's box would cover this one's
+   bottom edge. The wash and rule therefore stop short of the bottom, leaving a clear gap
+   and keeping every line's rule visible. */
 .sweep-line {
   display: inline;
   padding: 0 0.06em;
   margin-left: -0.06em;
   background:
-    linear-gradient(var(--blue), var(--blue)) left bottom / 0% 0.06em no-repeat,
-    linear-gradient(rgb(218 234 243 / 0.92), rgb(218 234 243 / 0.92)) left top / 0% 100% no-repeat;
+    linear-gradient(var(--blue), var(--blue)) left 0 bottom 0.11em / 0% 0.06em no-repeat,
+    linear-gradient(rgb(218 234 243 / 0.92), rgb(218 234 243 / 0.92)) left 0 top 0.06em / 0%
+      calc(100% - 0.23em) no-repeat;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -574,7 +578,7 @@ strong {
 .is-swept .sweep-line {
   background-size:
     100% 0.06em,
-    100% 100%;
+    100% calc(100% - 0.23em);
   transition: background-size 0.75s var(--ease) calc(0.2s + var(--line, 0) * 0.16s);
 }
 
