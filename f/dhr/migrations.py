@@ -511,4 +511,171 @@ FROM corpus.guidance_documents AS g
 WHERE g.guidance = t.guidance;
 """,
     ),
+    (
+        "008_template_choices",
+        """
+-- O1 stage 5: each review mapped onto one statutory template. An LLM first decides which
+-- template the whole review is written to (corpus.document_choices), then which section of
+-- that template, or of the action plan that goes with it, each of its sections is
+-- (corpus.template_choices), or none. Filled by
+-- f/dhr/O1/choose_template_section/choose_template_section, which runs the LLM on Blythe.
+-- Together with the sections, this is the standardised representation: every section mapped
+-- to a section of its review's template, or flagged as unmatched.
+
+-- One row per dataset version and guidance that has choices, and how they were made.
+-- Choosing again for the same version and guidance replaces its choices.
+CREATE TABLE corpus.choice_versions (
+    revision        text NOT NULL REFERENCES corpus.grouped_versions ON DELETE CASCADE,
+    guidance        text NOT NULL REFERENCES corpus.guidance_documents ON DELETE CASCADE,
+    reviews         text NOT NULL,       -- 'all', or 'pilot' (the specification's 10 pilot reviews)
+    model           text NOT NULL,       -- e.g. 'Qwen/Qwen3.8-27B-FP8'
+    model_revision  text,                -- the model's Hugging Face commit
+    prompt_version  text NOT NULL,       -- PROMPT_VERSION in choose_template_section/prompts.py
+    prompts_sha256  jsonb NOT NULL,      -- of each prompts file sent to Blythe
+    run_details     jsonb NOT NULL,      -- versions, GPU, timings and settings from the jobs
+    slurm_job_ids   text[],              -- the document job, then the section job
+    blythe_runs     text[],              -- their run folders: ~/narratrace/runs/<this>
+    chosen_at       timestamptz NOT NULL DEFAULT now(),
+    git_commit      text,
+    n_reviews       integer NOT NULL,
+    n_reviews_matched integer NOT NULL,  -- reviews given a template
+    n_sections      integer NOT NULL,
+    n_matched       integer NOT NULL,    -- sections given a template section
+    n_unmatched     integer NOT NULL,    -- "none of these", or in a review that matched no template
+    n_no_answer     integer NOT NULL,    -- no usable answer (see the error columns)
+    PRIMARY KEY (revision, guidance)
+);
+
+-- One row per review and guidance: the template the whole review is written to. template is
+-- NULL when it matched none (answer 'Z') or there was no usable answer (answer NULL).
+CREATE TABLE corpus.document_choices (
+    revision       text NOT NULL,
+    doc_id         text NOT NULL,
+    guidance       text NOT NULL,
+    template       text REFERENCES corpus.templates ON DELETE CASCADE,
+    answer         text,                 -- the model's letter; 'Z' = none of these
+    probability    real,                 -- the model's probability for its answer, 0 to 1
+    -- its probability for each option it gave any: {"<template>": p, "none": p}
+    probabilities  jsonb NOT NULL DEFAULT '{}',
+    error          text,                 -- why there is no usable answer
+    PRIMARY KEY (revision, doc_id, guidance),
+    FOREIGN KEY (revision, guidance) REFERENCES corpus.choice_versions ON DELETE CASCADE,
+    FOREIGN KEY (revision, doc_id) REFERENCES corpus.documents ON DELETE CASCADE
+);
+
+-- One row per review section and guidance. template is NULL when the section matched none
+-- of its options (answer 'Z'), its review matched no template, or there was no usable answer.
+CREATE TABLE corpus.template_choices (
+    revision           text NOT NULL,
+    doc_id             text NOT NULL,
+    section_id         text NOT NULL,
+    guidance           text NOT NULL,
+    template           text,
+    template_position  integer,
+    answer             text,             -- the model's letter; 'Z' = none of these
+    probability        real,             -- the model's probability for its answer, 0 to 1
+    none_probability   real,             -- its probability for "none of these"
+    -- its probability for each option it gave any: {"<template>#<position>": p, "none": p}
+    probabilities      jsonb NOT NULL DEFAULT '{}',
+    n_options          integer NOT NULL, -- how many template sections it chose from
+    error              text,             -- why there is no usable answer
+    PRIMARY KEY (revision, doc_id, section_id, guidance),
+    FOREIGN KEY (revision, doc_id, guidance)
+        REFERENCES corpus.document_choices ON DELETE CASCADE,
+    FOREIGN KEY (revision, doc_id, section_id) REFERENCES corpus.sections ON DELETE CASCADE,
+    FOREIGN KEY (template, template_position)
+        REFERENCES corpus.template_sections ON DELETE CASCADE,
+    CHECK ((template IS NULL) = (template_position IS NULL))
+);
+
+-- Each review's template, for the newest grouped version of each dataset. Pick with
+-- WHERE dataset = ... AND guidance = ...
+CREATE VIEW corpus.current_document_choices AS
+SELECT d.revision, v.dataset, d.guidance, d.doc_id,
+       CASE WHEN d.template IS NOT NULL THEN 'matched'
+            WHEN d.answer IS NOT NULL THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template, t.title AS template_title, t.kind AS template_kind,
+       d.answer, d.probability, d.probabilities, d.error,
+       cv.model, cv.prompt_version, cv.reviews
+FROM corpus.document_choices AS d
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+LEFT JOIN corpus.templates AS t ON t.template = d.template;
+
+-- Each section with the template section it was mapped to. status is 'matched', 'unmatched'
+-- (none of its options, or its review matched no template) or 'no answer'. For example,
+-- every section of one review:
+--   SELECT section_heading, status, template_title, template_heading, probability
+--   FROM corpus.current_template_choices
+--   WHERE dataset = 'DHRC-100' AND guidance = 'dhr-2016' AND doc_id = '...'
+--   ORDER BY section_position;
+CREATE VIEW corpus.current_template_choices AS
+SELECT c.revision, v.dataset, c.guidance, c.doc_id, c.section_id,
+       s.position AS section_position, s.level AS section_level, s.heading AS section_heading,
+       CASE WHEN c.template IS NOT NULL THEN 'matched'
+            WHEN c.answer IS NOT NULL OR d.answer = 'Z' THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template AS document_template, dt.title AS document_template_title,
+       c.template, t.title AS template_title, t.kind AS template_kind,
+       c.template_position, ts.heading AS template_heading,
+       c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error,
+       cv.model, cv.prompt_version, cv.reviews
+FROM corpus.template_choices AS c
+JOIN corpus.document_choices AS d USING (revision, doc_id, guidance)
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.sections AS s USING (revision, doc_id, section_id)
+LEFT JOIN corpus.templates AS dt ON dt.template = d.template
+LEFT JOIN corpus.templates AS t ON t.template = c.template
+LEFT JOIN corpus.template_sections AS ts
+  ON ts.template = c.template AND ts.position = c.template_position;
+
+-- The standardised representation, one row per part of each review: every section of its
+-- template, then of the action plan, in the guidance's order, each with the review's sections
+-- mapped to it in their original order (none if the review has no such section; several
+-- sections can share one, a timeline and a timeline analysis say); then the sections that
+-- matched none (status 'unmatched') and any without an answer ('no answer'). Only the
+-- mapping is here: the sections' text is unchanged in corpus.blocks. For example:
+--   SELECT template_heading, section_headings FROM corpus.current_standardised
+--   WHERE dataset = 'DHRC-100' AND guidance = 'dhr-2016' AND doc_id = '...' ORDER BY part;
+CREATE VIEW corpus.current_standardised AS
+WITH parts AS (
+    SELECT d.revision, d.doc_id, d.guidance, ts.template, ts.position, ts.heading,
+           t.title,
+           row_number() OVER (PARTITION BY d.revision, d.doc_id, d.guidance
+                              ORDER BY ts.template <> d.template, t.appendix, ts.position) AS part
+    FROM corpus.document_choices AS d
+    JOIN corpus.templates AS dt ON dt.template = d.template
+    JOIN corpus.templates AS t ON t.guidance = d.guidance
+     AND (t.template = d.template OR (t.kind = 'action plan' AND dt.kind <> 'action plan'))
+    JOIN corpus.template_sections AS ts ON ts.template = t.template
+), mapped AS (
+    SELECT revision, doc_id, guidance, template, template_position, status,
+           array_agg(section_id ORDER BY section_position) AS section_ids,
+           array_agg(section_heading ORDER BY section_position) AS section_headings,
+           min(probability) AS min_probability
+    FROM corpus.current_template_choices
+    GROUP BY revision, doc_id, guidance, template, template_position, status
+)
+SELECT p.revision, v.dataset, p.guidance, p.doc_id, p.part, 'template section' AS status,
+       p.template, p.title AS template_title, p.position AS template_position,
+       p.heading AS template_heading, coalesce(cardinality(m.section_ids), 0) AS n_sections,
+       coalesce(m.section_ids, '{}') AS section_ids,
+       coalesce(m.section_headings, '{}') AS section_headings, m.min_probability
+FROM parts AS p
+JOIN corpus.current_versions AS v USING (revision)
+LEFT JOIN mapped AS m
+  ON m.revision = p.revision AND m.doc_id = p.doc_id AND m.guidance = p.guidance
+ AND m.template = p.template AND m.template_position = p.position
+UNION ALL
+SELECT m.revision, v.dataset, m.guidance, m.doc_id,
+       CASE m.status WHEN 'unmatched' THEN 100000 ELSE 100001 END, m.status,
+       NULL, NULL, NULL, NULL, cardinality(m.section_ids), m.section_ids, m.section_headings,
+       m.min_probability
+FROM mapped AS m
+JOIN corpus.current_versions AS v USING (revision)
+WHERE m.status <> 'matched';
+""",
+    ),
 ]

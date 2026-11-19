@@ -119,15 +119,18 @@ export function Blocks({ blocks, top }: { blocks: Block[]; top: number }) {
   )
 }
 
-// A section's text, its subsections included, fetched when shown.
+// A section's text, its subsections included (or only its own text, with ownOnly), fetched
+// when shown.
 export function SectionText({
   dataset,
   docId,
   section,
+  ownOnly = false,
 }: {
   dataset: string
   docId: string
   section: Section
+  ownOnly?: boolean
 }) {
   const [blocks, setBlocks] = useState<Block[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -148,11 +151,16 @@ export function SectionText({
   if (error) return <p className="message error">Couldn’t read the section’s text: {error}</p>
   if (!blocks) return <p className="muted">Reading the section…</p>
   // Its own heading is already shown above it.
-  const inside = blocks.filter((block) => block.position !== section.position)
+  const inside = blocks.filter(
+    (block) =>
+      block.position !== section.position && (!ownOnly || block.section_id === section.section_id),
+  )
   if (inside.length === 0)
     return (
       <p className="muted">
-        Nothing comes under this heading: the next heading follows it straight away.
+        {ownOnly
+          ? 'No text of its own: only subsections come under this heading.'
+          : 'Nothing comes under this heading: the next heading follows it straight away.'}
       </p>
     )
   return <Blocks blocks={inside} top={section.level} />
