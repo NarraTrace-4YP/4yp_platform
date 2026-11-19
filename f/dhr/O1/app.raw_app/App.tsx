@@ -7,6 +7,7 @@ import CasesTab from './CasesTab'
 import AttributesTab from './AttributesTab'
 import SectionsTab from './SectionsTab'
 import CandidatesTab from './CandidatesTab'
+import ChoicesTab from './ChoicesTab'
 
 // The views, grouped by what you come to do. Each says in a line what it shows.
 const GROUPS = [
@@ -27,6 +28,11 @@ const GROUPS = [
         id: 'candidates',
         label: 'Template candidates',
         hint: 'Suggested matches to report templates',
+      },
+      {
+        id: 'choices',
+        label: 'Standardised',
+        hint: 'Each review laid out in its template’s order',
       },
     ],
   },
@@ -122,6 +128,7 @@ export default function App() {
         {tab === 'attributes' && <AttributesTab />}
         {tab === 'sections' && <SectionsTab />}
         {tab === 'candidates' && <CandidatesTab />}
+        {tab === 'choices' && <ChoicesTab />}
       </main>
     </div>
   )

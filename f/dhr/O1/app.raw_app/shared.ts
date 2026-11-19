@@ -48,6 +48,22 @@ export type CandidatesStatus = {
   n_candidates: number
   n_with_heading_match: number
 }
+// The template choices (step 5) of a dataset's newest grouped version against one guidance
+// (f/dhr/O1/choose_template_section/choose_template_section).
+export type ChoicesStatus = {
+  guidance: string
+  reviews: 'pilot' | 'all'
+  chosen_at: string
+  git_commit: string | null
+  model: string
+  prompt_version: string
+  n_reviews: number
+  n_reviews_matched: number // reviews given a template
+  n_sections: number
+  n_matched: number
+  n_unmatched: number
+  n_no_answer: number
+}
 export type DatasetStatus = {
   name: string
   repo_id: string
@@ -56,6 +72,7 @@ export type DatasetStatus = {
   headings: Headings
   sections: SectionsStatus | null
   candidates: CandidatesStatus[]
+  choices: ChoicesStatus[]
   version: {
     revision: string
     repo_id: string

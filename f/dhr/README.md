@@ -27,12 +27,21 @@ O1/
     templates.py
     embeddings.py
     get_candidates.py
-  choose_template_section/       # planned; no runnable implementation yet
+  choose_template_section/
+    choose_template_section.py   # a workflow: runs the LLM on Blythe (Rowan only)
+    prompts.py
+    get_choices.py
   app_backend/
     get_status.py
   app.raw_app/                   # React frontend and Windmill backend bindings
   pipeline.flow/flow.yaml        # orchestration of the implemented stages
 ```
+
+`blythe.py` (shared) logs in to Blythe and runs the fixed SLURM jobs from the
+separate `NarraTrace-4YP/narratrace-slurm` repository. It
+uses Rowan's own Blythe account, so only Rowan's Windmill runs may use it (`check_owner()`).
+For that reason stage 5 is not a step of `f/dhr/O1/pipeline`, which anyone in the team can run:
+Rowan runs `choose_template_section` on its own after stage 4. See its README.
 
 The complete flow is `f/dhr/O1/pipeline`; the app is `f/dhr/O1/app`. For example, the
 loading script's Windmill path is `f/dhr/O1/load_reviews/load_reviews`. These replace the
@@ -50,7 +59,8 @@ uv run python -m f.dhr.O1.group_blocks_by_section.group_blocks_by_section --file
 
 Loading replaces a revision's documents and invalidates its section grouping and
 candidates. Grouping replaces the hierarchy and invalidates candidates. Candidate matching
-replaces only the selected guidance edition's matches. Metadata collection is independent:
+replaces only the selected guidance edition's matches. Choosing template sections replaces
+the choices for that dataset version and guidance edition. Metadata collection is independent:
 one DHR Library snapshot can link reviews from both datasets.
 
 ## Editing conventions

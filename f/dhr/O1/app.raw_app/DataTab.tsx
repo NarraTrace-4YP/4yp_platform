@@ -321,6 +321,44 @@ export default function DataTab({ status, error }: Props) {
             </tr>
             <tr>
               <td>
+                <code>corpus.current_document_choices</code>
+              </td>
+              <td>
+                For each review, the guidance template the LLM decided the whole review is written
+                to (<code>status</code> 'matched'), or none of them ('unmatched'), with the model’s{' '}
+                <code>probability</code> for its answer and for every template.
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
+                <code>corpus.current_template_choices</code>
+              </td>
+              <td>
+                For each section, the section of its review’s template (or of the action plan) the
+                LLM chose (<code>status</code> 'matched'), or none ('unmatched', kept and flagged;
+                also every section of a review that matched no template), with the model’s{' '}
+                <code>probability</code> for its answer and for every option.{' '}
+                <code>corpus.choice_versions</code> records how each set was made: model, prompt
+                version, GPU jobs and code.
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
+                <code>corpus.current_standardised</code>
+              </td>
+              <td>
+                The standardised representation: each review laid out in its template’s order, one
+                row per template section with the review’s sections mapped to it (
+                <code>section_ids</code>, in the review’s order; several sections can share one),
+                then the unmatched ones. Only the mapping is stored: the text is unchanged in{' '}
+                <code>corpus.blocks</code>.
+              </td>
+              <td>Can read</td>
+            </tr>
+            <tr>
+              <td>
                 <code>evaluation.case_metadata</code>
               </td>
               <td>

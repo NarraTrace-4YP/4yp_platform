@@ -111,6 +111,30 @@ CANDIDATES_COLUMNS = (
     "n_with_heading_match",
 )
 
+# The template choices (O1 stage 5) of each dataset's newest grouped version, one row per
+# guidance they were made against (none if not made yet).
+CHOICES_SQL = """
+SELECT v.dataset, c.guidance, c.reviews, c.chosen_at, c.git_commit, c.model, c.prompt_version,
+       c.n_reviews, c.n_reviews_matched, c.n_sections, c.n_matched, c.n_unmatched, c.n_no_answer
+FROM corpus.current_versions AS v
+JOIN corpus.choice_versions AS c ON c.revision = v.revision
+ORDER BY v.dataset, c.guidance
+"""
+CHOICES_COLUMNS = (
+    "guidance",
+    "reviews",
+    "chosen_at",
+    "git_commit",
+    "model",
+    "prompt_version",
+    "n_reviews",
+    "n_reviews_matched",  # reviews given a template
+    "n_sections",
+    "n_matched",
+    "n_unmatched",
+    "n_no_answer",
+)
+
 # Each guidance document whose templates are stored (each is stored by the first candidates
 # run against it).
 TEMPLATES_SQL = """
@@ -157,6 +181,7 @@ def describe(
     sections: dict | None = None,
     candidates: dict | None = None,
     templates: list | None = None,
+    choices: dict | None = None,
 ) -> dict:
     """Puts the query results together, one entry per dataset in DATASETS order."""
     datasets = []
@@ -172,6 +197,7 @@ def describe(
                 "coverage": coverage.get(name, dict.fromkeys(COVERAGE_COLUMNS, 0)),
                 "sections": (sections or {}).get(name),
                 "candidates": (candidates or {}).get(name, []),
+                "choices": (choices or {}).get(name, []),
             }
         )
     return {
@@ -198,6 +224,9 @@ def main():
         for row in conn.execute(CANDIDATES_SQL):
             candidates.setdefault(row[0], []).append(as_dict(CANDIDATES_COLUMNS, row[1:]))
         templates = [as_dict(TEMPLATES_COLUMNS, row) for row in conn.execute(TEMPLATES_SQL)]
+        choices: dict[str, list] = {}
+        for row in conn.execute(CHOICES_SQL):
+            choices.setdefault(row[0], []).append(as_dict(CHOICES_COLUMNS, row[1:]))
         row = conn.execute(SNAPSHOT_SQL).fetchone()
     snapshot = as_dict(SNAPSHOT_COLUMNS, row) if row else None
-    return describe(versions, coverage, snapshot, sections, candidates, templates)
+    return describe(versions, coverage, snapshot, sections, candidates, templates, choices)

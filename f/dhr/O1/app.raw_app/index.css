@@ -1244,6 +1244,130 @@ input[type='search'] {
   color: var(--good);
 }
 
+.outline-item .match.flagged {
+  color: var(--bad);
+}
+
+.outline-item .match.doubtful {
+  color: var(--wait);
+}
+
+/* Step 5: how sure the model was, as a short bar and a percentage. */
+.confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.confidence-bar {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  background: var(--line-soft);
+}
+
+.confidence-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+
+.confidence.doubtful {
+  color: var(--wait);
+}
+
+.confidence.doubtful .confidence-bar > span {
+  background: #d4a72c;
+}
+
+.choice-card {
+  border-left: 3px solid var(--good);
+  background: var(--good-soft);
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  max-width: 720px;
+}
+
+.choice-card.flagged {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.choice-card p {
+  margin: 0 0 6px;
+}
+
+.choice-card p:last-child {
+  margin-bottom: 0;
+}
+
+.choice-name {
+  font-size: 16px;
+}
+
+.choice-card.compact {
+  padding: 8px 12px;
+  margin: 4px 0 10px;
+  font-size: 13px;
+}
+
+/* Step 5's standardised outline: the template's sections, each with the review's sections. */
+.part-template {
+  margin: 12px 0 2px;
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.outline-item.part .heading {
+  font-weight: 600;
+}
+
+.outline-item.part.empty .heading {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.outline-item.part.flagged .heading {
+  color: var(--bad);
+}
+
+.outline .part-sections {
+  margin: 0 0 4px 14px;
+  border-left: 1px solid var(--line);
+}
+
+.part-section {
+  margin: 0 0 22px;
+}
+
+.part-section h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.part-section h4 a {
+  cursor: pointer;
+}
+
+.part-meta {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review .meta.flagged {
+  color: var(--bad);
+}
+
+.review .meta.doubtful {
+  color: var(--wait);
+}
+
 .breadcrumb {
   color: var(--muted);
   font-size: 13px;
@@ -1396,6 +1520,31 @@ input[type='search'] {
 
 .details table.candidates th {
   font-size: 12px;
+}
+
+/* Step 5's table of candidates: section, template, the model's confidence, step 4's ranks. */
+.details table.candidates.with-confidence th:nth-child(1),
+.details table.candidates.with-confidence td:nth-child(1) {
+  width: 30%;
+}
+
+.details table.candidates.with-confidence th:nth-child(2),
+.details table.candidates.with-confidence td:nth-child(2) {
+  width: 28%;
+}
+
+.details table.candidates.with-confidence th:nth-child(3),
+.details table.candidates.with-confidence td:nth-child(3) {
+  width: 18%;
+}
+
+.details table.candidates.with-confidence th:nth-child(4),
+.details table.candidates.with-confidence td:nth-child(4) {
+  width: 24%;
+}
+
+.details table.candidates.with-confidence tbody tr {
+  cursor: default;
 }
 
 .candidates tbody tr {

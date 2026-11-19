@@ -81,7 +81,10 @@ def test_windmill_edits_are_copied_into_the_repo(tmp_path):
 
 
 def test_files_map_to_windmill_items():
-    assert sync.windmill_item("f/dhr/O1/load_reviews/load_reviews.py") == ("script", "f/dhr/O1/load_reviews/load_reviews")
+    assert sync.windmill_item("f/dhr/O1/load_reviews/load_reviews.py") == (
+        "script",
+        "f/dhr/O1/load_reviews/load_reviews",
+    )
     assert sync.windmill_item("f/dhr/O1/pipeline.flow/flow.yaml") == ("flow", "f/dhr/O1/pipeline")
     assert sync.windmill_item("f/dhr/O1/app.raw_app/backend/status.yaml") == ("app", "f/dhr/O1/app")
     assert sync.windmill_item("f/dhr/notes.txt") is None

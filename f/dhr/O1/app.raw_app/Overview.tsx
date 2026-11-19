@@ -120,10 +120,41 @@ const STEPS: Step[] = [
   {
     title: 'Choose the template section',
     what:
-      'The planned final step will use an LLM to select a template section from the candidates. ' +
-      'Sections without a suitable match will be retained and marked as unmatched. This will ' +
-      'allow the same type of material to be found consistently across reviews.',
-    built: false,
+      'An open-weight LLM (Qwen3.8-27B, run with vLLM on the university’s Blythe GPUs) first ' +
+      'decides which of the guidance’s templates each whole review is written to (overview ' +
+      'report, executive summary…), then which section of that template, or of its action plan, ' +
+      'each of the review’s sections is. Several sections can share one template section (a ' +
+      'timeline and a timeline analysis, say); their text is never changed. Sections that fit ' +
+      'none are kept and flagged as unmatched, and every answer keeps the model’s confidence, ' +
+      'so doubtful ones can be checked. The same type of material can then be found ' +
+      'consistently across reviews.',
+    built: true,
+    see: { tab: 'choices', label: 'See the standardised sections' },
+    now: (status) => (
+      <ul className="facts-list">
+        {status.datasets.map((dataset) => (
+          <li key={dataset.name}>
+            <strong>{dataset.name}:</strong>{' '}
+            {dataset.choices.length
+              ? dataset.choices
+                  .map(
+                    (c) =>
+                      `against the ${GUIDANCES[c.guidance] ?? c.guidance}, ` +
+                      `${formatNumber(c.n_reviews_matched)} of ${formatNumber(c.n_reviews)} reviews given a template, ` +
+                      `${formatNumber(c.n_matched)} of ${formatNumber(c.n_sections)} sections matched and ` +
+                      `${formatNumber(c.n_unmatched)} flagged as unmatched` +
+                      (c.n_no_answer ? `, ${formatNumber(c.n_no_answer)} without an answer` : '') +
+                      (c.reviews === 'pilot' ? ' (pilot reviews only)' : '') +
+                      `, chosen ${formatDateTime(c.chosen_at)}`,
+                  )
+                  .join('; ')
+              : dataset.candidates.length
+                ? 'candidates found, not chosen yet'
+                : 'no candidates yet'}
+          </li>
+        ))}
+      </ul>
+    ),
   },
 ]
 
@@ -137,7 +168,11 @@ const REPRESENTATIONS = [
     built: true,
   },
   { name: 'Hierarchical', what: 'Text organised into sections and subsections.', built: true },
-  { name: 'Standardised', what: 'Sections mapped to the 2016 template.', built: false },
+  {
+    name: 'Standardised',
+    what: 'Sections mapped to the templates of the 2016 (and 2026) guidance.',
+    built: true,
+  },
 ]
 
 export default function Overview({ status, goTo }: Props) {
@@ -150,10 +185,10 @@ export default function Overview({ status, goTo }: Props) {
           map sections to a common template and link each review to its case metadata.
         </p>
         <p className="lead">
-          This app shows the data behind NarraTrace. Browse the reviews, inspect their sections and
-          compare suggested template matches. Four of the five processing steps are available; the
-          final LLM selection step is still to be built. The resulting database will supply the LLM
-          wiki in Stage 2.
+          This app shows the data behind NarraTrace. Browse the reviews, inspect their sections,
+          compare the suggested template matches and see each review laid out in the order of the
+          template an LLM matched it to. All five processing steps are built. The resulting database
+          supplies the LLM wiki in Stage 2.
         </p>
       </header>
 
