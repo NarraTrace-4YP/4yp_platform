@@ -338,7 +338,9 @@ def test_the_2026_imr_front_sheet_goes_with_its_first_section():
 
 
 def test_a_whole_guidance_is_read_from_its_files_with_their_checksums(monkeypatch):
-    monkeypatch.setattr("f.dhr.O1.find_candidate_template_sections.templates.pdf_lines", lambda pdf: pdf_2026())
+    monkeypatch.setattr(
+        "f.dhr.O1.find_candidate_template_sections.templates.pdf_lines", lambda pdf: pdf_2026()
+    )
     files = {"guidance": b"made-up 2026 pdf", "annex-a": dardr_word_file()}
     guidance = read_guidance(DARDR_2026, files)
     assert [t.key for t in guidance.templates] == [t.key for t in DARDR_2026.templates]
