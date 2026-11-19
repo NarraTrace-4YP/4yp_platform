@@ -21,7 +21,9 @@ from f.dhr.migrations import MIGRATIONS
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = sorted((ROOT / "f").rglob("*.py"))
-RUNNABLE = [p for p in SCRIPTS if re.search(r"(?m)^def main\(", p.read_text(encoding="utf-8"))]
+RUNNABLE = [
+    p for p in SCRIPTS if re.search(r"(?m)^(async )?def main\(", p.read_text(encoding="utf-8"))
+]
 LOCKED = {
     package["name"]: package["version"]
     for package in tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))["package"]
@@ -41,7 +43,11 @@ def normalise(name: str) -> str:
 
 
 def test_there_are_scripts():
-    assert {p.stem for p in RUNNABLE} >= {"load_reviews", "link_case_metadata"}
+    assert {p.stem for p in RUNNABLE} >= {
+        "load_reviews",
+        "link_case_metadata",
+        "choose_template_section",  # a workflow: async def main
+    }
 
 
 @pytest.mark.parametrize("path", RUNNABLE, ids=lambda p: p.stem)
@@ -63,7 +69,11 @@ def test_runnable_scripts_pin_their_packages_to_uv_lock(path):
 def test_main_defaults_are_written_out(path):
     """Windmill builds the run form from main's defaults, but only reads literal values."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    main = next(
+        n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "main"
+    )
     for default in main.args.defaults:
         assert isinstance(default, ast.Constant), (
             f'{path.name}: give main\'s defaults as plain values (like 100 or "main"), '

@@ -24,7 +24,7 @@ For detailed setup instructions, see:
 
 Most of the project runs on a small shared server. This hosts the database, pipeline orchestration, experiment tracking and web interfaces.
 
-LLM inference requires more computing power, so GPU-intensive work will run separately on Blythe, the university's HPC system.
+LLM inference requires more computing power, so GPU-intensive work runs separately on Blythe, the university's HPC system (see Section 11).
 
 ### The tools
 
@@ -38,7 +38,7 @@ LLM inference requires more computing power, so GPU-intensive work will run sepa
 | **Windmill** | Runs, schedules and monitors Python pipelines. Also provides a web editor and project applications. | Local / Server |
 | **MLflow** | Tracks experiments, model settings, LLM calls and their results. | Local / Server |
 | **LangGraph** | Python library used to build agents that make multiple related LLM calls. | Pipeline code |
-| **vLLM** | Serves open-weight LLMs on GPUs for inference. Integration with Blythe is planned. | Blythe |
+| **vLLM** | Runs open-weight LLMs on Blythe's GPUs, in batch jobs that Windmill submits (O1 stage 5). | Blythe |
 | **uv** | Manages Python dependencies so everyone uses the same package versions. | Everywhere |
 | **Obsidian** | Provides a convenient interface for reading and navigating the generated wiki. | Your laptop |
 
@@ -48,7 +48,7 @@ A typical pipeline starts in Windmill. It reads reviews or previously processed 
 
 For example, the first stage loads the source reviews, groups their text into sections and identifies possible matches to the standard report template.
 
-When a task requires an LLM, the intention is for Windmill to coordinate the work while Blythe handles inference. This keeps GPU-intensive processing separate from the main server.
+When a task requires an LLM, Windmill coordinates the work while Blythe handles inference. This keeps GPU-intensive processing separate from the main server.
 
 MLflow records how experiments were run, including the settings and code versions used. This allows results to be reproduced and compared.
 
@@ -776,15 +776,11 @@ Keeping these outside the repository prevents accidental disclosure and avoids s
 
 ## 11. Blythe integration
 
-GPU access is the main part of the platform that is not yet configured.
+LLM inference runs on Blythe, coordinated from Windmill on the shared server. SCRTP allowed an interim set-up on 19 Nov 2026, while they build a permanent web interface: Windmill logs in over SSH with Rowan's key and 2FA secret, which are kept as his private Windmill variables.
 
-The plan is to use Blythe for inference with open-weight LLMs while continuing to coordinate jobs from Windmill on the shared server.
+Windmill only uploads a run's inputs, submits one of the fixed job files from the separate [narratrace-slurm](https://github.com/NarraTrace-4YP/narratrace-slurm) repository by name, checks the job with SLURM and downloads its output. It never sends commands of its own. Each job calls Windmill back when it ends, so the waiting workflow uses no worker in the meantime.
 
-One possible approach is for a Windmill script to submit SLURM jobs to Blythe over SSH. However, before using this approach, we need to confirm with the university's HPC team (SCRTP) whether automated SSH connections from an external server are permitted.
-
-An HTTP-based job interface is another possibility being discussed.
-
-Until an approved connection method is available, the Blythe integration remains separate from the working server platform.
+Because it is Rowan's own university account, only his Windmill runs can use it (`f/dhr/blythe.py`). Setting up Blythe is described in that repository's README. The first user is O1 stage 5 (`f/dhr/O1/choose_template_section`).
 
 ---
 

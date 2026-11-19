@@ -19,6 +19,8 @@ dependencies = [
     "tokenizers>=0.21",
     "rapidfuzz>=3.10",
     "pypdf>=6.1",
+    "paramiko>=5.1",
+    "pyotp>=2.9",
 ]
 
 [dependency-groups]
