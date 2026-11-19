@@ -3,44 +3,56 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Page not found: NarraTrace</title>
+    <title>Page not found | NarraTrace</title>
+    <meta name="description" content="This page does not exist." />
     <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f3f2f2" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NarraTrace" />
+    <meta
+      property="og:description"
+      content="A novel application of LLM wikis to the analysis of Domestic Homicide Reviews. A CS407 group project, University of Warwick."
+    />
+    <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/' />
+    <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png' />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="/assets/fonts/archivo-variable-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/site.js" defer></script>
   </head>
   <body>
+    <a class="skip" href="#main">Skip to content</a>
+
     <header class="masthead">
-      <div class="wrap">
+      <div class="wrap masthead-inner">
         <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
         <nav class="nav" aria-label="Main">
-          <a href="/">Home</a>
-          <a href="/#tools">Tools</a>
-          <a href="/#docs">Documentation</a>
-          <a href="/#progress">Progress</a>
-          <a href="/about/">About</a>
-          <a href="/o1/">O1</a>
+          <a href="/">Project</a>
+          <a href="/status/">Status</a>
+          <a href="/o1/">O1 app</a>
+          <a href="/workspace/">Workspace</a>
         </nav>
       </div>
     </header>
 
-    <main id="main">
-      <div class="wrap">
-        <section class="grid not-found" aria-labelledby="title">
-          <div class="cell">
-            <h1 id="title">There's no page at this address</h1>
-            <p class="lede">
-              Windmill and MLflow have addresses of their own: windmill.{{env "DOMAIN"}} and
-              mlflow.{{env "DOMAIN"}}.
-            </p>
-            <div class="actions">
-              <a class="btn btn-primary" href="/">Go to the home page</a>
-              <a class="btn" href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'
-                >Open Windmill</a
-              >
-            </div>
-          </div>
-        </section>
+    <main id="main" class="wrap notfound" tabindex="-1">
+      <div>
+        <h1 class="hero-question">This page isn’t here</h1>
+        <p class="lede">The address may be mistyped, or the page may have moved.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/">Go to the project page</a>
+          <a class="btn" href="/workspace/">Open the workspace</a>
+        </div>
       </div>
     </main>
   </body>
