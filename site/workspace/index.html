@@ -66,8 +66,8 @@
             <h3><a href="/o1/">O1 app</a></h3>
             <p>
               The interface for corpus preparation. Browse reviews, inspect their section structure
-              and compare suggested template matches. The app also shows processing progress and
-              dataset coverage.
+              and compare suggested template matches. The app also shows each step's latest results
+              and dataset coverage. It only reads results; pipelines are run in Windmill.
             </p>
             <div class="tool-meta">
               <span class="access">Public page</span>
@@ -83,7 +83,8 @@
             <h3><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'>Windmill</a></h3>
             <p>
               Coordinates the processing pipeline, from importing reviews to preparing sections for
-              analysis. Run histories help the team track progress and investigate failures.
+              analysis. Pipelines are only started here, behind the team login. Run histories help
+              the team track progress and investigate failures.
             </p>
             <div class="tool-meta">
               <span class="access">Pipeline orchestration</span>
