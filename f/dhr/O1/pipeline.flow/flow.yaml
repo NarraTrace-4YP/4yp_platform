@@ -1,0 +1,182 @@
+summary: 'O1: corpus preparation'
+description: "Builds O1 (a hierarchical, standardised DHR corpus linked to the
+  Home Office DHR Library's case metadata) from scratch, one step after another:
+  load DHRC-100, load DHRC-RAW, collect the case metadata, group each dataset's
+  blocks by section, find each section's candidate template sections (against
+  the 2016 guidance, or the 2026 one), then report where O1 stands. Each step
+  can be switched off. The last O1 step (an LLM choosing the template section)
+  will be added here when it is built. The O1 app (f/dhr/O1/app) explains each
+  step and can start this."
+value:
+  modules:
+    - id: load_dhrc_100
+      summary: Load DHRC-100 (the 100 checked reviews)
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-100
+          revision:
+            type: javascript
+            expr: flow_input.dhrc_100_revision || "main"
+        path: f/dhr/O1/load_reviews/load_reviews
+      skip_if:
+        expr: flow_input.load_dhrc_100 === false
+    - id: load_dhrc_raw
+      summary: Load DHRC-RAW (all 702 reviews, unchecked)
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-RAW
+          revision:
+            type: javascript
+            expr: flow_input.dhrc_raw_revision || "main"
+        path: f/dhr/O1/load_reviews/load_reviews
+      skip_if:
+        expr: flow_input.load_dhrc_raw === false
+    - id: collect_case_metadata
+      summary: Collect the case metadata from the DHR Library (about 20 minutes)
+      value:
+        type: script
+        input_transforms:
+          delay_seconds:
+            type: static
+            value: 1
+          dry_run:
+            type: static
+            value: false
+          max_filters:
+            type: static
+            value: 0
+        path: f/dhr/O1/link_case_metadata/link_case_metadata
+      skip_if:
+        expr: flow_input.collect_case_metadata === false
+    - id: group_sections_100
+      summary: Group DHRC-100's blocks by section (from the checked headings)
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-100
+        path: f/dhr/O1/group_blocks_by_section/group_blocks_by_section
+      skip_if:
+        expr: flow_input.group_sections_100 === false
+    - id: group_sections_raw
+      summary: Group DHRC-RAW's blocks by section (from Datalab's own headings)
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-RAW
+        path: f/dhr/O1/group_blocks_by_section/group_blocks_by_section
+      skip_if:
+        expr: flow_input.group_sections_raw === false
+    - id: template_candidates_100
+      summary: Find DHRC-100's candidate template sections (about 5 minutes)
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-100
+          guidance:
+            type: javascript
+            expr: flow_input.template_guidance || "dhr-2016"
+        path: f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections
+      skip_if:
+        expr: flow_input.template_candidates_100 === false
+    - id: template_candidates_raw
+      summary: Find DHRC-RAW's candidate template sections (about 40 minutes)
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-RAW
+          guidance:
+            type: javascript
+            expr: flow_input.template_guidance || "dhr-2016"
+        path: f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections
+      skip_if:
+        expr: flow_input.template_candidates_raw === false
+    - id: status
+      summary: Report where O1 stands
+      value:
+        type: script
+        input_transforms: {}
+        path: f/dhr/O1/app_backend/get_status
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - load_dhrc_100
+    - dhrc_100_revision
+    - load_dhrc_raw
+    - dhrc_raw_revision
+    - collect_case_metadata
+    - group_sections_100
+    - group_sections_raw
+    - template_candidates_100
+    - template_candidates_raw
+    - template_guidance
+  properties:
+    collect_case_metadata:
+      type: boolean
+      description: 'Collect a fresh snapshot of the case metadata from the DHR Library
+        (about 20 minutes). Not needed after loading a dataset: one snapshot
+        covers every dataset.'
+      default: true
+    dhrc_100_revision:
+      type: string
+      description: Which version of DHRC-100 (main is the latest, or give a commit id).
+      default: main
+    dhrc_raw_revision:
+      type: string
+      description: Which version of DHRC-RAW (main is the latest, or give a commit id).
+      default: main
+    group_sections_100:
+      type: boolean
+      description: Group DHRC-100's blocks by section, using the headings the team
+        checked. Needed after loading DHRC-100 (a reload removes the old
+        grouping).
+      default: true
+    group_sections_raw:
+      type: boolean
+      description: Group DHRC-RAW's blocks by section, using Datalab's own (unchecked)
+        headings. Needed after loading DHRC-RAW.
+      default: true
+    load_dhrc_100:
+      type: boolean
+      description: Load DHRC-100 from Hugging Face.
+      default: true
+    load_dhrc_raw:
+      type: boolean
+      description: Load DHRC-RAW from Hugging Face.
+      default: true
+    template_candidates_100:
+      type: boolean
+      description: Find the template sections each DHRC-100 section might be (fuzzy
+        heading match and embeddings against the 2016 guidance's templates).
+        Needed after grouping DHRC-100.
+      default: true
+    template_candidates_raw:
+      type: boolean
+      description: The same for DHRC-RAW (about 40 minutes on the server's CPU).
+        Needed after grouping DHRC-RAW.
+      default: true
+    template_guidance:
+      type: string
+      description: 'Whose templates to match the sections against: the 2016 DHR
+        guidance (the one the specification uses, and the reviews were written
+        under) or the September 2026 DARDR guidance. Candidates against the
+        other are kept.'
+      default: dhr-2016
+      enum:
+        - dhr-2016
+        - dardr-2026
+  required: []
