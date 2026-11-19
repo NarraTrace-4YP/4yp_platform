@@ -11,8 +11,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from f.dhr.O1.app_backend.get_run_status import RUNNABLE_PATHS
-
 ROOT = Path(__file__).resolve().parents[1]
 FLOW = yaml.safe_load((ROOT / "f/dhr/O1/pipeline.flow/flow.yaml").read_text(encoding="utf-8"))
 STEPS = FLOW["value"]["modules"]
@@ -106,40 +104,23 @@ def test_frontend_backend_calls_have_bindings():
     assert called == set(RUNNABLES)
 
 
-def test_run_cards_link_to_their_bound_script_or_flow():
-    """Check relative source links as well as the absolute backend paths."""
-    text = (APP / "RunTab.tsx").read_text(encoding="utf-8")
-    cards = re.findall(r'<Card\s+title="[^"]+"\s+path="([^"]+)"\s+kind="(script|flow)"', text)
-    assert len(cards) == 5
-    for path, kind in cards:
-        suffix = ".py" if kind == "script" else ".flow/flow.yaml"
-        assert (ROOT / f"f/dhr/O1/{path}{suffix}").is_file()
+def test_public_apps_cannot_start_runs():
+    """Anyone with a public app's link can call its backend runnables without logging in.
 
-
-def test_app_names_the_flow_steps():
-    text = (APP / "RunTab.tsx").read_text(encoding="utf-8")
-    block = re.search(r"const FLOW_STEPS[^{]*\{(.*?)\}", text, re.DOTALL)
-    assert block, "RunTab.tsx should have const FLOW_STEPS = { step_id: 'name', ... }"
-    named = re.findall(r"^\s*(\w+):", block.group(1), re.MULTILINE)
-    assert named == [step["id"] for step in STEPS]
-
-
-def test_app_can_follow_every_run_it_starts():
-    started = {r["path"] for r in RUNNABLES.values()} - {
-        "f/dhr/O1/app_backend/get_status",
-        "f/dhr/O1/link_case_metadata/get_attribute_counts",
-        "f/dhr/O1/app_backend/get_run_status",
-        "f/dhr/O1/link_case_metadata/get_reviews",
-        "f/dhr/O1/link_case_metadata/get_case_details",
-        "f/dhr/O1/group_blocks_by_section/get_sections",
-        "f/dhr/O1/find_candidate_template_sections/get_candidates",
-    }
-    assert started == {
-        "f/dhr/O1/load_reviews/load_reviews",
-        "f/dhr/O1/link_case_metadata/link_case_metadata",
-        "f/dhr/O1/group_blocks_by_section/group_blocks_by_section",
-        "f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections",
-        "f/dhr/O1/pipeline",
-    }
-    flow_steps = {step["value"]["path"] for step in STEPS}
-    assert started | flow_steps <= RUNNABLE_PATHS
+    So a public app may only list read-only get_* scripts: never a flow, and never a script
+    that changes data or starts work (such as a job on Blythe). Those are run in Windmill.
+    """
+    apps = [
+        path.parent
+        for path in sorted((ROOT / "f").rglob("raw_app.yaml"))
+        if yaml.safe_load(path.read_text(encoding="utf-8")).get("public")
+    ]
+    assert APP in apps, "the O1 app is embedded on the landing page, so it is public"
+    for app in apps:
+        for binding in sorted((app / "backend").glob("*.yaml")):
+            runnable = yaml.safe_load(binding.read_text(encoding="utf-8"))
+            where = binding.relative_to(ROOT)
+            assert runnable.get("type") == "script", f"{where}: a public app can't bind a flow"
+            assert runnable["path"].rsplit("/", 1)[-1].startswith("get_"), (
+                f"{where}: {runnable['path']} isn't a read-only get_* script"
+            )

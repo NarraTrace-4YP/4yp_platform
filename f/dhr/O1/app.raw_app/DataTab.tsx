@@ -9,7 +9,7 @@ import {
   formatDateTime,
 } from './shared'
 
-type Props = { status: Status | null; error: string | null; goTo: (tab: string) => void }
+type Props = { status: Status | null; error: string | null }
 
 const ABOUT: Record<string, string> = {
   'DHRC-100':
@@ -53,7 +53,7 @@ function SourceBar({ coverage }: { coverage: DatasetStatus['coverage'] }) {
   )
 }
 
-function DatasetCard({ dataset, goTo }: { dataset: DatasetStatus; goTo: (tab: string) => void }) {
+function DatasetCard({ dataset }: { dataset: DatasetStatus }) {
   const v = dataset.version
   const c = dataset.coverage
   const s = dataset.sections
@@ -72,9 +72,7 @@ function DatasetCard({ dataset, goTo }: { dataset: DatasetStatus; goTo: (tab: st
       </header>
       <p>{ABOUT[dataset.name]}</p>
       {!v ? (
-        <p className="warning">
-          Not loaded yet. Run “Load a dataset” with {dataset.name} on the Run tab.
-        </p>
+        <p className="warning">Not loaded yet.</p>
       ) : (
         <>
           <dl className="facts">
@@ -118,10 +116,7 @@ function DatasetCard({ dataset, goTo }: { dataset: DatasetStatus; goTo: (tab: st
                   )}
                 </>
               ) : (
-                <span className="warning">
-                  Not grouped yet. Run “Group blocks by section” with {dataset.name} on the{' '}
-                  <a onClick={() => goTo('run')}>Run</a> tab.
-                </span>
+                <span className="warning">Not grouped yet.</span>
               )}
             </dd>
           </dl>
@@ -139,7 +134,7 @@ function DatasetCard({ dataset, goTo }: { dataset: DatasetStatus; goTo: (tab: st
   )
 }
 
-export default function DataTab({ status, error, goTo }: Props) {
+export default function DataTab({ status, error }: Props) {
   if (error) return <div className="message error">Couldn’t read the status: {error}</div>
   if (!status) return <div className="message">Loading…</div>
   const snapshot = status.case_metadata
@@ -153,7 +148,7 @@ export default function DataTab({ status, error, goTo }: Props) {
         </p>
         <div className="cards">
           {status.datasets.map((d) => (
-            <DatasetCard key={d.name} dataset={d} goTo={goTo} />
+            <DatasetCard key={d.name} dataset={d} />
           ))}
         </div>
       </section>
@@ -162,10 +157,7 @@ export default function DataTab({ status, error, goTo }: Props) {
         <h2>The case metadata</h2>
         <article className="card">
           {!snapshot ? (
-            <p className="warning">
-              Not collected yet. Run “Collect case metadata” on the{' '}
-              <a onClick={() => goTo('run')}>Run</a> tab.
-            </p>
+            <p className="warning">Not collected yet.</p>
           ) : (
             <dl className="facts">
               <dt>Snapshot</dt>

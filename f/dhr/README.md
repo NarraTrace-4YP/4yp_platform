@@ -30,7 +30,6 @@ O1/
   choose_template_section/       # planned; no runnable implementation yet
   app_backend/
     get_status.py
-    get_run_status.py
   app.raw_app/                   # React frontend and Windmill backend bindings
   pipeline.flow/flow.yaml        # orchestration of the implemented stages
 ```

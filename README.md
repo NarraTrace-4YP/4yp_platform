@@ -171,19 +171,20 @@ To run one:
 
 Windmill displays the logs while the script runs. Once it finishes, its return value appears as the result. Previous executions remain accessible under **Runs**.
 
+Pipelines are only started from Windmill, which needs a team login. The public O1 application and the landing page can't start them.
+
 Scripts can be edited through GitHub or Windmill's web editor. The process for keeping these changes synchronised is explained in Section 5.
 
 ### The Objective 1 application
 
 The main starting point for Objective 1 (O1) is the application at `f/dhr/O1/app`, under **Apps**.
 
-O1 covers the preparation and standardisation of the source reviews. The application provides a single place to understand the work, inspect its data and run the relevant pipelines.
+O1 covers the preparation and standardisation of the source reviews. The application provides a single place to understand the work and inspect its data. It only reads results: the pipelines are run in Windmill, as described above.
 
 It includes:
 
 - **Overview:** Explains O1, its planned stages and current progress.
 - **Datasets:** Shows the available datasets and where their reviews came from.
-- **Pipelines:** Runs each O1 processing step and displays its progress and logs.
 - **Case viewer:** Displays the case details available from the Home Office DHR Library.
 - **Dataset comparisons:** Shows how the attributes of each dataset compare with the wider Home Office library.
 
@@ -235,7 +236,7 @@ Once a script is ready for the team to use:
 If it introduces a new O1 step, also update:
 
 - `f/dhr/O1/pipeline.flow/flow.yaml` to include the step in the complete pipeline.
-- `Overview.tsx` and `RunTab.tsx` in the O1 application to explain and expose the new functionality.
+- `Overview.tsx` in the O1 application to explain the new step.
 
 The automated tests check that the application's description and the pipeline's contents remain consistent.
 
@@ -244,6 +245,8 @@ The automated tests check that the application's description and the pipeline's 
 The landing page can display Windmill applications directly.
 
 To make an objective application available there, set `public: true` in its `raw_app.yaml`.
+
+Anyone with the link can open a public application and call every backend runnable it lists, without logging in. A public application must therefore only list read-only `get_*` scripts. Never add a pipeline script or flow to its `backend` folder: anything that changes data or starts work (including jobs on Blythe) is run from Windmill. A test checks this.
 
 Windmill Community Edition assigns each shared application an ID, but this ID differs between installations. We therefore avoid hardcoding application URLs.
 

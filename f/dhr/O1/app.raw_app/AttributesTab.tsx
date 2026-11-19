@@ -30,7 +30,7 @@ function Share({ n, total, kind }: { n: number; total: number; kind: string }) {
   )
 }
 
-export default function AttributesTab({ version }: { version: number }) {
+export default function AttributesTab() {
   const [data, setData] = useState<Attributes | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -49,7 +49,7 @@ export default function AttributesTab({ version }: { version: number }) {
     return () => {
       current = false
     }
-  }, [version])
+  }, [])
 
   const sections = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -67,11 +67,7 @@ export default function AttributesTab({ version }: { version: number }) {
   if (error) return <div className="message error">Couldn’t count the attributes: {error}</div>
   if (!data) return <div className="message">Counting…</div>
   if (!data.snapshot_id) {
-    return (
-      <div className="message">
-        No case metadata yet. Run “Collect case metadata” on the Run tab first.
-      </div>
-    )
+    return <div className="message">No case metadata yet.</div>
   }
 
   const attribute = data.attributes.find((a) => key(a) === selected) ?? null
