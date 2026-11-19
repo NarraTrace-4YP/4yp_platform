@@ -14,24 +14,24 @@ const GROUPS = [
   {
     name: 'About O1',
     tabs: [
-      { id: 'overview', label: 'Overview', hint: 'What O1 is, step by step' },
-      { id: 'data', label: 'Data', hint: 'The datasets and where reviews came from' },
+      { id: 'overview', label: 'Overview', hint: 'How the reviews are prepared' },
+      { id: 'data', label: 'Data', hint: 'Datasets, sources and coverage' },
     ],
   },
   {
     name: 'Pipelines',
-    tabs: [{ id: 'run', label: 'Run', hint: 'Start a step and follow it' }],
+    tabs: [{ id: 'run', label: 'Run', hint: 'Run processing steps and track progress' }],
   },
   {
     name: 'Results',
     tabs: [
-      { id: 'cases', label: 'Cases', hint: 'Every review and its case details' },
-      { id: 'attributes', label: 'Attributes', hint: 'How representative each dataset is' },
+      { id: 'cases', label: 'Cases', hint: 'Reviews and recorded case characteristics' },
+      { id: 'attributes', label: 'Attributes', hint: 'Compare recorded case characteristics' },
       { id: 'sections', label: 'Sections', hint: 'Each review’s outline and text' },
       {
         id: 'candidates',
         label: 'Template candidates',
-        hint: 'The template sections each section might be',
+        hint: 'Suggested matches to report templates',
       },
     ],
   },
@@ -123,7 +123,7 @@ export default function App() {
       </aside>
       <main className="content" ref={contentRef}>
         {statusError && tab !== 'data' && (
-          <p className="message error">Couldn’t read where O1 stands: {statusError}</p>
+          <p className="message error">Couldn’t load the pipeline status: {statusError}</p>
         )}
         {tab === 'overview' && <Overview status={status} goTo={goTo} />}
         {tab === 'data' && <DataTab status={status} error={statusError} goTo={goTo} />}

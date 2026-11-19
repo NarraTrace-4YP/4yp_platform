@@ -17,9 +17,8 @@ const STEPS: Step[] = [
   {
     title: 'Load the reviews',
     what:
-      'Download each dataset from Hugging Face, check every file against its checksums, and store ' +
-      'every review untouched (the page-based JSON Datalab produced), labelled with its dataset ' +
-      'and version.',
+      'Import the reviews from Hugging Face and verify the files against the dataset checksums. ' +
+      'Keep the original page-based JSON, with the dataset name and version recorded for each review.',
     built: true,
     run: true,
     now: (status) => (
@@ -38,9 +37,9 @@ const STEPS: Step[] = [
   {
     title: 'Link the case metadata',
     what:
-      'Ask the Home Office DHR Library which reviews match each of its search filters (victim’s ' +
-      'age, method of killing, relationship, …) and link the answers to our reviews. Kept in the ' +
-      'evaluation schema, which the wiki agent can never read.',
+      'Link reviews to the characteristics recorded in the Home Office DHR Library, such as age ' +
+      'and relationship. These details are stored separately for evaluation and are excluded from ' +
+      'the wiki agent’s input.',
     built: true,
     run: true,
     now: (status) =>
@@ -58,9 +57,8 @@ const STEPS: Step[] = [
   {
     title: 'Group blocks by section',
     what:
-      'Use the validated headings and their parents to put each block under its section, joining ' +
-      'sections that cross a page break. This gives the hierarchical representation: a section ' +
-      'can be fetched with everything nested inside it.',
+      'Rebuild each review’s section structure from its headings. Group text across page breaks ' +
+      'so a section can be read with its subsections and traced back to the original pages.',
     built: true,
     run: true,
     see: { tab: 'sections', label: 'See the sections' },
@@ -87,11 +85,10 @@ const STEPS: Step[] = [
   {
     title: 'Find candidate template sections',
     what:
-      'For each section, find the template sections it might be, by matching headings (exactly or ' +
-      'fuzzily) and by meaning (embeddings). The templates are read from the 2016 statutory guidance: ' +
-      'the overview report (Appendix D in the specification), and also the executive summary, the ' +
-      'agencies’ own reports (IMRs) and the action plan, since reviews follow different ones. The ' +
-      'September 2026 guidance’s templates (DARDRs) can be matched too, for comparison.',
+      'Suggest where each review section fits in a standard report template, using heading and ' +
+      'text similarity. The app supports the overview report, executive summary, individual ' +
+      'management review and action plan templates from the 2016 guidance. Templates from the ' +
+      '2026 guidance are also available for comparison.',
     built: true,
     run: true,
     see: { tab: 'candidates', label: 'See the candidates' },
@@ -128,9 +125,9 @@ const STEPS: Step[] = [
   {
     title: 'Choose the template section',
     what:
-      'An LLM reads the section and picks the right template section from the candidates. Sections ' +
-      'with no suitable match are kept and flagged as unmatched. This gives the standardised ' +
-      'representation.',
+      'The planned final step will use an LLM to select a template section from the candidates. ' +
+      'Sections without a suitable match will be retained and marked as unmatched. This will ' +
+      'allow the same type of material to be found consistently across reviews.',
     built: false,
   },
 ]
@@ -139,8 +136,12 @@ const STEPS: Step[] = [
 export const STEP_BUILT = STEPS.map((step) => step.built)
 
 const REPRESENTATIONS = [
-  { name: 'Page-based', what: 'Each review as Datalab produced it, page by page.', built: true },
-  { name: 'Hierarchical', what: 'Blocks grouped under their sections.', built: true },
+  {
+    name: 'Page-based',
+    what: 'The original extracted text and layout, page by page.',
+    built: true,
+  },
+  { name: 'Hierarchical', what: 'Text organised into sections and subsections.', built: true },
   { name: 'Standardised', what: 'Sections mapped to the 2016 template.', built: false },
 ]
 
@@ -150,18 +151,14 @@ export default function Overview({ status, goTo }: Props) {
     <div className="page">
       <header className="overview-head">
         <p className="aim">
-          <strong>O1.</strong> Derive a hierarchical, standardised representation of DHRC-100.
-          Organise the DHRC-100 corpus by document hierarchy and standardise against the 2016
-          statutory guidance template (Appendix D). Store the result in a database linked to the
-          Home Office DHR Library case metadata.
+          <strong>O1.</strong> Prepare the reviews for analysis: rebuild their section structure,
+          map sections to a common template and link each review to its case metadata.
         </p>
         <p className="lead">
-          In other words: take the reviews as Datalab extracted them (page by page), rebuild each
-          one’s structure (which paragraphs belong to which section), line every section up with the
-          sections the 2016 guidance says an overview report should have, and keep all of it in one
-          database next to what the Home Office’s library records about each case. Stage 2 (the LLM
-          wiki) is built from this database; the case metadata is kept back to check the wiki’s
-          answers later.
+          This app shows the data behind NarraTrace. Browse the reviews, inspect their sections and
+          compare suggested template matches. Four of the five processing steps are available; the
+          final LLM selection step is still to be built. The resulting database will supply the LLM
+          wiki in Stage 2.
         </p>
       </header>
 
@@ -196,16 +193,16 @@ export default function Overview({ status, goTo }: Props) {
         ))}
         <li className="built">
           <strong>Case metadata</strong>
-          <span>Each review linked to what the DHR Library records about it.</span>
+          <span>Characteristics recorded for each review in the DHR Library.</span>
           <span className="chip-line">In the database</span>
         </li>
       </ul>
 
       <section>
-        <h2>The steps</h2>
+        <h2>How the reviews are prepared</h2>
         <p className="muted">
-          The steps in the specification’s Stage 1 diagram (Appendix B). The built ones can be run
-          from the <a onClick={() => goTo('run')}>Run</a> view.
+          Follow the process from source files to comparable sections. Available steps can be
+          started from the <a onClick={() => goTo('run')}>Run</a> view.
         </p>
         <ol className="pipeline">
           {STEPS.map((step, index) => (
@@ -235,7 +232,7 @@ export default function Overview({ status, goTo }: Props) {
                     )}
                     {step.run && (
                       <button className="link-button" onClick={() => goTo('run')}>
-                        Run it
+                        Open run controls
                       </button>
                     )}
                   </div>
@@ -247,21 +244,19 @@ export default function Overview({ status, goTo }: Props) {
       </section>
 
       <section>
-        <h2>Changing the code, including this app</h2>
+        <h2>Development workflow</h2>
         <p>
-          The team code lives in GitHub (NarraTrace-4YP/4yp_platform), and you can change it in
-          either place:
+          The app and processing scripts are maintained in NarraTrace-4YP/4yp_platform on GitHub.
+          The team can make changes in Windmill or through a GitHub pull request.
         </p>
         <ul>
           <li>
-            <strong>In Windmill’s web editor.</strong> Your edit runs straight away. Within about 15
-            minutes GitHub opens a pull request called “Changes made in Windmill” with it, for
-            someone to review and merge. Until it’s merged, deploys from GitHub wait rather than
-            overwrite your edit.
+            <strong>Windmill edits</strong> take effect immediately and are collected into a pull
+            request for review. GitHub deployment waits while those changes are awaiting merge.
           </li>
           <li>
-            <strong>On GitHub,</strong> with a branch and a pull request. Merging it deploys it here
-            within a couple of minutes.
+            <strong>GitHub changes</strong> are reviewed in a pull request and deployed to Windmill
+            after merging.
           </li>
         </ul>
       </section>

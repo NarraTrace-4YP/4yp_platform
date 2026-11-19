@@ -13,12 +13,12 @@ type Props = { status: Status | null; error: string | null; goTo: (tab: string) 
 
 const ABOUT: Record<string, string> = {
   'DHRC-100':
-    'The 100 reviews the team checked by hand: each one’s headings and section structure were ' +
-    'validated and most extraction errors fixed. This is the corpus O1 is about.',
+    'A collection of 100 reviews with manually checked headings and section structure, and ' +
+    'corrections to most extraction errors. This is the main dataset for the project.',
   'DHRC-RAW':
-    'Every review the team gathered (702), as raw automated Datalab output that nobody has ' +
-    'checked. It includes raw versions of the same 100 reviews, under the same names. Used as ' +
-    'an unseen test set: does what works on DHRC-100 still work on reviews nobody has cleaned?',
+    'A larger collection of 702 reviews extracted automatically with Datalab, without manual ' +
+    'correction. It includes the 100 reviews in DHRC-100, allowing comparison of checked and raw ' +
+    'extractions. The remaining reviews can test how well the pipeline handles uncorrected data.',
 }
 
 function SourceBar({ coverage }: { coverage: DatasetStatus['coverage'] }) {
@@ -148,8 +148,8 @@ export default function DataTab({ status, error, goTo }: Props) {
       <section>
         <h2>The datasets</h2>
         <p className="muted">
-          Two datasets, loaded and stored separately, each labelled with its name. A wiki can be
-          built from either one or both.
+          DHRC-100 provides checked source material; DHRC-RAW provides a larger, uncorrected
+          collection. They are stored separately so their results can be compared.
         </p>
         <div className="cards">
           {status.datasets.map((d) => (
@@ -185,11 +185,11 @@ export default function DataTab({ status, error, goTo }: Props) {
             </dl>
           )}
           <p>
-            The library only shares case details as search filters, so each one means “this review
-            came back when searching for this option”. A detail that isn’t there means the review
-            wasn’t returned: either “no” or “not recorded”, and the site doesn’t say which. The
-            library’s data is checked by people, but it warns it may contain mistakes. It covers the
-            whole library, so one snapshot serves every dataset.
+            Case characteristics are collected through the library’s search filters. A recorded
+            match means the review appeared under that filter. A missing match does not distinguish
+            an absent characteristic from an unrecorded one. The library’s manually checked data may
+            still contain errors. Each snapshot covers the full library and can be linked to both
+            datasets.
           </p>
         </article>
       </section>
