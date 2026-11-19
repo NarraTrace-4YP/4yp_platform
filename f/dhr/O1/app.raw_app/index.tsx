@@ -8,15 +8,10 @@ const brandFonts = document.createElement('style')
 brandFonts.textContent = `
   @font-face {
     font-family: 'Archivo';
-    font-weight: 400;
+    font-weight: 100 900;
+    font-stretch: 62% 125%;
     font-display: swap;
-    src: url('${new URL('archivo-latin-400-normal.woff2', fontBase)}') format('woff2');
-  }
-  @font-face {
-    font-family: 'Archivo';
-    font-weight: 700;
-    font-display: swap;
-    src: url('${new URL('archivo-latin-700-normal.woff2', fontBase)}') format('woff2');
+    src: url('${new URL('archivo-variable-latin.woff2', fontBase)}') format('woff2');
   }
   @font-face {
     font-family: 'IBM Plex Mono';

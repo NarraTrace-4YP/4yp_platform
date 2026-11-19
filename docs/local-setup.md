@@ -283,6 +283,15 @@ When you edit the landing page's HTML or CSS, refresh your browser to see the ch
 
 You do not need to rebuild the containers.
 
+The pages are:
+
+- `site/index.html`: the project page, built from the specification. Its 3D reading scene is drawn by `site/assets/story.js` with three.js, which is stored in `site/assets/vendor/` (see the README there to rebuild it).
+- `site/status/index.html`: where the project stands. It is edited by hand; the comment at the top of the page says what to change.
+- `site/workspace/index.html`: links to the tools and documentation.
+- `site/o1/index.html`: the O1 app, embedded.
+
+All the pages share `site/assets/site.css` and `site/assets/site.js`.
+
 ### Changing Caddy configuration
 
 Caddy manages the web addresses and forwards requests to the correct services.

@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Status | NarraTrace</title>
+    <meta
+      name="description"
+      content="Where the NarraTrace project stands against its timetable: objectives, Stage 1 progress and risks."
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f3f2f2" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NarraTrace" />
+    <meta
+      property="og:description"
+      content="A novel application of LLM wikis to the analysis of Domestic Homicide Reviews. A CS407 group project, University of Warwick."
+    />
+    <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/status/' />
+    <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png' />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="/assets/fonts/archivo-variable-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="masthead">
+      <div class="wrap masthead-inner">
+        <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
+        <nav class="nav" aria-label="Main">
+          <a href="/">Project</a>
+          <a href="/status/" aria-current="page">Status</a>
+          <a href="/o1/">O1 app</a>
+          <a href="/workspace/">Workspace</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- This page is edited by hand. When something changes:
+         - "Updated" line: today's date and the term week (Term 1 began Monday 5 October 2026,
+           Term 2 begins Monday 11 January 2027).
+         - Timetable: move "Today" by changing its from-N to-N classes (weeks are numbered 1-32,
+           see the comment on .tt in site.css), and mark bars is-done / is-current.
+         - Objectives and Stage 1 steps: change the "state" labels, and the figures from the
+           O1 app's Data tab. -->
+    <main id="main" tabindex="-1">
+      <section class="wrap page-head" aria-labelledby="title">
+        <h1 id="title">Stage 1 of 4: preparing the reviews</h1>
+        <p class="lede">
+          The project is working on O1, turning DHRC-100 into a database the rest of the project can
+          trust. Four of its five steps are built. The last, choosing a template section for every
+          section of every review, is next.
+        </p>
+        <p class="updated data">Updated 19 November 2026, week 7 of Term 1</p>
+      </section>
+
+      <section class="wrap" id="timetable" aria-labelledby="timetable-title">
+        <div class="sub-head">
+          <h2 id="timetable-title">Timetable</h2>
+          <p>
+            The plan from the project specification. Objectives are scheduled by term and week, with
+            a buffer week after each one.
+          </p>
+        </div>
+        <div class="tt-scroll tt-wrap">
+          <div class="tt" role="img" aria-labelledby="tt-summary">
+            <div class="tt-term r-1 from-1 to-10">Term 1</div>
+            <div class="tt-term r-1 from-11 to-14 vac">Christmas</div>
+            <div class="tt-term r-1 from-15 to-24">Term 2</div>
+            <div class="tt-term r-1 from-25 to-29 vac">Easter</div>
+            <div class="tt-term r-1 from-30 to-32">Term 3</div>
+            <div class="tt-label row-head r-2">Week</div>
+            <div class="tt-week r-2 from-1 to-1">1</div>
+            <div class="tt-week r-2 from-2 to-2">2</div>
+            <div class="tt-week r-2 from-3 to-3">3</div>
+            <div class="tt-week r-2 from-4 to-4">4</div>
+            <div class="tt-week r-2 from-5 to-5">5</div>
+            <div class="tt-week r-2 from-6 to-6">6</div>
+            <div class="tt-week r-2 from-7 to-7">7</div>
+            <div class="tt-week r-2 from-8 to-8">8</div>
+            <div class="tt-week r-2 from-9 to-9">9</div>
+            <div class="tt-week r-2 from-10 to-10">10</div>
+            <div class="tt-week r-2 from-11 to-11 vac"></div>
+            <div class="tt-week r-2 from-12 to-12 vac"></div>
+            <div class="tt-week r-2 from-13 to-13 vac"></div>
+            <div class="tt-week r-2 from-14 to-14 vac"></div>
+            <div class="tt-week r-2 from-15 to-15">1</div>
+            <div class="tt-week r-2 from-16 to-16">2</div>
+            <div class="tt-week r-2 from-17 to-17">3</div>
+            <div class="tt-week r-2 from-18 to-18">4</div>
+            <div class="tt-week r-2 from-19 to-19">5</div>
+            <div class="tt-week r-2 from-20 to-20">6</div>
+            <div class="tt-week r-2 from-21 to-21">7</div>
+            <div class="tt-week r-2 from-22 to-22">8</div>
+            <div class="tt-week r-2 from-23 to-23">9</div>
+            <div class="tt-week r-2 from-24 to-24">10</div>
+            <div class="tt-week r-2 from-25 to-25 vac"></div>
+            <div class="tt-week r-2 from-26 to-26 vac"></div>
+            <div class="tt-week r-2 from-27 to-27 vac"></div>
+            <div class="tt-week r-2 from-28 to-28 vac"></div>
+            <div class="tt-week r-2 from-29 to-29 vac"></div>
+            <div class="tt-week r-2 from-30 to-30">1</div>
+            <div class="tt-week r-2 from-31 to-31">2</div>
+            <div class="tt-week r-2 from-32 to-32">3</div>
+            <div class="tt-vac from-11 to-14" aria-hidden="true"></div>
+            <div class="tt-vac from-25 to-29" aria-hidden="true"></div>
+            <div class="tt-label r-3">Pipeline stages</div>
+            <div class="tt-lane r-3" aria-hidden="true"></div>
+            <div class="tt-band is-current r-3 from-5 to-6">Stage 1</div>
+            <div class="tt-band r-3 from-7 to-11">Stage 2</div>
+            <div class="tt-band r-3 from-13 to-18">Stage 3</div>
+            <div class="tt-band r-3 from-19 to-24">Stage 4</div>
+            <div class="tt-label r-4">Project specification</div>
+            <div class="tt-lane r-4" aria-hidden="true"></div>
+            <div class="tt-bar is-done r-4 from-1 to-4"></div>
+            <div class="tt-label r-5"><span class="o">O1</span>Hierarchical database</div>
+            <div class="tt-lane r-5" aria-hidden="true"></div>
+            <div class="tt-bar is-current r-5 from-5 to-6"></div>
+            <div class="tt-bar is-current is-buffer r-5 from-7 to-7"></div>
+            <div class="tt-label r-6"><span class="o">O2</span>LLM wiki</div>
+            <div class="tt-lane r-6" aria-hidden="true"></div>
+            <div class="tt-bar r-6 from-7 to-11"></div>
+            <div class="tt-bar is-buffer r-6 from-12 to-12"></div>
+            <div class="tt-label r-7"><span class="o">O3</span>Analysis</div>
+            <div class="tt-lane r-7" aria-hidden="true"></div>
+            <div class="tt-bar r-7 from-13 to-18"></div>
+            <div class="tt-bar is-buffer r-7 from-19 to-19"></div>
+            <div class="tt-label r-8">Progress presentation</div>
+            <div class="tt-lane r-8" aria-hidden="true"></div>
+            <div class="tt-bar r-8 from-13 to-15"></div>
+            <div class="tt-label r-9"><span class="o">O4</span>Synthetic reconstruction</div>
+            <div class="tt-lane r-9" aria-hidden="true"></div>
+            <div class="tt-bar r-9 from-19 to-20"></div>
+            <div class="tt-bar is-buffer r-9 from-21 to-21"></div>
+            <div class="tt-label r-10"><span class="o">O5</span>Wiki vs RAG</div>
+            <div class="tt-lane r-10" aria-hidden="true"></div>
+            <div class="tt-bar r-10 from-21 to-22"></div>
+            <div class="tt-bar is-buffer r-10 from-23 to-23"></div>
+            <div class="tt-label r-11"><span class="o">O6</span>Label-free critical events</div>
+            <div class="tt-lane r-11" aria-hidden="true"></div>
+            <div class="tt-bar r-11 from-23 to-24"></div>
+            <div class="tt-bar is-buffer r-11 from-25 to-25"></div>
+            <div class="tt-label r-12">Group and individual reports</div>
+            <div class="tt-lane r-12" aria-hidden="true"></div>
+            <div class="tt-bar r-12 from-25 to-31"></div>
+            <div class="tt-label r-13">Poster</div>
+            <div class="tt-lane r-13" aria-hidden="true"></div>
+            <div class="tt-bar r-13 from-28 to-30"></div>
+            <div class="tt-today from-7 to-7" aria-hidden="true"><span>Today</span></div>
+          </div>
+        </div>
+        <p id="tt-summary" class="note">
+          Planned: specification in Term 1 weeks 1 to 4; O1 in weeks 5 and 6; O2 from week 7 to the
+          first week of the Christmas vacation; O3 from the third week of the vacation to Term 2
+          week 4; the progress presentation around the start of Term 2; O4, O5 and O6 in Term 2
+          weeks 5 to 10; reports over Easter into Term 3, and the poster in Term 3 week 1. Today is
+          Term 1 week 7, O1’s buffer week.
+        </p>
+        <ul class="legend" aria-label="Key">
+          <li><span class="tt-bar is-done" aria-hidden="true"></span>Done</li>
+          <li><span class="tt-bar is-current" aria-hidden="true"></span>In progress</li>
+          <li><span class="tt-bar" aria-hidden="true"></span>Planned</li>
+          <li><span class="tt-bar is-buffer" aria-hidden="true"></span>Buffer week</li>
+        </ul>
+      </section>
+
+      <section class="wrap section-gap" id="objectives" aria-labelledby="objectives-title">
+        <div class="sub-head">
+          <h2 id="objectives-title">Objectives</h2>
+          <p>The six objectives from the specification, in the order they are planned.</p>
+        </div>
+        <ol class="objectives">
+          <li>
+            <span class="o-id">O1</span>
+            <h3>Derive a hierarchical, standardised representation of DHRC-100</h3>
+            <span class="when">Term 1, weeks 5 and 6</span>
+            <span class="state is-current">In progress</span>
+          </li>
+          <li>
+            <span class="o-id">O2</span>
+            <h3>Construct an LLM wiki DHR knowledge base</h3>
+            <span class="when">Term 1 week 7 to Christmas</span>
+            <span class="state">Not started</span>
+          </li>
+          <li>
+            <span class="o-id">O3</span>
+            <h3>
+              Identify case similarities, temporal patterns, recurring lessons and critical events
+              across DHRs
+            </h3>
+            <span class="when">Christmas to Term 2 week 4</span>
+            <span class="state">Not started</span>
+          </li>
+          <li>
+            <span class="o-id">O4</span>
+            <h3>Investigate model comprehension through synthetic reconstruction</h3>
+            <span class="when">Term 2, weeks 5 and 6</span>
+            <span class="state">Not started</span>
+          </li>
+          <li>
+            <span class="o-id">O5</span>
+            <h3>Evaluate analytical performance</h3>
+            <span class="when">Term 2, weeks 7 and 8</span>
+            <span class="state">Not started</span>
+          </li>
+          <li>
+            <span class="o-id">O6</span>
+            <h3>
+              Investigate inferred case characteristics through label-free critical event extraction
+            </h3>
+            <span class="when">Term 2, weeks 9 and 10</span>
+            <span class="state">Not started</span>
+          </li>
+        </ol>
+      </section>
+
+      <section class="wrap section-gap" id="stage-1-now" aria-labelledby="stage-1-title">
+        <div class="sub-head">
+          <h2 id="stage-1-title">Stage 1, step by step</h2>
+          <p>
+            The steps of the specification’s Stage 1 data flow. Figures are from the runs on 17
+            November 2026; the <a href="/o1/">O1 app</a> shows them live.
+          </p>
+        </div>
+        <ol class="o1-steps">
+          <li>
+            <span class="n">1</span>
+            <h3>Load the reviews</h3>
+            <p>Both datasets from Hugging Face, every file checked against its checksum.</p>
+            <dl class="figures">
+              <div>
+                <dt>DHRC-100 reviews</dt>
+                <dd>100</dd>
+              </div>
+              <div>
+                <dt>Pages</dt>
+                <dd>5,663</dd>
+              </div>
+              <div>
+                <dt>DHRC-RAW reviews</dt>
+                <dd>702</dd>
+              </div>
+            </dl>
+            <span class="state is-done">Built</span>
+          </li>
+          <li>
+            <span class="n">2</span>
+            <h3>Link the case metadata</h3>
+            <p>
+              Every case detail the Home Office DHR Library records, kept where the wiki can’t read
+              it.
+            </p>
+            <dl class="figures">
+              <div>
+                <dt>Reviews in the library</dt>
+                <dd>684</dd>
+              </div>
+              <div>
+                <dt>Case details</dt>
+                <dd>43,373</dd>
+              </div>
+              <div>
+                <dt>DHRC-100 linked</dt>
+                <dd>100 of 100</dd>
+              </div>
+            </dl>
+            <span class="state is-done">Built</span>
+          </li>
+          <li>
+            <span class="n">3</span>
+            <h3>Group blocks by section</h3>
+            <p>Each review’s text put back under its own headings, joined across page breaks.</p>
+            <dl class="figures">
+              <div>
+                <dt>DHRC-100 sections</dt>
+                <dd>5,118</dd>
+              </div>
+              <div>
+                <dt>Across a page break</dt>
+                <dd>3,115</dd>
+              </div>
+              <div>
+                <dt>DHRC-RAW sections</dt>
+                <dd>48,242</dd>
+              </div>
+            </dl>
+            <span class="state is-done">Built</span>
+          </li>
+          <li>
+            <span class="n">4</span>
+            <h3>Find candidate template sections</h3>
+            <p>
+              For each section, the template sections it most resembles, by heading and meaning.
+            </p>
+            <dl class="figures">
+              <div>
+                <dt>2016 template sections</dt>
+                <dd>46</dd>
+              </div>
+              <div>
+                <dt>Candidates, DHRC-100</dt>
+                <dd>29,960</dd>
+              </div>
+              <div>
+                <dt>Per section</dt>
+                <dd>5.9</dd>
+              </div>
+            </dl>
+            <span class="state is-done">Built</span>
+          </li>
+          <li class="is-next">
+            <span class="n">5</span>
+            <h3>Choose the template section</h3>
+            <p>An LLM picks one candidate for each section, or flags the section as unmatched.</p>
+            <span class="state is-current">Next</span>
+          </li>
+        </ol>
+        <ul class="forms" aria-label="The three representations">
+          <li>
+            <strong>Page-based</strong><span>Each review as Datalab produced it. Stored.</span>
+          </li>
+          <li>
+            <strong>Hierarchical</strong><span>Blocks grouped under their sections. Stored.</span>
+          </li>
+          <li>
+            <strong>Standardised</strong
+            ><span>Sections mapped to the 2016 template. Comes from step 5.</span>
+          </li>
+        </ul>
+        <div class="actions section-gap-small">
+          <a class="btn btn-primary" href="/o1/">Open the O1 app</a>
+          <a class="btn" href="/#stage-1">What Stage 1 is for</a>
+        </div>
+      </section>
+
+      <section class="wrap section-gap part-end" id="risks" aria-labelledby="risks-title">
+        <div class="sub-head">
+          <h2 id="risks-title">Risks</h2>
+          <p>
+            From the specification, scored by severity and likelihood out of 5. The rating is the
+            two multiplied together.
+          </p>
+        </div>
+        <div class="risks">
+          <figure>
+            <div class="matrix" aria-hidden="true">
+              <div class="axis">5</div>
+              <div class="cell"></div>
+              <div class="cell r-mid">
+                <a class="risk" href="#risk-7" title="Disclosure of identifying information">7</a>
+              </div>
+              <div class="cell r-high">
+                <a
+                  class="risk"
+                  href="#risk-2"
+                  title="Wiki construction and use exceed the LLM token budget"
+                  >2</a
+                >
+              </div>
+              <div class="cell r-high"></div>
+              <div class="cell r-high"></div>
+              <div class="axis">4</div>
+              <div class="cell"></div>
+              <div class="cell r-mid">
+                <a
+                  class="risk"
+                  href="#risk-11"
+                  title="Withheld case metadata or reference answers leak into the wiki, RAG index or prompts"
+                  >11</a
+                >
+              </div>
+              <div class="cell r-high">
+                <a class="risk" href="#risk-3" title="Scope creep or schedule overrun">3</a
+                ><a class="risk" href="#risk-4" title="Integration problems between stages">4</a
+                ><a
+                  class="risk"
+                  href="#risk-5"
+                  title="Incorrect or unsupported claims in the LLM wiki"
+                  >5</a
+                ><a class="risk" href="#risk-6" title="The LLM has memorised published DHRs">6</a>
+              </div>
+              <div class="cell r-high">
+                <a class="risk" href="#risk-1" title="Limited access to Blythe computing resources"
+                  >1</a
+                >
+              </div>
+              <div class="cell r-high"></div>
+              <div class="axis">3</div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="cell r-mid">
+                <a class="risk" href="#risk-8" title="A team member is unavailable">8</a
+                ><a class="risk" href="#risk-9" title="Not enough independent annotators">9</a
+                ><a class="risk" href="#risk-10" title="Wiki pages drift after repeated rewrites"
+                  >10</a
+                >
+              </div>
+              <div class="cell r-high"></div>
+              <div class="cell r-high"></div>
+              <div class="axis">2</div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="cell r-mid"></div>
+              <div class="cell r-mid"></div>
+              <div class="axis">1</div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="cell"></div>
+              <div class="axis"></div>
+              <div class="axis">1</div>
+              <div class="axis">2</div>
+              <div class="axis">3</div>
+              <div class="axis">4</div>
+              <div class="axis">5</div>
+            </div>
+            <figcaption class="matrix-caption data">
+              Severity (up) by likelihood (across). Numbers are the risks in the table.
+            </figcaption>
+          </figure>
+          <div class="table-scroll">
+            <table class="table risk-table">
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">Risk and mitigation</th>
+                  <th scope="col">S</th>
+                  <th scope="col">L</th>
+                  <th scope="col">R</th>
+                  <th scope="col">Owner</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="risk-1">
+                  <td>1</td>
+                  <td>
+                    <strong>Limited access to Blythe computing resources</strong><br /><span
+                      class="note"
+                      >Schedule jobs between team members, reuse saved LLM outputs, and use smaller
+                      local models if necessary.</span
+                    >
+                  </td>
+                  <td>4</td>
+                  <td>4</td>
+                  <td>16</td>
+                  <td>All</td>
+                </tr>
+                <tr id="risk-2">
+                  <td>2</td>
+                  <td>
+                    <strong>Wiki construction and use exceed the LLM token budget</strong
+                    ><br /><span class="note"
+                      >Measure token use per review and extrapolate. Cap the reconstruction sample
+                      within budget.</span
+                    >
+                  </td>
+                  <td>5</td>
+                  <td>3</td>
+                  <td>15</td>
+                  <td>Kieran, Mikaeel</td>
+                </tr>
+                <tr id="risk-3">
+                  <td>3</td>
+                  <td>
+                    <strong>Scope creep or schedule overrun</strong><br /><span class="note"
+                      >Fortnightly progress review; drop lower-priority features if the project
+                      falls behind.</span
+                    >
+                  </td>
+                  <td>4</td>
+                  <td>3</td>
+                  <td>12</td>
+                  <td>All</td>
+                </tr>
+                <tr id="risk-4">
+                  <td>4</td>
+                  <td>
+                    <strong>Integration problems between stages</strong><br /><span class="note"
+                      >Document the interfaces between stages, and regularly test the full pipeline
+                      on a small sample of reviews.</span
+                    >
+                  </td>
+                  <td>4</td>
+                  <td>3</td>
+                  <td>12</td>
+                  <td>Mikaeel</td>
+                </tr>
+                <tr id="risk-5">
+                  <td>5</td>
+                  <td>
+                    <strong>Incorrect or unsupported claims in the LLM wiki</strong><br /><span
+                      class="note"
+                      >Every claim cites its Stage 1 blocks, conflicting accounts are kept with
+                      their sources, and claims are checked by an LLM judge validated against human
+                      labels, correcting affected pages.</span
+                    >
+                  </td>
+                  <td>4</td>
+                  <td>3</td>
+                  <td>12</td>
+                  <td>Arushi</td>
+                </tr>
+                <tr id="risk-6">
+                  <td>6</td>
+                  <td>
+                    <strong>The LLM has memorised published DHRs</strong><br /><span class="note"
+                      >Prompt models without the source text to see whether they recall case
+                      details, include a no-retrieval baseline, use the same model for wiki and RAG,
+                      and where possible test on reviews published after the model’s training
+                      cut-off.</span
+                    >
+                  </td>
+                  <td>4</td>
+                  <td>3</td>
+                  <td>12</td>
+                  <td>Mikaeel</td>
+                </tr>
+                <tr id="risk-7">
+                  <td>7</td>
+                  <td>
+                    <strong>Disclosure of identifying information</strong><br /><span class="note"
+                      >Keep data and LLM inference on approved systems such as Blythe rather than
+                      external APIs, and check anonymised outputs by hand, including regenerated
+                      narratives, before public release.</span
+                    >
+                  </td>
+                  <td>5</td>
+                  <td>2</td>
+                  <td>10</td>
+                  <td>Arushi, Kieran</td>
+                </tr>
+                <tr id="risk-8">
+                  <td>8</td>
+                  <td>
+                    <strong>A team member is unavailable</strong><br /><span class="note"
+                      >Share important decisions and code so others can take over work.</span
+                    >
+                  </td>
+                  <td>3</td>
+                  <td>3</td>
+                  <td>9</td>
+                  <td>All</td>
+                </tr>
+                <tr id="risk-9">
+                  <td>9</td>
+                  <td>
+                    <strong>Not enough independent annotators</strong><br /><span class="note"
+                      >Recruit annotators early with the supervisor’s help, and keep evaluation
+                      samples manageable.</span
+                    >
+                  </td>
+                  <td>3</td>
+                  <td>3</td>
+                  <td>9</td>
+                  <td>All</td>
+                </tr>
+                <tr id="risk-10">
+                  <td>10</td>
+                  <td>
+                    <strong>Wiki pages drift after repeated rewrites</strong><br /><span
+                      class="note"
+                      >Rebuild pages only from cited Stage 1 blocks, measure claim support at 25, 50
+                      and 100 reviews, and log every change.</span
+                    >
+                  </td>
+                  <td>3</td>
+                  <td>3</td>
+                  <td>9</td>
+                  <td>Arushi</td>
+                </tr>
+                <tr id="risk-11">
+                  <td>11</td>
+                  <td>
+                    <strong
+                      >Withheld case metadata or reference answers leak into the wiki, RAG index or
+                      prompts</strong
+                    ><br /><span class="note"
+                      >Store evaluation data apart from anything the wiki agent or RAG index can
+                      read, and check indexes and prompts for it automatically.</span
+                    >
+                  </td>
+                  <td>4</td>
+                  <td>2</td>
+                  <td>8</td>
+                  <td>Rowan</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
+        <div>
+          <div class="footer-names" aria-label="Team">
+            <span>Mikaeel Haaris</span><span>Arushi Khemani</span><span>Kieran Saphir</span
+            ><span>Rowan Shields</span>
+          </div>
+          <p class="footer-small">
+            Fourth year group project (CS407), Department of Computer Science, University of
+            Warwick, 2026 to 2027. Client: the
+            <a href="https://fcn.police.uk/">Forensic Capability Network</a>. Supervisor: Gabriele
+            Pergola. <a href="/">About the project</a>.
+          </p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

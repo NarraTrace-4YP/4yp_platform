@@ -3,18 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NarraTrace: reading across domestic homicide reviews</title>
+    <title>NarraTrace: LLM wikis and Domestic Homicide Reviews</title>
     <meta
       name="description"
-      content="NarraTrace is a CS407 group project at the University of Warwick testing whether an LLM wiki helps researchers find connections and recurring patterns across Domestic Homicide Reviews."
+      content="A CS407 group project at the University of Warwick asking whether an LLM wiki helps forensic researchers identify connections and recurring patterns across Domestic Homicide Reviews."
     />
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#f3f2f2" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="NarraTrace" />
     <meta
       property="og:description"
-      content="Reading across domestic homicide reviews with an LLM wiki. A CS407 group project, University of Warwick."
+      content="A novel application of LLM wikis to the analysis of Domestic Homicide Reviews. A CS407 group project, University of Warwick."
     />
     <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/' />
     <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png' />
@@ -25,545 +25,1565 @@
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link
       rel="preload"
-      href="/assets/fonts/archivo-latin-700-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/assets/fonts/ibm-plex-mono-latin-700-normal.woff2"
+      href="/assets/fonts/archivo-variable-latin.woff2"
       as="font"
       type="font/woff2"
       crossorigin
     />
     <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/site.js" defer></script>
+    <script src="/assets/story.js" type="module"></script>
   </head>
-  <body>
+  <body class="project-page">
     <a class="skip" href="#main">Skip to content</a>
 
-    <header class="masthead">
-      <div class="wrap">
+    <header class="masthead is-over-scene">
+      <div class="wrap masthead-inner">
         <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
         <nav class="nav" aria-label="Main">
-          <a href="/" aria-current="page">Home</a>
-          <a href="#tools">Tools</a>
-          <a href="#docs">Documentation</a>
-          <a href="#progress">Progress</a>
-          <a href="/about/">About</a>
-          <a href="/o1/">O1</a>
+          <a href="/" aria-current="page">Project</a>
+          <a href="/status/">Status</a>
+          <a href="/o1/">O1 app</a>
+          <a href="/workspace/">Workspace</a>
         </nav>
       </div>
     </header>
 
-    <main id="main">
-      <div class="wrap">
-        <section class="grid hero" aria-labelledby="title">
-          <div class="cell hero-text">
-            <h1 id="title">Reading across domestic homicide reviews</h1>
-            <p class="lede">
-              Each Domestic Homicide Review examines one death, so failings that recur only surface
-              when many reviews are compared. NarraTrace builds an LLM wiki over 100 reviews, kept
-              up to date by an agent and linked to its sources, and tests whether it helps
-              researchers find the connections and patterns across them.
-            </p>
-            <dl class="facts">
-              <div>
-                <dt>Project</dt>
-                <dd>Our fourth year group project at the University of Warwick</dd>
-              </div>
-              <div>
-                <dt>Client</dt>
-                <dd><a href="https://fcn.police.uk/">Forensic Capability Network</a></dd>
-              </div>
-            </dl>
-            <div class="actions">
-              <a class="btn btn-primary" href="/o1/"
-                >Open the O1 app <span class="action-arrow" aria-hidden="true">→</span></a
-              >
-              <a class="btn" href="/about/">About the project</a>
-            </div>
-          </div>
-          <figure class="cell hero-figure">
-            <canvas class="hero-webgl" aria-hidden="true"></canvas>
-            <svg viewBox="0 0 440 424" role="img" aria-labelledby="trace-title">
-              <title id="trace-title">
-                The project's four stages, each feeding the next: corpus preparation, knowledge
-                organisation, analysis and evaluation.
-              </title>
-              <g class="bar">
-                <rect x="0" y="12" width="440" height="8" />
-                <rect x="0" y="56" width="14" height="8" />
-                <rect x="214" y="56" width="226" height="8" />
-                <rect x="0" y="100" width="408" height="8" />
-                <rect x="0" y="144" width="198" height="8" />
-                <rect x="0" y="188" width="440" height="8" />
-                <rect x="0" y="232" width="58" height="8" />
-                <rect x="174" y="232" width="222" height="8" />
-                <rect x="0" y="276" width="430" height="8" />
-                <rect x="0" y="320" width="218" height="8" />
-                <rect x="351" y="320" width="89" height="8" />
-                <rect x="0" y="364" width="370" height="8" />
-                <rect x="0" y="408" width="236" height="8" />
+    <main id="main" tabindex="-1">
+      <section class="story" aria-label="The research question and why it matters">
+        <!-- A scene of review pages drawn by story.js. The chapters below carry all the
+             content; the scene only illustrates them. -->
+        <div class="story-stage" aria-hidden="true">
+          <canvas class="story-canvas"></canvas>
+          <div class="stage-labels"></div>
+          <div class="stage-fallback">
+            <svg viewBox="0 0 440 424">
+              <g class="flow">
+                <rect x="0" y="12" width="440" height="8" fill="#c9c5c3" />
+                <rect x="0" y="56" width="14" height="8" fill="#c9c5c3" />
+                <rect x="214" y="56" width="226" height="8" fill="#c9c5c3" />
+                <rect x="20" y="47" width="188" height="26" fill="#daeaf3" />
+                <rect x="20" y="71" width="188" height="2" fill="#0b5e8a" />
+                <rect x="0" y="100" width="408" height="8" fill="#c9c5c3" />
+                <rect x="0" y="144" width="198" height="8" fill="#c9c5c3" />
+                <rect x="204" y="135" width="222" height="26" fill="#daeaf3" />
+                <rect x="204" y="159" width="222" height="2" fill="#0b5e8a" />
+                <rect x="0" y="188" width="440" height="8" fill="#c9c5c3" />
+                <rect x="0" y="232" width="58" height="8" fill="#c9c5c3" />
+                <rect x="64" y="223" width="104" height="26" fill="#daeaf3" />
+                <rect x="64" y="247" width="104" height="2" fill="#0b5e8a" />
+                <rect x="174" y="232" width="222" height="8" fill="#c9c5c3" />
+                <rect x="0" y="276" width="430" height="8" fill="#c9c5c3" />
+                <rect x="0" y="320" width="218" height="8" fill="#c9c5c3" />
+                <rect x="224" y="311" width="121" height="26" fill="#daeaf3" />
+                <rect x="224" y="335" width="121" height="2" fill="#0b5e8a" />
+                <rect x="351" y="320" width="89" height="8" fill="#c9c5c3" />
+                <rect x="0" y="364" width="370" height="8" fill="#c9c5c3" />
+                <rect x="0" y="408" width="236" height="8" fill="#c9c5c3" />
+                <path
+                  class="line"
+                  d="M114 76V122H315V126M315 164V210H116V214M116 252V298H284V302"
+                />
               </g>
-              <g class="passage s1">
-                <rect class="passage-wash" x="20" y="47" width="188" height="26" />
-                <rect class="passage-line" x="20" y="71" width="188" height="2" />
-                <text class="passage-text" x="30" y="65">1 CORPUS PREPARATION</text>
-              </g>
-              <g class="passage s2">
-                <rect class="passage-wash" x="204" y="135" width="222" height="26" />
-                <rect class="passage-line" x="204" y="159" width="222" height="2" />
-                <text class="passage-text" x="214" y="153">2 KNOWLEDGE ORGANISATION</text>
-              </g>
-              <g class="passage s3">
-                <rect class="passage-wash" x="64" y="223" width="104" height="26" />
-                <rect class="passage-line" x="64" y="247" width="104" height="2" />
-                <text class="passage-text" x="74" y="241">3 ANALYSIS</text>
-              </g>
-              <g class="passage s4">
-                <rect class="passage-wash" x="224" y="311" width="121" height="26" />
-                <rect class="passage-line" x="224" y="335" width="121" height="2" />
-                <text class="passage-text" x="234" y="329">4 EVALUATION</text>
-              </g>
-              <path class="arrow a1" pathLength="1" d="M114 76V122H315V126" />
-              <polygon class="arrow-head t1" points="310,126 320,126 315,133" />
-              <path class="arrow a2" pathLength="1" d="M315 164V210H116V214" />
-              <polygon class="arrow-head t2" points="111,214 121,214 116,221" />
-              <path class="arrow a3" pathLength="1" d="M116 252V298H284V302" />
-              <polygon class="arrow-head t3" points="279,302 289,302 284,309" />
             </svg>
-            <figcaption>
-              The project in four stages. Each one works from what the stage before it produced.
-            </figcaption>
-          </figure>
-        </section>
+          </div>
+        </div>
 
-        <section class="section" id="tools" aria-labelledby="tools-title">
-          <div class="section-head">
-            <h2 id="tools-title">Tools</h2>
+        <div class="story-chapters">
+          <div class="chapter chapter--hero" data-scene="0">
+            <div class="wrap">
+              <div class="hero-copy">
+                <p class="hero-title">
+                  A novel application of LLM wikis to the analysis of Domestic Homicide Reviews
+                </p>
+                <h1 class="hero-question" data-sweep>
+                  To what extent can an LLM wiki help forensic researchers identify connections and
+                  recurring patterns across Domestic Homicide Reviews?
+                </h1>
+                <dl class="hero-facts">
+                  <div>
+                    <dt>Project</dt>
+                    <dd>CS407, Department of Computer Science, University of Warwick</dd>
+                  </div>
+                  <div>
+                    <dt>Client</dt>
+                    <dd><a href="https://fcn.police.uk/">Forensic Capability Network</a></dd>
+                  </div>
+                  <div>
+                    <dt>Supervisor</dt>
+                    <dd>Gabriele Pergola</dd>
+                  </div>
+                </dl>
+                <a class="scroll-cue" href="#one-death">Why this matters</a>
+              </div>
+            </div>
+          </div>
+
+          <article class="chapter" id="one-death" data-scene="1" aria-labelledby="one-death-title">
+            <div class="wrap">
+              <div class="chapter-body">
+                <h2 id="one-death-title">One review for each death</h2>
+                <p>
+                  Since 2011, Community Safety Partnerships in England and Wales have had to
+                  commission a Domestic Homicide Review after someone aged 16 or over dies from
+                  violence, abuse or neglect by a relative, partner or member of their household.<a
+                    class="cite"
+                    href="#ref-1"
+                    >[1]</a
+                  >
+                </p>
+                <p>
+                  The agencies involved examine the events that led to the death.
+                  <span class="reading"
+                    >The aim is to improve how organisations safeguard people, not to decide who was
+                    at fault.</span
+                  >
+                </p>
+                <p>
+                  On 15 September 2026 the reviews were renamed Domestic Abuse Related Death
+                  Reviews, because they also cover suicides and unexplained deaths linked to
+                  domestic abuse.<a class="cite" href="#ref-2">[2]</a>
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <article class="chapter" id="by-hand" data-scene="2" aria-labelledby="by-hand-title">
+            <div class="wrap">
+              <div class="chapter-body">
+                <h2 id="by-hand-title">Patterns only show across many reviews</h2>
+                <p>
+                  Each review examines a single death, so
+                  <span class="reading"
+                    >failings that keep recurring only come to light once many reviews are
+                    compared.</span
+                  >
+                  The Forensic Capability Network, which coordinates forensic science across the 43
+                  police forces of England and Wales, has typically done that by hand.
+                </p>
+                <p>
+                  Reading by hand is slow and costly: one 2023 report collected 302 documents and
+                  drew its results from only 46 of them.<a class="cite" href="#ref-5">[5]</a> Cook
+                  et al. name that time and cost as the main bottleneck and propose language
+                  processing instead.<a class="cite" href="#ref-6">[6]</a>
+                </p>
+                <figure class="halt" aria-label="302 documents collected, 46 used">
+                  <div class="halt-dots" data-total="302" data-used="46"></div>
+                  <figcaption class="data">302 documents collected, results from 46</figcaption>
+                </figure>
+                <p>
+                  Pergola et al. produced DHRC-100: 100 reviews converted from PDF into structured
+                  files and checked by people.<a class="cite" href="#ref-7">[7]</a> This project
+                  builds on it.
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <article class="chapter" id="two-ways" data-scene="3" aria-labelledby="two-ways-title">
+            <div class="wrap">
+              <div class="chapter-body">
+                <h2 id="two-ways-title">Two ways to question a collection</h2>
+                <p>
+                  Retrieval-augmented generation (RAG) finds the passages that best match a question
+                  and hands them to a language model.<a class="cite" href="#ref-3">[3]</a> It suits
+                  specific questions, but not ideas spread across a whole collection.
+                </p>
+                <p>
+                  Karpathy’s LLM wiki works differently.<a class="cite" href="#ref-8">[8]</a> An
+                  agent writes each document into linked pages as it reads it, so
+                  <span class="reading"
+                    >a connection is noted once and reused wherever it applies.</span
+                  >
+                </p>
+                <p>
+                  In a small preprint, Cochran found a wiki connected findings better than
+                  single-round vector RAG, at about 21 times the tokens per query.<a
+                    class="cite"
+                    href="#ref-4"
+                    >[4]</a
+                  >
+                  This project repeats that comparison on DHRC-100.
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="chapter"
+            id="linked-pages"
+            data-scene="4"
+            aria-labelledby="linked-pages-title"
+          >
+            <div class="wrap">
+              <div class="chapter-body">
+                <h2 id="linked-pages-title">A wiki of agencies, events and recommendations</h2>
+                <p>
+                  The wiki agent reads each review section by section and writes linked pages about
+                  the relationships, events and recommendations in it. An agency page, for example,
+                  lists every review that agency appears in, what it did, and the recommendations
+                  made to it.
+                </p>
+                <p>
+                  <span class="reading">Every claim cites the passages it came from,</span> and a
+                  separate model checks each one against its source before the wiki is used.<a
+                    class="cite"
+                    href="#ref-13"
+                    >[13]</a
+                  >
+                </p>
+                <p>
+                  As far as the team knows, this is the first time an agent-maintained wiki has been
+                  applied to these reviews.
+                </p>
+                <div class="actions">
+                  <a class="btn" href="#stages">How the project works</a>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="part" id="stages" aria-labelledby="stages-title">
+        <div class="wrap">
+          <header class="part-head">
+            <h2 id="stages-title">Four stages, six objectives</h2>
             <p>
-              What the team works with. Windmill, MLflow and the database share one sign-in per
-              person: your details are in <code>~/ACCOUNTS.txt</code> on the server. Ask an admin if
-              you don't have one.
+              Each stage works from what the stage before it produced. Stages 2 and 3 are the heart
+              of the research.
             </p>
-          </div>
-          <div class="grid cols-3">
-            <div class="cell tool">
-              <h3><a href="/o1/">O1 app</a></h3>
-              <p>
-                Start here. Explains Stage 1 and where it stands, shows the datasets and where their
-                reviews came from, runs each pipeline with its progress, and lets you browse cases,
-                sections and template matches.
-              </p>
-              <div class="also">
-                <a
-                  href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/apps_raw/get/f/dhr/O1/app?workspace=dhr'
-                  >Open in Windmill with team sign-in</a
-                >
-              </div>
-            </div>
-            <div class="cell tool">
-              <h3><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'>Windmill</a></h3>
-              <p>
-                Runs the pipeline scripts and keeps every run. The team's code is in
-                <code>f/dhr</code>; your own experiments go in <code>u/&lt;username&gt;</code>.
-              </p>
-              <div class="also">
-                <a
-                  href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/flows/get/f/dhr/O1/pipeline?workspace=dhr'
-                  >O1 pipeline</a
-                ><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/runs?workspace=dhr'
-                  >Recent runs</a
-                >
-              </div>
-              <div class="meta">
-                <span class="access">Team sign-in</span
-                ><span class="data">windmill.{{env "DOMAIN"}}</span>
-              </div>
-            </div>
-            <div class="cell tool">
-              <h3><a href='{{env "PUBLIC_SCHEME"}}://mlflow.{{env "DOMAIN"}}/'>MLflow</a></h3>
-              <p>
-                Records every experiment run and LLM call: the settings it used, the commit that ran
-                it and what it produced.
-              </p>
-              <div class="meta">
-                <span class="access">Team sign-in</span
-                ><span class="data">mlflow.{{env "DOMAIN"}}</span>
-              </div>
-            </div>
-            <div class="cell tool">
-              <h3><a href="https://github.com/NarraTrace-4YP/4yp_platform">GitHub</a></h3>
-              <p>
-                All the code and the server setup. Every change goes in through a pull request that
-                passes the checks and has one approval.
-              </p>
-              <div class="also">
-                <a href="https://github.com/NarraTrace-4YP/4yp_platform/pulls">Pull requests</a
-                ><a href="https://github.com/NarraTrace-4YP/4yp_platform/actions">Actions</a>
-              </div>
-              <div class="meta">
-                <span class="access">Public</span
-                ><span class="data">github.com/NarraTrace-4YP</span>
-              </div>
-            </div>
-            <div class="cell tool">
-              <h3>
-                <a href="https://huggingface.co/datasets/4YP/dhr-corpus-100-copy">Datasets</a>
-              </h3>
-              <p>
-                Where the reviews come from. DHRC-100 holds 100 reviews checked by hand; DHRC-RAW
-                holds all 702 gathered, as unchecked automated output.
-              </p>
-              <div class="also">
-                <a href="https://huggingface.co/datasets/4YP/dhr-corpus-100-copy">DHRC-100</a
-                ><a href="https://huggingface.co/datasets/4YP/dhr-corpus-raw-copy">DHRC-RAW</a>
-              </div>
-              <div class="meta">
-                <span class="access">Team access</span><span class="data">huggingface.co/4YP</span>
-              </div>
-            </div>
-            <div class="cell tool">
-              <h3>
-                <a
-                  href="https://github.com/NarraTrace-4YP/4yp_platform#using-the-database-from-your-laptop"
-                  >Database</a
-                >
-              </h3>
-              <p>
-                PostgreSQL, holding the reviews and everything built from them. It isn't open to the
-                internet: reach it from your laptop through an SSH tunnel.
-              </p>
-              <div class="meta">
-                <span class="access">Team sign-in</span
-                ><span class="data">SSH tunnel, port 5432</span>
-              </div>
-            </div>
-          </div>
-        </section>
+          </header>
 
-        <section class="section" id="docs" aria-labelledby="docs-title">
-          <div class="section-head">
-            <h2 id="docs-title">Documentation</h2>
-            <p>
-              The guides live in the repository's README, next to the code they describe, so a
-              change to how something works and its instructions go in together.
-            </p>
-          </div>
-          <div class="grid cols-4">
-            <div class="cell doc-group">
-              <h3>Getting started</h3>
-              <ul>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#getting-access"
-                    >Getting access</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-tools"
-                    >What each tool is for</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#using-windmill"
-                    >Using Windmill</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#working-on-your-laptop"
-                    >Working on your laptop</a
-                  >
-                </li>
-              </ul>
-            </div>
-            <div class="cell doc-group">
-              <h3>Changing the code</h3>
-              <ul>
-                <li>
-                  <a
-                    href="https://github.com/NarraTrace-4YP/4yp_platform#how-work-reaches-the-server"
-                    >How work reaches the server</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#writing-a-pipeline-script"
-                    >Writing a pipeline script</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#where-things-go"
-                    >Where things go</a
-                  >
-                </li>
-              </ul>
-            </div>
-            <div class="cell doc-group">
-              <h3>Data and results</h3>
-              <ul>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-data">The data</a>
-                </li>
-                <li>
-                  <a
-                    href="https://github.com/NarraTrace-4YP/4yp_platform#using-the-database-from-your-laptop"
-                    >Using the database from your laptop</a
-                  >
-                </li>
-                <li>
-                  <a
-                    href="https://github.com/NarraTrace-4YP/4yp_platform#logging-to-mlflow-from-your-laptop"
-                    >Logging to MLflow from your laptop</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#the-llm-wiki"
-                    >The LLM wiki</a
-                  >
-                </li>
-              </ul>
-            </div>
-            <div class="cell doc-group">
-              <h3>Running the server</h3>
-              <ul>
-                <li>
-                  <a
-                    href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md"
-                    >Setting up the server</a
-                  >
-                </li>
-                <li>
-                  <a
-                    href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md#day-to-day"
-                    >Day to day</a
-                  >
-                </li>
-                <li>
-                  <a
-                    href="https://github.com/NarraTrace-4YP/4yp_platform/blob/main/docs/server-setup.md#upgrading-windmill"
-                    >Upgrading Windmill</a
-                  >
-                </li>
-                <li>
-                  <a href="https://github.com/NarraTrace-4YP/4yp_platform#not-set-up-yet"
-                    >Not set up yet</a
-                  >
-                </li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <section class="section" id="progress" aria-labelledby="progress-title">
-          <div class="section-head">
-            <h2 id="progress-title">Where the project is</h2>
-            <p>
-              Four stages, run in order. Stage 1 turns the reviews into a database the rest of the
-              project can trust; stages 2 and 3 are the heart of the research.
-            </p>
-          </div>
-          <ol class="grid cols-4 stages" aria-label="Project stages">
-            <li class="cell stage current">
-              <span class="stage-number">1</span>
-              <h3>Corpus preparation</h3>
-              <p>
-                A database of the reviews in three forms: as published, grouped by section, and
-                mapped to the 2016 report template. Each review is linked to its case details.
-              </p>
-              <div class="meta">
-                <span class="status on">In progress</span><span class="data">O1</span>
-              </div>
-            </li>
-            <li class="cell stage">
-              <span class="stage-number">2</span>
-              <h3>Knowledge organisation</h3>
-              <p>
-                The LLM wiki: linked pages on people, agencies, events and recommendations, with
-                every claim citing the passages it came from.
-              </p>
-              <div class="meta">
-                <span class="status">Not started</span><span class="data">O2</span>
-              </div>
-            </li>
-            <li class="cell stage">
-              <span class="stage-number">3</span>
-              <h3>Analysis</h3>
-              <p>
-                Similar cases, patterns over time, recurring recommendations and lessons, and the
-                critical events behind each case.
-              </p>
-              <div class="meta">
-                <span class="status">Not started</span><span class="data">O3</span>
-              </div>
-            </li>
-            <li class="cell stage">
-              <span class="stage-number">4</span>
-              <h3>Evaluation</h3>
-              <p>
-                Rebuilding cases from the wiki, comparing the wiki with a standard retrieval
-                baseline, and finding case details the records leave out.
-              </p>
-              <div class="meta">
-                <span class="status">Not started</span><span class="data">O4 to O6</span>
-              </div>
-            </li>
-          </ol>
-
-          <div class="steps">
-            <h3>Stage 1, step by step</h3>
-            <ol class="step-list">
+          <div class="stages">
+            <ol class="stage-rail" aria-label="Stages">
               <li>
-                <span class="n">1</span
-                ><span
-                  ><strong>Load the reviews</strong
-                  ><span class="what"
-                    >Both datasets, from Hugging Face, each file checked against its checksum.</span
-                  ></span
-                ><span class="status on">Built</span>
+                <a href="#stage-1"
+                  ><span class="rail-n">1</span><span class="rail-name">Corpus preparation</span
+                  ><span class="rail-o">O1</span></a
+                >
               </li>
               <li>
-                <span class="n">2</span
-                ><span
-                  ><strong>Link the case metadata</strong
-                  ><span class="what"
-                    >Every case detail the Home Office DHR Library holds for each review, kept where
-                    the wiki can't read it.</span
-                  ></span
-                ><span class="status on">Built</span>
+                <a href="#stage-2"
+                  ><span class="rail-n">2</span><span class="rail-name">Knowledge organisation</span
+                  ><span class="rail-o">O2</span></a
+                >
               </li>
               <li>
-                <span class="n">3</span
-                ><span
-                  ><strong>Group blocks by section</strong
-                  ><span class="what"
-                    >Each review's text put back under its headings, so a section that runs across a
-                    page break is one section.</span
-                  ></span
-                ><span class="status on">Built</span>
+                <a href="#stage-3"
+                  ><span class="rail-n">3</span><span class="rail-name">Analysis</span
+                  ><span class="rail-o">O3</span></a
+                >
               </li>
               <li>
-                <span class="n">4</span
-                ><span
-                  ><strong>Find candidate template sections</strong
-                  ><span class="what"
-                    >For every section, the report template sections it might be, by heading and by
-                    meaning.</span
-                  ></span
-                ><span class="status on">Built</span>
-              </li>
-              <li>
-                <span class="n">5</span
-                ><span
-                  ><strong>Choose the template section</strong
-                  ><span class="what"
-                    >An LLM picks one candidate for each section, or flags it as matching
-                    none.</span
-                  ></span
-                ><span class="status">Next</span>
+                <a href="#stage-4"
+                  ><span class="rail-n">4</span><span class="rail-name">Evaluation</span
+                  ><span class="rail-o">O4 to O6</span></a
+                >
               </li>
             </ol>
-            <p class="note">
-              Updated 17 November 2026. The <a href="/o1/">O1 app</a> has the live figures.
-            </p>
-          </div>
-        </section>
 
-        <section class="section" id="sources" aria-labelledby="sources-title">
-          <div class="section-head">
-            <h2 id="sources-title">Sources and guidance</h2>
-            <p>
-              The documents the project works from. The reviews and the DHR Library are published
-              under the Open Government Licence.
-            </p>
+            <div class="stage-panels">
+              <article class="stage-panel" id="stage-1" aria-labelledby="stage-1-title">
+                <header class="stage-head">
+                  <span class="stage-n" aria-hidden="true">1</span>
+                  <div>
+                    <h3 id="stage-1-title">Corpus preparation</h3>
+                    <p class="stage-output">A standardised, hierarchical corpus of reviews</p>
+                  </div>
+                </header>
+
+                <div class="objective">
+                  <span class="o-id">O1</span>
+                  <h4>Derive a hierarchical, standardised representation of DHRC-100</h4>
+                  <div class="objective-body">
+                    <p class="aim">
+                      Organise DHRC-100 by each review’s own structure, standardise it against the
+                      2016 statutory guidance template, and store the result in a database linked to
+                      the case metadata in the Home Office DHR Library.
+                    </p>
+                    <p>
+                      DHRC-100 stores each review page by page. Using its checked headings and the
+                      sections they belong to, the content is organised by the document’s own
+                      hierarchy, with each section’s text grouped across page breaks. The original
+                      content, source references and layout are kept, so later stages can retrieve a
+                      section with everything nested under it. The result is intended for release in
+                      the DHRC-100 repository.
+                    </p>
+                    <p>
+                      A second, standardised form maps each section onto the overview report
+                      template in the 2016 guidance,<a class="cite" href="#ref-14">[14]</a> so the
+                      same material can be found in the same place in every review. Candidate
+                      template sections are found by heading, exact or fuzzy, and by meaning, using
+                      embeddings. An LLM then chooses one, following the candidate and re-ranking
+                      approach of Liu et al.<a class="cite" href="#ref-15">[15]</a> A section with
+                      no suitable match is kept and flagged as unmatched.
+                    </p>
+                    <p>
+                      All three forms go into one database, and each review is linked to its case
+                      metadata: the characteristics recorded alongside it in the DHR Library.<a
+                        class="cite"
+                        href="#ref-16"
+                        >[16]</a
+                      >
+                    </p>
+                    <figure class="flow wide">
+                      <svg viewBox="0 0 820 336" role="img" aria-labelledby="flow-1-title">
+                        <title id="flow-1-title">
+                          Stage 1 data flow. Page-based JSON from DHRC-100 has its blocks grouped by
+                          section, giving the hierarchical representation. Candidate template
+                          sections are matched by heading and embedding, and an LLM selects one,
+                          giving the standardised representation; sections with no match are
+                          flagged. All three representations go into a queryable database, linked
+                          per review to the Home Office DHR Library case metadata.
+                        </title>
+                        <defs>
+                          <marker
+                            id="head-1"
+                            viewBox="0 0 8 8"
+                            refX="7"
+                            refY="4"
+                            markerWidth="8"
+                            markerHeight="8"
+                            orient="auto-start-reverse"
+                          >
+                            <path class="head" d="M0 0L8 4L0 8z" />
+                          </marker>
+                        </defs>
+                        <rect class="box box-data" x="1" y="20" width="118" height="58" />
+                        <text x="60" y="44" text-anchor="middle">
+                          <tspan x="60">Page-based JSON</tspan>
+                          <tspan x="60" dy="17">(DHRC-100)</tspan>
+                        </text>
+                        <rect class="box box-process" x="141" y="20" width="118" height="58" />
+                        <text x="200" y="44" text-anchor="middle">
+                          <tspan x="200">Group blocks</tspan>
+                          <tspan x="200" dy="17">by section</tspan>
+                        </text>
+                        <rect class="box box-data" x="281" y="20" width="118" height="58" />
+                        <text x="340" y="44" text-anchor="middle">
+                          <tspan x="340">Hierarchical</tspan>
+                          <tspan x="340" dy="17">representation</tspan>
+                        </text>
+                        <rect class="box box-process" x="421" y="20" width="118" height="58" />
+                        <text x="480" y="44" text-anchor="middle">
+                          <tspan x="480">Candidate match</tspan>
+                          <tspan x="480" dy="17">(fuzzy, embedding)</tspan>
+                        </text>
+                        <rect class="box box-process" x="561" y="20" width="118" height="58" />
+                        <text x="620" y="44" text-anchor="middle">
+                          <tspan x="620">LLM selects</tspan>
+                          <tspan x="620" dy="17">template section</tspan>
+                        </text>
+                        <rect class="box box-data" x="701" y="20" width="118" height="58" />
+                        <text x="760" y="44" text-anchor="middle">
+                          <tspan x="760">Standardised</tspan>
+                          <tspan x="760" dy="17">(2016 template)</tspan>
+                        </text>
+                        <path class="line" d="M119 49H139" marker-end="url(#head-1)" />
+                        <path class="line" d="M259 49H279" marker-end="url(#head-1)" />
+                        <path class="line" d="M399 49H419" marker-end="url(#head-1)" />
+                        <path class="line" d="M539 49H559" marker-end="url(#head-1)" />
+                        <path class="line" d="M679 49H699" marker-end="url(#head-1)" />
+                        <path class="line" d="M620 78V124" marker-end="url(#head-1)" />
+                        <text class="small" x="628" y="106">no match</text>
+                        <rect class="box box-flag" x="561" y="126" width="118" height="44" />
+                        <text x="620" y="144" text-anchor="middle">
+                          <tspan x="620">Unmatched,</tspan>
+                          <tspan x="620" dy="17">flagged</tspan>
+                        </text>
+                        <rect class="box box-data" x="300" y="200" width="220" height="52" />
+                        <text x="410" y="222" text-anchor="middle">
+                          <tspan x="410" class="strong">Queryable database</tspan>
+                          <tspan x="410" dy="17">(three representations)</tspan>
+                        </text>
+                        <path class="line" d="M60 78V226H298" marker-end="url(#head-1)" />
+                        <path class="line" d="M340 78V198" marker-end="url(#head-1)" />
+                        <path class="line" d="M760 78V226H522" marker-end="url(#head-1)" />
+                        <rect class="box box-external" x="320" y="286" width="180" height="48" />
+                        <text x="410" y="306" text-anchor="middle">
+                          <tspan x="410">Home Office DHR Library</tspan>
+                          <tspan x="410" dy="17">case metadata</tspan>
+                        </text>
+                        <path class="line" d="M410 286V254" marker-end="url(#head-1)" />
+                        <text class="small" x="418" y="274">linked per review</text>
+                      </svg>
+                      <figcaption class="data">
+                        Data flow of Stage 1, from Appendix B of the specification.
+                        <a href="/status/#stage-1-now">See how far Stage 1 has got</a>
+                      </figcaption>
+                    </figure>
+                  </div>
+                </div>
+              </article>
+
+              <article class="stage-panel" id="stage-2" aria-labelledby="stage-2-title">
+                <header class="stage-head">
+                  <span class="stage-n" aria-hidden="true">2</span>
+                  <div>
+                    <h3 id="stage-2-title">Knowledge organisation</h3>
+                    <p class="stage-output">A DHR knowledge base, kept as an LLM wiki</p>
+                  </div>
+                </header>
+
+                <div class="objective">
+                  <span class="o-id">O2</span>
+                  <h4>Construct an LLM wiki DHR knowledge base</h4>
+                  <div class="objective-body">
+                    <p class="aim">
+                      Develop an agent-maintained LLM wiki over the DHRC-100 database that organises
+                      entities, events and recommendations into persistent, linked pages.
+                    </p>
+                    <p>
+                      The wiki is built from the Stage 1 database, which stays read-only so the
+                      original evidence is preserved. The wiki agent never reads the case metadata:
+                      that is kept back to evaluate the later objectives.
+                    </p>
+                    <p>
+                      The agent works through each review section by section, recording
+                      relationships, events and recommendations, and organises them into linked
+                      pages. Relationship and event pages connect reviews that share
+                      characteristics, which is what the analysis in Stage 3 relies on.
+                    </p>
+                    <p>
+                      The order of events matters: the lead-up to a death often involves several
+                      agencies and a sequence of contacts and decisions. LLMs remain weaker than
+                      people at temporal reasoning and putting events in order,<a
+                        class="cite"
+                        href="#ref-17"
+                        >[17]</a
+                      ><a class="cite" href="#ref-18">[18]</a> so event pages store dates three
+                      ways, and relations such as before, after or overlapping are stored
+                      explicitly.<a class="cite" href="#ref-19">[19]</a> The overall order is worked
+                      out in code, not by the LLM, and a sample of timelines is checked against
+                      chronologies written by hand.
+                    </p>
+                    <dl class="date-example" aria-label="How one date is stored (an example)">
+                      <div>
+                        <dt>As written in the review</dt>
+                        <dd>“in the spring of 2018”</dd>
+                      </div>
+                      <div>
+                        <dt>Normalised interval</dt>
+                        <dd>2018-03-01 to 2018-05-31</dd>
+                      </div>
+                      <div>
+                        <dt>Confidence</dt>
+                        <dd>approximate</dd>
+                      </div>
+                    </dl>
+                    <p class="note">An invented example, to show the three parts.</p>
+                    <p>
+                      Before the wiki is used, a separate LLM judge checks every generated claim
+                      against the Stage 1 passages it cites. The judge is a different model from the
+                      wiki agent, to reduce the bias of models favouring their own output,<a
+                        class="cite"
+                        href="#ref-13"
+                        >[13]</a
+                      >
+                      and its verdicts are checked against a sample of claims labelled by hand.<a
+                        class="cite"
+                        href="#ref-12"
+                        >[12]</a
+                      >
+                    </p>
+                    <figure class="flow wide">
+                      <svg viewBox="0 -14 820 314" role="img" aria-labelledby="flow-2-title">
+                        <title id="flow-2-title">
+                          Stage 2 data flow. Review sections from the read-only Stage 1 database go
+                          to an LLM agent that extracts people, agencies, relationships, events and
+                          recommendations. A second step builds or rebuilds linked pages with
+                          citations into the DHR wiki, which holds pages, an index and a change log.
+                          A separate LLM judge checks claims and citations against cited Stage 1
+                          blocks; human evaluators assess the judge first. The checked wiki goes to
+                          Stage 3 analysis.
+                        </title>
+                        <defs>
+                          <marker
+                            id="head-2"
+                            viewBox="0 0 8 8"
+                            refX="7"
+                            refY="4"
+                            markerWidth="8"
+                            markerHeight="8"
+                            orient="auto-start-reverse"
+                          >
+                            <path class="head" d="M0 0L8 4L0 8z" />
+                          </marker>
+                        </defs>
+                        <rect class="box box-data" x="1" y="112" width="150" height="66" />
+                        <text x="76" y="138" text-anchor="middle">
+                          <tspan x="76" class="strong">Stage 1 database</tspan>
+                          <tspan x="76" dy="18" class="small">read-only</tspan>
+                        </text>
+                        <rect class="box box-process" x="210" y="26" width="170" height="74" />
+                        <text x="295" y="50" text-anchor="middle">
+                          <tspan x="295">Extract from each review,</tspan>
+                          <tspan x="295" dy="17">section by section</tspan>
+                          <tspan x="295" dy="18" class="small">LLM agent</tspan>
+                        </text>
+                        <rect class="box box-process" x="210" y="198" width="170" height="74" />
+                        <text x="295" y="224" text-anchor="middle">
+                          <tspan x="295">Build or rebuild</tspan>
+                          <tspan x="295" dy="17">linked pages</tspan>
+                          <tspan x="295" dy="18" class="small">LLM agent</tspan>
+                        </text>
+                        <rect class="box box-data" x="440" y="198" width="170" height="74" />
+                        <text x="525" y="224" text-anchor="middle">
+                          <tspan x="525" class="strong">DHR wiki</tspan>
+                          <tspan x="525" dy="17">pages, index, change log</tspan>
+                          <tspan x="525" dy="18" class="small">rebuilt from Stage 1</tspan>
+                        </text>
+                        <rect class="box box-process" x="440" y="26" width="170" height="74" />
+                        <text x="525" y="50" text-anchor="middle">
+                          <tspan x="525">Check claims</tspan>
+                          <tspan x="525" dy="17">and citations</tspan>
+                          <tspan x="525" dy="18" class="small">separate LLM judge</tspan>
+                        </text>
+                        <rect class="box box-external" x="669" y="26" width="150" height="74" />
+                        <text x="744" y="58" text-anchor="middle">
+                          <tspan x="744">Human evaluators</tspan>
+                          <tspan x="744" dy="18" class="small">outside Stage 2</tspan>
+                        </text>
+                        <rect class="box box-external" x="669" y="198" width="150" height="74" />
+                        <text x="744" y="230" text-anchor="middle">
+                          <tspan x="744">Stage 3 analysis</tspan>
+                          <tspan x="744" dy="18" class="small">outside Stage 2</tspan>
+                        </text>
+                        <path class="line" d="M151 130H180V63H208" marker-end="url(#head-2)" />
+                        <path class="line" d="M151 160H180V235H208" marker-end="url(#head-2)" />
+                        <path class="line" d="M295 100V196" marker-end="url(#head-2)" />
+                        <path class="line" d="M380 235H438" marker-end="url(#head-2)" />
+                        <path class="line" d="M525 198V102" marker-end="url(#head-2)" />
+                        <path class="line" d="M610 235H667" marker-end="url(#head-2)" />
+                        <path class="line" d="M669 63H612" marker-end="url(#head-2)" />
+                        <path class="line" d="M590 100V150H744V196" marker-end="url(#head-2)" />
+                        <path class="line" d="M76 112V10H560V24" marker-end="url(#head-2)" />
+                        <text class="small" x="160" y="-2">cited Stage 1 blocks</text>
+                        <text class="small" x="303" y="140">people, agencies,</text>
+                        <text class="small" x="303" y="154">relationships, events,</text>
+                        <text class="small" x="303" y="168">recommendations</text>
+                        <text class="small" x="410" y="226" text-anchor="middle">cited</text>
+                        <text class="small" x="614" y="140">checked first</text>
+                      </svg>
+                      <figcaption class="data">
+                        Data flow of Stage 2, simplified from Figure 2 of the specification.
+                      </figcaption>
+                    </figure>
+                  </div>
+                </div>
+              </article>
+
+              <article class="stage-panel" id="stage-3" aria-labelledby="stage-3-title">
+                <header class="stage-head">
+                  <span class="stage-n" aria-hidden="true">3</span>
+                  <div>
+                    <h3 id="stage-3-title">Analysis</h3>
+                    <p class="stage-output">Patterns and insights across reviews</p>
+                  </div>
+                </header>
+
+                <div class="objective">
+                  <span class="o-id">O3</span>
+                  <h4>
+                    Identify case similarities, temporal patterns, recurring lessons and critical
+                    events across DHRs
+                  </h4>
+                  <div class="objective-body">
+                    <p class="aim">
+                      Use the knowledge base to compare case circumstances, analyse patterns over
+                      time in behaviour and agency responses, find recurring recommendations and
+                      lessons, and extract critical events.
+                    </p>
+                    <p>
+                      The wiki supports four analysis tasks. An LLM judge assesses the results of
+                      the first three against the source material, and a sample of its judgements is
+                      checked by hand.
+                    </p>
+                  </div>
+                </div>
+
+                <ol class="tasks" aria-label="Analysis tasks">
+                  <li class="task">
+                    <span class="o-id">T1</span>
+                    <h4>Case similarities</h4>
+                    <p class="task-q">
+                      Which reviews are comparable to a given case or profile, and why?
+                    </p>
+                    <dl class="task-detail">
+                      <div>
+                        <dt>Why</dt>
+                        <dd>
+                          To judge whether lessons from comparable cases apply, drawing on
+                          case-based reasoning.<a class="cite" href="#ref-20">[20]</a>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>How</dt>
+                        <dd>
+                          An LLM compares reviews retrieved from the wiki on victim-perpetrator
+                          relationship, sequences of behaviour and agency involvement.
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Produces</dt>
+                        <dd>A set of reviews, with their similarities and key differences.</dd>
+                      </div>
+                      <div>
+                        <dt>Judged on</dt>
+                        <dd>
+                          How relevant the chosen reviews are, and how accurate the comparisons.
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                  <li class="task">
+                    <span class="o-id">T2</span>
+                    <h4>Temporal patterns</h4>
+                    <p class="task-q">
+                      Which sequences and timings of behaviour and agency response recur across
+                      cases?
+                    </p>
+                    <dl class="task-detail">
+                      <div>
+                        <dt>Why</dt>
+                        <dd>
+                          To find chances to recognise risk and respond, drawing on Monckton-Smith’s
+                          temporal analysis.<a class="cite" href="#ref-21">[21]</a>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>How</dt>
+                        <dd>
+                          Sequential pattern mining finds orders of events that recur across
+                          timelines, even when the events aren’t consecutive.<a
+                            class="cite"
+                            href="#ref-22"
+                            >[22]</a
+                          >
+                          The intervals between them are then compared.
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Produces</dt>
+                        <dd>The recurring patterns, and how often each appears across reviews.</dd>
+                      </div>
+                      <div>
+                        <dt>Judged on</dt>
+                        <dd>
+                          Whether the source chronologies support each pattern, and whether the
+                          counts are right.
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                  <li class="task">
+                    <span class="o-id">T3</span>
+                    <h4>Recurring recommendations and lessons</h4>
+                    <p class="task-q">
+                      Which recommendations and lessons recur, and which agencies do they concern?
+                    </p>
+                    <dl class="task-detail">
+                      <div>
+                        <dt>Why</dt>
+                        <dd>
+                          To find areas for improvement that agencies share, drawing on thematic
+                          analysis of DHR recommendations.<a class="cite" href="#ref-5">[5]</a>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>How</dt>
+                        <dd>
+                          A codebook from the literature sets the starting themes.<a
+                            class="cite"
+                            href="#ref-23"
+                            >[23]</a
+                          >
+                          LLM topic modelling sorts material into them and proposes new ones.<a
+                            class="cite"
+                            href="#ref-24"
+                            >[24]</a
+                          >
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Produces</dt>
+                        <dd>Themes, how often each recurs, and the agencies each concerns.</dd>
+                      </div>
+                      <div>
+                        <dt>Judged on</dt>
+                        <dd>
+                          Consistency with the codebook, the right agencies, and the right counts.
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                  <li class="task">
+                    <span class="o-id">T4</span>
+                    <h4>Critical events, guided by case metadata</h4>
+                    <p class="task-q">Which events back up a case’s recorded characteristics?</p>
+                    <dl class="task-detail">
+                      <div>
+                        <dt>Why</dt>
+                        <dd>
+                          To make the evidence for each recorded characteristic easy to inspect,
+                          following earlier work on critical events.<a class="cite" href="#ref-7"
+                            >[7]</a
+                          >
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>How</dt>
+                        <dd>
+                          An LLM looks for events in the wiki that support the case metadata, then
+                          greedy set cover keeps the smallest set that still covers it.
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Produces</dt>
+                        <dd>
+                          The smallest set of events from which the case metadata can be rebuilt.
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Judged on</dt>
+                        <dd>
+                          How much of the case metadata a model can rebuild from those events
+                          alone.<a class="cite" href="#ref-7">[7]</a>
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                </ol>
+                <p class="note">
+                  Case metadata is only an input to T4. It is kept out of the wiki and the RAG
+                  index, and in T4 the wiki and RAG get the same guidance.
+                </p>
+              </article>
+
+              <article class="stage-panel" id="stage-4" aria-labelledby="stage-4-title">
+                <header class="stage-head">
+                  <span class="stage-n" aria-hidden="true">4</span>
+                  <div>
+                    <h3 id="stage-4-title">Evaluation</h3>
+                    <p class="stage-output">How well it works, and how robust it is</p>
+                  </div>
+                </header>
+
+                <div class="objective">
+                  <span class="o-id">O4</span>
+                  <h4>Investigate model comprehension through synthetic reconstruction</h4>
+                  <div class="objective-body">
+                    <p class="aim">
+                      Generate case narratives from structured review information to measure what is
+                      lost, how much depends on context, and where bias may lie, by hiding details
+                      in a controlled way.
+                    </p>
+                    <p>
+                      For each review in a random sample, an LLM writes a case narrative from the
+                      parts Stage 2 extracted, without seeing the source text. It does this three
+                      times:
+                    </p>
+                    <ol class="trio">
+                      <li>
+                        <strong>Unmasked</strong><span>Every extracted detail is given.</span>
+                      </li>
+                      <li>
+                        <strong>Masked</strong
+                        ><span
+                          >Demographic, geographic, relational or timing details are left out, one
+                          kind at a time.</span
+                        >
+                      </li>
+                      <li>
+                        <strong>Substituted</strong
+                        ><span
+                          >One attribute, such as the victim’s ethnicity, is swapped and everything
+                          else is fixed.<a class="cite" href="#ref-25">[25]</a
+                          ><a class="cite" href="#ref-26">[26]</a></span
+                        >
+                      </li>
+                    </ol>
+                    <p>
+                      Each narrative is compared with the source review one atomic fact at a time,<a
+                        class="cite"
+                        href="#ref-11"
+                        >[11]</a
+                      >
+                      to see what the model keeps, leaves out or invents, and how that changes with
+                      the information it has. The LLM judges this needs have known weaknesses: their
+                      verdicts can vary on the same task, and they tend to favour text they
+                      generated themselves.<a class="cite" href="#ref-12">[12]</a
+                      ><a class="cite" href="#ref-13">[13]</a>
+                    </p>
+                  </div>
+                </div>
+
+                <div class="objective">
+                  <span class="o-id">O5</span>
+                  <h4>Evaluate analytical performance</h4>
+                  <div class="objective-body">
+                    <p class="aim">
+                      Compare the wiki with a RAG baseline over the source documents on the Stage 3
+                      tasks, measuring the difference task by task.
+                    </p>
+                    <p>
+                      The four tasks run twice, once with the wiki agent and once with conventional
+                      RAG. Following Cochran, a single-round vector RAG runs first, with stronger
+                      variants tested later.<a class="cite" href="#ref-4">[4]</a> Both use the same
+                      Stage 1 corpus, LLM and questions, so any difference reflects how knowledge is
+                      organised and retrieved, and how many tokens each uses.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="objective">
+                  <span class="o-id">O6</span>
+                  <h4>
+                    Investigate inferred case characteristics through label-free critical event
+                    extraction
+                  </h4>
+                  <div class="objective-body">
+                    <p class="aim">
+                      Find characteristics the reviews support but their case metadata leaves out,
+                      and count the reviews affected in each existing category.
+                    </p>
+                    <p>
+                      Unlike T4, the model is never given the review’s case metadata. For each
+                      review:
+                    </p>
+                    <ol class="numbered">
+                      <li>The wiki agent selects the critical events.</li>
+                      <li>
+                        From those events, an LLM proposes tags within the existing case metadata
+                        categories.
+                      </li>
+                      <li>
+                        Reviewers check each tag against the source event it cites, to confirm it is
+                        supported.
+                      </li>
+                      <li>The tags are compared with the review’s recorded case metadata.</li>
+                      <li>
+                        Supported tags missing from the record become candidates to investigate,
+                        with a count of reviews for each category.
+                      </li>
+                    </ol>
+                  </div>
+                </div>
+              </article>
+            </div>
           </div>
-          <table class="ref-table">
-            <thead>
-              <tr>
-                <th scope="col">Document</th>
-                <th scope="col">From</th>
-                <th scope="col">Format</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>
-                  <a href="https://homicide-review.homeoffice.gov.uk/"
-                    >Domestic Homicide Review Library</a
+        </div>
+      </section>
+
+      <section class="part part--ground" id="how-we-work" aria-labelledby="work-title">
+        <div class="wrap">
+          <header class="part-head">
+            <h2 id="work-title">How we work</h2>
+            <p>Evidence decides what gets built, and short cycles keep the project on schedule.</p>
+          </header>
+
+          <div class="method">
+            <div>
+              <h3>Build, test, learn, in two-week sprints</h3>
+              <div class="prose">
+                <p>
+                  The project pairs Design Science Research, which builds and evaluates artefacts
+                  that address a problem,<a class="cite" href="#ref-27">[27]</a> with Agile
+                  development.<a class="cite" href="#ref-28">[28]</a> What each evaluation finds can
+                  change what is built next.
+                </p>
+                <p>
+                  Sprints, adapted from Scrum,<a class="cite" href="#ref-29">[29]</a> last two weeks
+                  and end in a meeting with the supervisor to review progress, deal with problems
+                  and set priorities. Following Lean principles,<a class="cite" href="#ref-30"
+                    >[30]</a
                   >
-                </td>
-                <td>Home Office</td>
-                <td>Website</td>
-              </tr>
-              <tr>
-                <td>
-                  <a
-                    href="https://assets.publishing.service.gov.uk/media/5a80be88e5274a2e87dbb923/DHR-Statutory-Guidance-161206.pdf"
-                    >Multi-agency statutory guidance for the conduct of Domestic Homicide Reviews</a
+                  about ten reviews go through the whole pipeline before it runs on all 100, so
+                  problems joining the stages together show up early.
+                </p>
+              </div>
+            </div>
+            <div>
+              <figure class="flow">
+                <svg viewBox="0 0 640 230" role="img" aria-labelledby="sprint-title">
+                  <title id="sprint-title">
+                    The two-week sprint: plan the sprint and agree priorities, develop with pair
+                    programming and regression tests, test the pipeline on a sample of reviews, then
+                    review the sprint with the supervisor. The plan is then adapted, refining
+                    priorities and design, and the next sprint begins.
+                  </title>
+                  <defs>
+                    <marker
+                      id="head-3"
+                      viewBox="0 0 8 8"
+                      refX="7"
+                      refY="4"
+                      markerWidth="8"
+                      markerHeight="8"
+                      orient="auto-start-reverse"
+                    >
+                      <path class="head" d="M0 0L8 4L0 8z" />
+                    </marker>
+                  </defs>
+                  <rect class="box box-process" x="1" y="20" width="140" height="70" />
+                  <text x="71" y="48" text-anchor="middle">
+                    <tspan x="71" class="strong">Plan sprint</tspan>
+                    <tspan x="71" dy="18" class="small">agree priorities</tspan>
+                  </text>
+                  <rect class="box box-process" x="167" y="20" width="140" height="70" />
+                  <text x="237" y="48" text-anchor="middle">
+                    <tspan x="237" class="strong">Develop</tspan>
+                    <tspan x="237" dy="18" class="small">pairs, regression tests</tspan>
+                  </text>
+                  <rect class="box box-process" x="333" y="20" width="140" height="70" />
+                  <text x="403" y="48" text-anchor="middle">
+                    <tspan x="403" class="strong">Test pipeline</tspan>
+                    <tspan x="403" dy="18" class="small">pilot on a sample</tspan>
+                  </text>
+                  <rect class="box box-data" x="499" y="20" width="140" height="70" />
+                  <text x="569" y="48" text-anchor="middle">
+                    <tspan x="569" class="strong">Sprint review</tspan>
+                    <tspan x="569" dy="18" class="small">supervisor feedback</tspan>
+                  </text>
+                  <path class="line" d="M141 55H165" marker-end="url(#head-3)" />
+                  <path class="line" d="M307 55H331" marker-end="url(#head-3)" />
+                  <path class="line" d="M473 55H497" marker-end="url(#head-3)" />
+                  <path class="line" d="M569 90V168H392" marker-end="url(#head-3)" />
+                  <rect class="box box-flag" x="248" y="144" width="142" height="50" />
+                  <text x="319" y="164" text-anchor="middle">
+                    <tspan x="319" class="strong">Adapt plan</tspan>
+                    <tspan x="319" dy="17" class="small">priorities, design</tspan>
+                  </text>
+                  <path class="line" d="M248 168H71V92" marker-end="url(#head-3)" />
+                  <text class="small" x="0" y="222">One sprint is two weeks.</text>
+                </svg>
+              </figure>
+              <figure>
+                <div class="sample" data-total="100" data-pilot="10" aria-hidden="true"></div>
+                <figcaption class="data">
+                  About 10 of the 100 reviews go through every stage first.
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <div class="method">
+            <div>
+              <h3>Every change reviewed</h3>
+              <div class="prose">
+                <p>
+                  The team works in one shared GitHub repository, on short-lived branches. A pull
+                  request needs passing automated tests and approval from another member before it
+                  merges.<a class="cite" href="#ref-31">[31]</a>
+                </p>
+                <p>
+                  Fixed parts such as parsers are checked against outputs already verified;<a
+                    class="cite"
+                    href="#ref-32"
+                    >[32]</a
                   >
-                </td>
-                <td>Home Office, December 2016</td>
-                <td>PDF</td>
-              </tr>
-              <tr>
-                <td>
-                  <a
-                    href="https://assets.publishing.service.gov.uk/media/6aaa9fdd086ce7c57b81859e/Domestic_abuse_related_death_review_statutory_guidance1609.pdf"
-                    >Domestic Abuse Related Death Review: statutory guidance</a
+                  LLM parts are tested on fixed test sets. Pipeline scripts reach a self-hosted
+                  Windmill server from Git, and models run on Warwick’s Blythe GPU cluster.
+                </p>
+              </div>
+            </div>
+            <figure class="flow">
+              <svg viewBox="0 0 640 230" role="img" aria-labelledby="workflow-title">
+                <title id="workflow-title">
+                  Development workflow: an agreed task with defined requirements, a feature branch
+                  where it is implemented and tested, a pull request with CI tests and peer review,
+                  and a merge to main after approval. Failed tests or requested changes send the
+                  work back to the branch. Merged scripts are synced to Windmill, which runs GPU
+                  jobs on the Blythe cluster through SLURM.
+                </title>
+                <defs>
+                  <marker
+                    id="head-4"
+                    viewBox="0 0 8 8"
+                    refX="7"
+                    refY="4"
+                    markerWidth="8"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
                   >
-                </td>
-                <td>Home Office, September 2026</td>
-                <td>PDF</td>
-              </tr>
-              <tr>
-                <td>
-                  <a
-                    href="https://assets.publishing.service.gov.uk/media/6a9fb119f36e1f225ecb7eca/_final__Annex_A_-_DARDR_Template.docx"
-                    >DARDR report template (Annex A)</a
+                    <path class="head" d="M0 0L8 4L0 8z" />
+                  </marker>
+                </defs>
+                <rect class="box box-process" x="1" y="20" width="140" height="66" />
+                <text x="71" y="46" text-anchor="middle">
+                  <tspan x="71" class="strong">Agreed task</tspan>
+                  <tspan x="71" dy="18" class="small">requirements</tspan>
+                </text>
+                <rect class="box box-process" x="167" y="20" width="140" height="66" />
+                <text x="237" y="46" text-anchor="middle">
+                  <tspan x="237" class="strong">Feature branch</tspan>
+                  <tspan x="237" dy="18" class="small">implement, test</tspan>
+                </text>
+                <rect class="box box-process" x="333" y="20" width="140" height="66" />
+                <text x="403" y="46" text-anchor="middle">
+                  <tspan x="403" class="strong">Pull request</tspan>
+                  <tspan x="403" dy="18" class="small">CI and peer review</tspan>
+                </text>
+                <rect class="box box-data" x="499" y="20" width="140" height="66" />
+                <text x="569" y="46" text-anchor="middle">
+                  <tspan x="569" class="strong">Merge to main</tspan>
+                  <tspan x="569" dy="18" class="small">after approval</tspan>
+                </text>
+                <path class="line" d="M141 53H165" marker-end="url(#head-4)" />
+                <path class="line" d="M307 53H331" marker-end="url(#head-4)" />
+                <path class="line" d="M473 53H497" marker-end="url(#head-4)" />
+                <path class="line" d="M403 86V110H237V88" marker-end="url(#head-4)" />
+                <text class="small" x="248" y="126">if tests fail or changes are asked for</text>
+                <path class="line" d="M569 86V156" marker-end="url(#head-4)" />
+                <rect class="box box-data" x="499" y="158" width="140" height="62" />
+                <text x="569" y="182" text-anchor="middle">
+                  <tspan x="569" class="strong">Windmill</tspan>
+                  <tspan x="569" dy="18" class="small">scripts synced from Git</tspan>
+                </text>
+                <rect class="box box-external" x="299" y="158" width="160" height="62" />
+                <text x="379" y="182" text-anchor="middle">
+                  <tspan x="379" class="strong">Blythe HPC</tspan>
+                  <tspan x="379" dy="18" class="small">GPU jobs through SLURM</tspan>
+                </text>
+                <path class="line" d="M499 189H461" marker-end="url(#head-4)" />
+              </svg>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="part" id="people" aria-labelledby="people-title">
+        <div class="wrap">
+          <header class="part-head">
+            <h2 id="people-title">People</h2>
+            <p>
+              Each stage has a lead, and responsibilities overlap where needed. Regular meetings
+              settle problems and record decisions.
+            </p>
+          </header>
+          <div class="people">
+            <div class="person">
+              <span class="stage-tag data">Stage 1</span>
+              <h3>Rowan Shields</h3>
+              <p>Corpus preparation and the database.</p>
+            </div>
+            <div class="person">
+              <span class="stage-tag data">Stage 2</span>
+              <h3>Arushi Khemani</h3>
+              <p>The LLM wiki.</p>
+            </div>
+            <div class="person">
+              <span class="stage-tag data">Stage 3</span>
+              <h3>Kieran Saphir</h3>
+              <p>Analysis. Also project manager, drawing on his experience with DHRs.</p>
+            </div>
+            <div class="person">
+              <span class="stage-tag data">Stage 4</span>
+              <h3>Mikaeel Haaris</h3>
+              <p>Evaluation.</p>
+            </div>
+          </div>
+          <div class="around">
+            <div>
+              <h4>Supervisor</h4>
+              <p>
+                Gabriele Pergola meets the team at the end of each sprint and helps with
+                communication with the client.
+              </p>
+            </div>
+            <div>
+              <h4>Client</h4>
+              <p>
+                The <a href="https://fcn.police.uk/">Forensic Capability Network</a> coordinates
+                forensic science across the 43 police forces of England and Wales.
+              </p>
+            </div>
+            <div>
+              <h4>Domain experts</h4>
+              <p>
+                Where available, Dr Kelly Bracewell and Professor Khatidja Chantler will assess
+                whether themes are relevant and synthetic material is realistic.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="part part--ground" id="care" aria-labelledby="care-title">
+        <div class="wrap">
+          <header class="part-head">
+            <h2 id="care-title">Handled with care</h2>
+            <p>
+              These are accounts of real deaths. The team treats victims, their families and the
+              reviews’ authors with respect, and never contacts victims’ families.
+            </p>
+          </header>
+          <div class="care">
+            <div>
+              <h3>Only Domestic Homicide Reviews</h3>
+              <div class="prose">
+                <p>
+                  DHRC-100 and the DHR Library hold only Domestic Homicide Reviews, so the newer
+                  Domestic Abuse Related Death Reviews are out of scope. Findings may not carry over
+                  to the wider range of deaths those reviews cover.<a class="cite" href="#ref-2"
+                    >[2]</a
                   >
-                </td>
-                <td>Home Office, September 2026</td>
-                <td>Word</td>
-              </tr>
-              <tr>
-                <td>
-                  <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
-                    >LLM wiki</a
+                </p>
+              </div>
+            </div>
+            <div>
+              <h3>The law</h3>
+              <div class="prose">
+                <p>
+                  The reviews are published under the Open Government Licence v3.0, which allows
+                  reuse with attribution.<a class="cite" href="#ref-37">[37]</a> Each report’s terms
+                  are checked against its Community Safety Partnership’s guidelines.
+                </p>
+                <p>
+                  They contain personal information, so processing follows the UK GDPR and the Data
+                  Protection Act 2018,<a class="cite" href="#ref-38">[38]</a> with public task as
+                  the lawful basis and the research safeguards of Article 89. Synthetic data is
+                  checked for near copies of real reviews.
+                </p>
+              </div>
+            </div>
+            <div>
+              <h3>Our responsibilities</h3>
+              <ul class="pledges">
+                <li>Report results honestly and accurately</li>
+                <li>Acknowledge sources and earlier work</li>
+                <li>Handle data lawfully, and only as much as needed</li>
+                <li>Report suspected data breaches or policy breaches promptly</li>
+                <li>Treat victims, their families and review authors with respect</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Looking after each other</h3>
+              <div class="prose">
+                <p>
+                  Reading homicide narratives risks secondary trauma. The team takes breaks, checks
+                  in with each other and uses the university’s wellbeing services when needed.
+                </p>
+                <p>
+                  Analysing published documents doesn’t need formal ethical review;<a
+                    class="cite"
+                    href="#ref-39"
+                    >[39]</a
                   >
-                </td>
-                <td>Andrej Karpathy</td>
-                <td>Website</td>
-              </tr>
-              <tr>
-                <td>
-                  <a
-                    href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"
-                    >Open Government Licence v3.0</a
-                  >
-                </td>
-                <td>The National Archives</td>
-                <td>Website</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-      </div>
+                  the team will check again if outside annotators or experts label data. Every claim
+                  an LLM makes is treated as unverified until it has been checked, in the wiki and
+                  in any other work an agent helps with.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="part" id="references" aria-labelledby="references-title">
+        <div class="wrap">
+          <header class="part-head">
+            <h2 id="references-title">References</h2>
+            <p>As cited in the project specification.</p>
+          </header>
+          <ol class="refs">
+            <li id="ref-1">
+              <span class="n">[1]</span
+              ><span
+                >UK Government, Domestic Violence, Crime and Victims Act 2004, c. 28, section 9, in
+                force 13 April 2011.
+                <a href="https://www.legislation.gov.uk/ukpga/2004/28/section/9"
+                  >legislation.gov.uk</a
+                ></span
+              >
+            </li>
+            <li id="ref-2">
+              <span class="n">[2]</span
+              ><span
+                >Home Office, “Domestic abuse related death review statutory guidance,” Sep. 2026.
+                <a
+                  href="https://assets.publishing.service.gov.uk/media/6aaa9fdd086ce7c57b81859e/Domestic_abuse_related_death_review_statutory_guidance1609.pdf"
+                  >PDF</a
+                ></span
+              >
+            </li>
+            <li id="ref-3">
+              <span class="n">[3]</span
+              ><span
+                >P. Lewis et al., “Retrieval-augmented generation for knowledge-intensive NLP
+                tasks,” in Advances in Neural Information Processing Systems, vol. 33, 2020, pp.
+                9459–9474.
+                <a
+                  href="https://proceedings.neurips.cc/paper/2020/hash/6b493230205f780e1bc26945df7481e5-Abstract.html"
+                  >NeurIPS</a
+                ></span
+              >
+            </li>
+            <li id="ref-4">
+              <span class="n">[4]</span
+              ><span
+                >T. O. Cochran, “Single-round vector RAG vs an LLM-compiled wiki: A preregistered
+                comparison on a small multi-domain research corpus,” preprint, 2026.
+                <a href="https://arxiv.org/abs/2605.18490v3">arXiv:2605.18490v3</a></span
+              >
+            </li>
+            <li id="ref-5">
+              <span class="n">[5]</span
+              ><span
+                >K. Chantler, V. Baker, K. Heyes and C. Gunby, “Domestic homicide oversight
+                mechanism for the criminal justice system: Summary report,” Domestic Abuse
+                Commissioner, 2023. HALT Study Briefings.
+                <a href="https://e-space.mmu.ac.uk/633461">e-space.mmu.ac.uk</a></span
+              >
+            </li>
+            <li id="ref-6">
+              <span class="n">[6]</span
+              ><span
+                >D. Cook, E. A. Cook, S. Roy, R. Thiara and R. Selvarajah, “A collaborative approach
+                to applying natural language processing (NLP) to domestic homicide reviews (DHRs): A
+                study protocol,” PLOS ONE, vol. 21, no. 5, 2026, e0348948.
+                <a href="https://doi.org/10.1371/journal.pone.0348948"
+                  >doi:10.1371/journal.pone.0348948</a
+                ></span
+              >
+            </li>
+            <li id="ref-7">
+              <span class="n">[7]</span
+              ><span
+                >G. Pergola, K. Saphir, D. Holodnikov and C. Lyu, “DHR Corpus 100: A human-validated
+                machine-readable corpus of domestic homicide reviews,” unpublished manuscript,
+                University of Warwick, 2026.</span
+              >
+            </li>
+            <li id="ref-8">
+              <span class="n">[8]</span
+              ><span
+                >A. Karpathy, “LLM wiki,” GitHub Gist.
+                <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
+                  >gist.github.com</a
+                ></span
+              >
+            </li>
+            <li id="ref-9">
+              <span class="n">[9]</span
+              ><span
+                >B. Jiménez Gutiérrez, Y. Shu, Y. Gu, M. Yasunaga and Y. Su, “HippoRAG:
+                Neurobiologically inspired long-term memory for large language models,” in Advances
+                in Neural Information Processing Systems, vol. 37, 2024, pp. 59532–59569.
+                <a href="https://doi.org/10.52202/079017-1902">doi:10.52202/079017-1902</a></span
+              >
+            </li>
+            <li id="ref-10">
+              <span class="n">[10]</span
+              ><span
+                >W. Xu, Z. Liang, K. Mei, H. Gao, J. Tan and Y. Zhang, “A-MEM: Agentic memory for
+                LLM agents,” in Advances in Neural Information Processing Systems, vol. 38, 2025,
+                pp. 20004–20031.
+                <a href="https://doi.org/10.52202/085713-0593">doi:10.52202/085713-0593</a></span
+              >
+            </li>
+            <li id="ref-11">
+              <span class="n">[11]</span
+              ><span
+                >S. Min et al., “FActScore: Fine-grained atomic evaluation of factual precision in
+                long form text generation,” in Proc. EMNLP 2023, pp. 12076–12100.
+                <a href="https://doi.org/10.18653/v1/2023.emnlp-main.741"
+                  >doi:10.18653/v1/2023.emnlp-main.741</a
+                ></span
+              >
+            </li>
+            <li id="ref-12">
+              <span class="n">[12]</span
+              ><span
+                >A. Bavaresco et al., “LLMs instead of human judges? A large scale empirical study
+                across 20 NLP evaluation tasks,” in Proc. ACL 2025 (Volume 2: Short Papers), pp.
+                238–255.
+                <a href="https://doi.org/10.18653/v1/2025.acl-short.20"
+                  >doi:10.18653/v1/2025.acl-short.20</a
+                ></span
+              >
+            </li>
+            <li id="ref-13">
+              <span class="n">[13]</span
+              ><span
+                >A. Panickssery, S. R. Bowman and S. Feng, “LLM evaluators recognize and favor their
+                own generations,” in Advances in Neural Information Processing Systems, vol. 37,
+                2024, pp. 68772–68802.
+                <a href="https://doi.org/10.52202/079017-2197">doi:10.52202/079017-2197</a></span
+              >
+            </li>
+            <li id="ref-14">
+              <span class="n">[14]</span
+              ><span
+                >Home Office, “Multi-agency statutory guidance for the conduct of domestic homicide
+                reviews,” Dec. 2016.
+                <a
+                  href="https://assets.publishing.service.gov.uk/media/5a80be88e5274a2e87dbb923/DHR-Statutory-Guidance-161206.pdf"
+                  >PDF</a
+                ></span
+              >
+            </li>
+            <li id="ref-15">
+              <span class="n">[15]</span
+              ><span
+                >Y. Liu, E. H. Peña, A. S. R. Santos, E. Wu and J. Freire, “Magneto: Combining small
+                and large language models for schema matching,” Proceedings of the VLDB Endowment,
+                vol. 18, no. 8, pp. 2681–2694, 2025.
+                <a href="https://doi.org/10.14778/3742728.3742757"
+                  >doi:10.14778/3742728.3742757</a
+                ></span
+              >
+            </li>
+            <li id="ref-16">
+              <span class="n">[16]</span
+              ><span
+                >Home Office, “Search DHRs: Search the Domestic Homicide Review Library.”
+                <a href="https://homicide-review.homeoffice.gov.uk/"
+                  >homicide-review.homeoffice.gov.uk</a
+                ></span
+              >
+            </li>
+            <li id="ref-17">
+              <span class="n">[17]</span
+              ><span
+                >Z. Chu et al., “TimeBench: A comprehensive evaluation of temporal reasoning
+                abilities in large language models,” in Proc. ACL 2024 (Volume 1: Long Papers), pp.
+                1204–1228.
+                <a href="https://doi.org/10.18653/v1/2024.acl-long.66"
+                  >doi:10.18653/v1/2024.acl-long.66</a
+                ></span
+              >
+            </li>
+            <li id="ref-18">
+              <span class="n">[18]</span
+              ><span
+                >Y. Wang and Y. Zhao, “TRAM: Benchmarking temporal reasoning for large language
+                models,” in Findings of ACL 2024, pp. 6389–6415.
+                <a href="https://doi.org/10.18653/v1/2024.findings-acl.382"
+                  >doi:10.18653/v1/2024.findings-acl.382</a
+                ></span
+              >
+            </li>
+            <li id="ref-19">
+              <span class="n">[19]</span
+              ><span
+                >J. F. Allen, “Maintaining knowledge about temporal intervals,” Communications of
+                the ACM, vol. 26, no. 11, pp. 832–843, 1983.
+                <a href="https://doi.org/10.1145/182.358434">doi:10.1145/182.358434</a></span
+              >
+            </li>
+            <li id="ref-20">
+              <span class="n">[20]</span
+              ><span
+                >A. Aamodt and E. Plaza, “Case-based reasoning: Foundational issues, methodological
+                variations, and system approaches,” AI Communications, vol. 7, no. 1, pp. 39–59,
+                1994.
+                <a href="https://doi.org/10.3233/AIC-1994-7104">doi:10.3233/AIC-1994-7104</a></span
+              >
+            </li>
+            <li id="ref-21">
+              <span class="n">[21]</span
+              ><span
+                >J. Monckton-Smith, “Intimate partner femicide: Using Foucauldian analysis to track
+                an eight stage relationship progression to homicide,” Violence Against Women, vol.
+                26, no. 11, pp. 1267–1285, 2020.
+                <a href="https://doi.org/10.1177/1077801219863876"
+                  >doi:10.1177/1077801219863876</a
+                ></span
+              >
+            </li>
+            <li id="ref-22">
+              <span class="n">[22]</span
+              ><span
+                >R. Agrawal and R. Srikant, “Mining sequential patterns,” in Proc. 11th
+                International Conference on Data Engineering, 1995, pp. 3–14.
+                <a href="https://doi.org/10.1109/ICDE.1995.380415"
+                  >doi:10.1109/ICDE.1995.380415</a
+                ></span
+              >
+            </li>
+            <li id="ref-23">
+              <span class="n">[23]</span
+              ><span
+                >H.-F. Hsieh and S. E. Shannon, “Three approaches to qualitative content analysis,”
+                Qualitative Health Research, vol. 15, no. 9, pp. 1277–1288, 2005.
+                <a href="https://doi.org/10.1177/1049732305276687"
+                  >doi:10.1177/1049732305276687</a
+                ></span
+              >
+            </li>
+            <li id="ref-24">
+              <span class="n">[24]</span
+              ><span
+                >C. M. Pham, A. Hoyle, S. Sun, P. Resnik and M. Iyyer, “TopicGPT: A prompt-based
+                topic modeling framework,” in Proc. NAACL 2024 (Volume 1: Long Papers), pp.
+                2956–2984.
+                <a href="https://doi.org/10.18653/v1/2024.naacl-long.164"
+                  >doi:10.18653/v1/2024.naacl-long.164</a
+                ></span
+              >
+            </li>
+            <li id="ref-25">
+              <span class="n">[25]</span
+              ><span
+                >S. Garg, V. Perot, N. Limtiaco, A. Taly, E. H. Chi and A. Beutel, “Counterfactual
+                fairness in text classification through robustness,” in Proc. AAAI/ACM Conference on
+                AI, Ethics, and Society, 2019, pp. 219–226.
+                <a href="https://doi.org/10.1145/3306618.3317950"
+                  >doi:10.1145/3306618.3317950</a
+                ></span
+              >
+            </li>
+            <li id="ref-26">
+              <span class="n">[26]</span
+              ><span
+                >I. O. Gallegos et al., “Bias and fairness in large language models: A survey,”
+                Computational Linguistics, vol. 50, no. 3, pp. 1097–1179, 2024.
+                <a href="https://doi.org/10.1162/coli_a_00524">doi:10.1162/coli_a_00524</a></span
+              >
+            </li>
+            <li id="ref-27">
+              <span class="n">[27]</span
+              ><span
+                >K. Peffers, T. Tuunanen, M. A. Rothenberger and S. Chatterjee, “A design science
+                research methodology for information systems research,” Journal of Management
+                Information Systems, vol. 24, no. 3, pp. 45–77, 2007.
+                <a href="https://doi.org/10.2753/MIS0742-1222240302"
+                  >doi:10.2753/MIS0742-1222240302</a
+                ></span
+              >
+            </li>
+            <li id="ref-28">
+              <span class="n">[28]</span
+              ><span
+                >K. Beck et al., “Manifesto for agile software development.”
+                <a href="https://agilemanifesto.org/">agilemanifesto.org</a></span
+              >
+            </li>
+            <li id="ref-29">
+              <span class="n">[29]</span
+              ><span
+                >K. Schwaber and J. Sutherland, “The Scrum Guide.”
+                <a href="https://scrumguides.org/docs/scrumguide/v2020/2020-Scrum-Guide-US.pdf"
+                  >PDF</a
+                ></span
+              >
+            </li>
+            <li id="ref-30">
+              <span class="n">[30]</span
+              ><span
+                >M. Poppendieck and T. Poppendieck, Lean Software Development: An Agile Toolkit.
+                Boston, MA: Addison-Wesley, 2003.</span
+              >
+            </li>
+            <li id="ref-31">
+              <span class="n">[31]</span
+              ><span
+                >A. Bacchelli and C. Bird, “Expectations, outcomes, and challenges of modern code
+                review,” in Proc. 35th International Conference on Software Engineering, 2013, pp.
+                712–721.
+                <a href="https://doi.org/10.1109/ICSE.2013.6606617"
+                  >doi:10.1109/ICSE.2013.6606617</a
+                ></span
+              >
+            </li>
+            <li id="ref-32">
+              <span class="n">[32]</span
+              ><span
+                >M. C. Feathers, Working Effectively with Legacy Code. Upper Saddle River, NJ:
+                Prentice Hall PTR, 2004.</span
+              >
+            </li>
+            <li id="ref-33">
+              <span class="n">[33]</span
+              ><span
+                >A. L. Mendelow, “Environmental scanning: the impact of the stakeholder concept,” in
+                Proc. Second International Conference on Information Systems, 1981.
+                <a href="https://aisel.aisnet.org/icis1981/20">aisel.aisnet.org</a></span
+              >
+            </li>
+            <li id="ref-34">
+              <span class="n">[34]</span
+              ><span
+                >Z. Ji et al., “Survey of hallucination in natural language generation,” ACM
+                Computing Surveys, vol. 55, no. 12, 2023, art. 248.
+                <a href="https://doi.org/10.1145/3571730">doi:10.1145/3571730</a></span
+              >
+            </li>
+            <li id="ref-35">
+              <span class="n">[35]</span
+              ><span
+                >D. Zhang et al., “Useful memories become faulty when continuously updated by LLMs,”
+                2026.
+                <a href="https://doi.org/10.48550/arXiv.2605.12978"
+                  >doi:10.48550/arXiv.2605.12978</a
+                ></span
+              >
+            </li>
+            <li id="ref-36">
+              <span class="n">[36]</span
+              ><span
+                >Y. Chang, K. Lo, T. Goyal and M. Iyyer, “BooookScore: A systematic exploration of
+                book-length summarization in the era of LLMs,” in Proc. ICLR 2024.
+                <a href="https://openreview.net/forum?id=7Ttk3RzDeu">OpenReview</a></span
+              >
+            </li>
+            <li id="ref-37">
+              <span class="n">[37]</span
+              ><span
+                >The National Archives, “Open Government Licence v3.0.”
+                <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"
+                  >nationalarchives.gov.uk</a
+                ></span
+              >
+            </li>
+            <li id="ref-38">
+              <span class="n">[38]</span
+              ><span
+                >UK Government, “Data protection.”
+                <a href="https://www.gov.uk/data-protection">gov.uk</a></span
+              >
+            </li>
+            <li id="ref-39">
+              <span class="n">[39]</span
+              ><span
+                >University of Warwick, Department of Computer Science, “Ethical consent.”
+                <a href="https://warwick.ac.uk/fac/sci/dcs/teaching/ethics">warwick.ac.uk</a></span
+              >
+            </li>
+            <li id="ref-40">
+              <span class="n">[40]</span
+              ><span
+                >Home Office, “Multi-agency statutory guidance for the conduct of domestic homicide
+                reviews, appendix three: Overview report template,” Dec. 2016, pp. 35–38.
+                <a
+                  href="https://assets.publishing.service.gov.uk/media/5a80be88e5274a2e87dbb923/DHR-Statutory-Guidance-161206.pdf"
+                  >PDF</a
+                ></span
+              >
+            </li>
+          </ol>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
-      <div class="wrap">
+      <div class="wrap footer-inner">
         <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
-        <div class="footer-names" aria-label="Team">
-          <span>Mikaeel Haaris</span><span>Arushi Khemani</span><span>Kieran Saphir</span
-          ><span>Rowan Shields</span>
+        <div>
+          <div class="footer-names" aria-label="Team">
+            <span>Mikaeel Haaris</span><span>Arushi Khemani</span><span>Kieran Saphir</span
+            ><span>Rowan Shields</span>
+          </div>
+          <p class="footer-small">
+            Fourth year group project (CS407), Department of Computer Science, University of
+            Warwick, 2026 to 2027. Client: the
+            <a href="https://fcn.police.uk/">Forensic Capability Network</a>. Supervisor: Gabriele
+            Pergola. <a href="/status/">Status</a> and <a href="/workspace/">workspace</a>.
+          </p>
         </div>
-        <p class="footer-small">
-          Fourth year group project (CS407), Department of Computer Science, University of Warwick,
-          2026 to 2027. Client: the
-          <a href="https://fcn.police.uk/">Forensic Capability Network</a>. Supervisor: Gabriele
-          Pergola. <a href="/about/">About the project</a>
-        </p>
       </div>
     </footer>
-    <script src="/assets/motion.js"></script>
   </body>
 </html>

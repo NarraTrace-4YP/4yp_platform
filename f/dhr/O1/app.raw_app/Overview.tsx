@@ -135,23 +135,27 @@ const STEPS: Step[] = [
   },
 ]
 
+// Which steps are built, in order (the app's sidebar shows this as a meter).
+export const STEP_BUILT = STEPS.map((step) => step.built)
+
+const REPRESENTATIONS = [
+  { name: 'Page-based', what: 'Each review as Datalab produced it, page by page.', built: true },
+  { name: 'Hierarchical', what: 'Blocks grouped under their sections.', built: true },
+  { name: 'Standardised', what: 'Sections mapped to the 2016 template.', built: false },
+]
+
 export default function Overview({ status, goTo }: Props) {
-  const representations = [
-    { name: 'Page-based (as Datalab produced it)', built: true },
-    { name: 'Hierarchical (blocks grouped by section)', built: true },
-    { name: 'Standardised (sections mapped to the 2016 template)', built: false },
-  ]
+  const next = STEPS.findIndex((step) => !step.built)
   return (
     <div className="page">
-      <section className="intro">
-        <h2>What O1 is</h2>
-        <blockquote>
-          <strong>O1. Derive a hierarchical, standardised representation of DHRC-100.</strong>{' '}
+      <header className="overview-head">
+        <p className="aim">
+          <strong>O1.</strong> Derive a hierarchical, standardised representation of DHRC-100.
           Organise the DHRC-100 corpus by document hierarchy and standardise against the 2016
           statutory guidance template (Appendix D). Store the result in a database linked to the
           Home Office DHR Library case metadata.
-        </blockquote>
-        <p>
+        </p>
+        <p className="lead">
           In other words: take the reviews as Datalab extracted them (page by page), rebuild each
           one’s structure (which paragraphs belong to which section), line every section up with the
           sections the 2016 guidance says an overview report should have, and keep all of it in one
@@ -159,18 +163,57 @@ export default function Overview({ status, goTo }: Props) {
           wiki) is built from this database; the case metadata is kept back to check the wiki’s
           answers later.
         </p>
-      </section>
+      </header>
+
+      <ol className="step-strip" aria-label="The five steps">
+        {STEPS.map((step, index) => (
+          <li key={step.title} className={step.built ? 'built' : index === next ? 'next' : ''}>
+            {/* A button, not a #link: the app runs inside Windmill's frame, which owns the URL. */}
+            <button
+              onClick={() =>
+                document
+                  .getElementById(`step-${index + 1}`)
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+            >
+              <span className="strip-n">{index + 1}</span>
+              <span className="strip-title">{step.title}</span>
+              <span className="strip-state">
+                {step.built ? 'Built' : index === next ? 'Next' : 'Not built yet'}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+
+      <ul className="representations" aria-label="The three representations">
+        {REPRESENTATIONS.map((r) => (
+          <li key={r.name} className={r.built ? 'built' : ''}>
+            <strong>{r.name}</strong>
+            <span>{r.what}</span>
+            <span className="chip-line">{r.built ? 'In the database' : 'From step 5'}</span>
+          </li>
+        ))}
+        <li className="built">
+          <strong>Case metadata</strong>
+          <span>Each review linked to what the DHR Library records about it.</span>
+          <span className="chip-line">In the database</span>
+        </li>
+      </ul>
 
       <section>
-        <h2>The O1 pipeline, step by step</h2>
+        <h2>The steps</h2>
         <p className="muted">
-          These are the steps in the specification’s Stage 1 diagram (Appendix B). The first four
-          are built and can be run from the <a onClick={() => goTo('run')}>Run</a> tab; the rest
-          come next.
+          The steps in the specification’s Stage 1 diagram (Appendix B). The built ones can be run
+          from the <a onClick={() => goTo('run')}>Run</a> view.
         </p>
         <ol className="pipeline">
           {STEPS.map((step, index) => (
-            <li key={step.title} className={step.built ? 'step built' : 'step planned'}>
+            <li
+              key={step.title}
+              id={`step-${index + 1}`}
+              className={step.built ? 'step built' : 'step planned'}
+            >
               <div className="step-number">{index + 1}</div>
               <div className="step-body">
                 <div className="step-head">
@@ -183,83 +226,28 @@ export default function Overview({ status, goTo }: Props) {
                 {step.built && status && step.now && (
                   <div className="step-now">{step.now(status)}</div>
                 )}
-                {step.see && (
-                  <button className="link-button" onClick={() => goTo(step.see!.tab)}>
-                    {step.see.label} →
-                  </button>
-                )}
-                {step.run && (
-                  <button className="link-button" onClick={() => goTo('run')}>
-                    Run it →
-                  </button>
+                {(step.see || step.run) && (
+                  <div className="step-actions">
+                    {step.see && (
+                      <button className="link-button" onClick={() => goTo(step.see!.tab)}>
+                        {step.see.label}
+                      </button>
+                    )}
+                    {step.run && (
+                      <button className="link-button" onClick={() => goTo('run')}>
+                        Run it
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </li>
           ))}
-          <li className="step result">
-            <div className="step-number">⛁</div>
-            <div className="step-body">
-              <h3>Result: one queryable database, three representations</h3>
-              <ul className="checklist">
-                {representations.map((r) => (
-                  <li key={r.name} className={r.built ? 'yes' : 'no'}>
-                    {r.built ? '✓' : '○'} {r.name}
-                  </li>
-                ))}
-                <li className="yes">✓ Each review linked to its case metadata</li>
-              </ul>
-            </div>
-          </li>
         </ol>
       </section>
 
       <section>
-        <h2>Using this app</h2>
-        <dl className="guide">
-          <dt>
-            <a onClick={() => goTo('data')}>Data</a>
-          </dt>
-          <dd>
-            The two datasets, what is loaded, where each review came from, and where to find it all
-            in the database.
-          </dd>
-          <dt>
-            <a onClick={() => goTo('run')}>Run</a>
-          </dt>
-          <dd>
-            Each pipeline explained, with a button to run it and its progress as it runs. “Run all
-            of O1” runs every built step in order.
-          </dd>
-          <dt>
-            <a onClick={() => goTo('cases')}>Cases</a>
-          </dt>
-          <dd>Every review, with every case detail the DHR Library holds for it.</dd>
-          <dt>
-            <a onClick={() => goTo('attributes')}>Attributes</a>
-          </dt>
-          <dd>
-            How often each case detail appears in each dataset compared with the whole library: how
-            representative each dataset is.
-          </dd>
-          <dt>
-            <a onClick={() => goTo('sections')}>Sections</a>
-          </dt>
-          <dd>
-            What grouping by section produced: each review’s sections as an outline, and each
-            section’s text with everything nested inside it.
-          </dd>
-          <dt>
-            <a onClick={() => goTo('candidates')}>Template candidates</a>
-          </dt>
-          <dd>
-            The template sections each review section might be, with their heading and text scores,
-            review by review or template section by template section.
-          </dd>
-        </dl>
-      </section>
-
-      <section>
-        <h2>Changing the code (including this app)</h2>
+        <h2>Changing the code, including this app</h2>
         <p>
           The team code lives in GitHub (NarraTrace-4YP/4yp_platform), and you can change it in
           either place:

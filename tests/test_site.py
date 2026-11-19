@@ -86,7 +86,15 @@ def is_local(ref: str) -> bool:
 
 
 def test_the_pages_exist():
-    for name in ("index.html", "about/index.html", "404.html", "robots.txt", "favicon.ico"):
+    for name in (
+        "index.html",
+        "status/index.html",
+        "workspace/index.html",
+        "about/index.html",  # moved: sends visitors to the project page
+        "404.html",
+        "robots.txt",
+        "favicon.ico",
+    ):
         assert (SITE / name).is_file(), f"site/{name} is missing"
     assert O1_PAGE.is_file()
 
@@ -157,7 +165,7 @@ def test_caddy_serves_the_site():
 def test_service_links_render_for_local_and_server_environments(
     scheme, domain, expected_windmill, expected_mlflow
 ):
-    html = (SITE / "index.html").read_text(encoding="utf-8")
+    html = (SITE / "workspace" / "index.html").read_text(encoding="utf-8")
     rendered = html.replace('{{env "PUBLIC_SCHEME"}}', scheme).replace('{{env "DOMAIN"}}', domain)
     assert expected_windmill in rendered
     assert expected_mlflow in rendered

@@ -728,7 +728,7 @@ The repository is organised by the purpose of each component.
 |---|---|
 | `f/dhr/` | Team pipelines, Windmill scripts and shared Python modules. |
 | `tests/` | Automated tests for pipeline code and the website. |
-| `site/` | Project landing page and about page. |
+| `site/` | The project website: the project page, Status (edited by hand), Workspace (team links) and the O1 page. |
 | `wmill.yaml` | Windmill workspace deployment configuration. |
 | `.github/workflows/deploy.yml` | GitHub Actions workflow for deploying `main` to Windmill. |
 | `server/` | Server provisioning and maintenance scripts. |

@@ -4,25 +4,42 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>O1: Corpus preparation | NarraTrace</title>
+    <meta name="description" content="The O1 app: Stage 1 of NarraTrace, corpus preparation." />
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#f3f2f2" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NarraTrace" />
+    <meta
+      property="og:description"
+      content="A novel application of LLM wikis to the analysis of Domestic Homicide Reviews. A CS407 group project, University of Warwick."
+    />
+    <meta property="og:url" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/o1/' />
+    <meta property="og:image" content='{{env "PUBLIC_SCHEME"}}://{{env "DOMAIN"}}/assets/og.png' />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="/assets/fonts/archivo-variable-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="/assets/site.css" />
   </head>
   <body class="app-page">
     <a class="skip" href="#main">Skip to content</a>
 
     <header class="masthead">
-      <div class="wrap">
+      <div class="wrap masthead-inner">
         <a class="wordmark" href="/"><span>Narra</span><span class="trace">Trace</span></a>
         <nav class="nav" aria-label="Main">
-          <a href="/">Home</a>
-          <a href="/#tools">Tools</a>
-          <a href="/#docs">Documentation</a>
-          <a href="/#progress">Progress</a>
-          <a href="/about/">About</a>
-          <a href="/o1/" aria-current="page">O1</a>
+          <a href="/">Project</a>
+          <a href="/status/">Status</a>
+          <a href="/o1/" aria-current="page">O1 app</a>
+          <a href="/workspace/">Workspace</a>
         </nav>
       </div>
     </header>
