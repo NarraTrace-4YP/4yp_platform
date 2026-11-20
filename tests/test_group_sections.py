@@ -289,3 +289,100 @@ def test_block_that_is_only_an_image_gives_its_description():
 def test_heading_split_over_lines_is_one_line():
     raw = review([heading(0, 0, "PART ONE<br>BACKGROUND", level=1)])
     assert group(raw, "checked").sections[0].heading == "PART ONE BACKGROUND"
+
+
+# ----------------------------------------------------------------- tidying Datalab's headings
+
+
+def test_running_header_read_as_a_heading_no_longer_cuts_the_section():
+    # "Safer Town DHR" heads every page, and Datalab read it as a heading each time, so the
+    # rest of each page fell under it. Left out, "1 Introduction" runs across all pages.
+    intro = "/page/0/SectionHeader/1"
+    pages = []
+    for p in range(4):
+        running = f"/page/{p}/SectionHeader/0"
+        page = [heading(p, 0, "Safer Town DHR", tag="h1", trail={"1": intro} if p else {})]
+        if p == 0:
+            page.append(heading(0, 1, "1 Introduction", tag="h1"))
+        page.append(text(p, 2, f"Words {p}", trail={"1": intro if p == 0 else running}))
+        pages.append(page)
+    grouped = group(review(*pages), "datalab")
+    assert grouped.n_running_headings == 4
+    assert [s.heading for s in grouped.sections] == ["1 Introduction"]
+    assert {b.section_id for b in grouped.blocks} == {intro}
+    assert (grouped.sections[0].first_page, grouped.sections[0].last_page) == (0, 3)
+
+
+def test_marking_at_the_top_of_a_page_is_left_out_and_the_subsection_carries_on():
+    h1, h2 = "/page/0/SectionHeader/0", "/page/0/SectionHeader/1"
+    mark = "/page/1/SectionHeader/0"
+    raw = review(
+        [
+            heading(0, 0, "2 Findings", tag="h1"),
+            heading(0, 1, "2.1 Police", tag="h2", trail={"1": h1}),
+            text(0, 2, "Police words", trail={"1": h1, "2": h2}),
+        ],
+        [
+            heading(1, 0, "OFFICIAL SENSITIVE", tag="h2", trail={"1": h1}),
+            text(1, 1, "More police words", trail={"1": h1, "2": mark}),
+        ],
+    )
+    grouped = group(raw, "datalab")
+    assert grouped.n_running_headings == 1
+    assert grouped.blocks[-1].section_id == h2  # still in 2.1, across the page break
+
+
+def test_real_heading_at_the_top_of_a_few_pages_is_kept():
+    # "Analysis" starts pages 0, 2 and 4 (never two pages in a row): a real heading.
+    pages = []
+    for p in range(5):
+        if p % 2 == 0:
+            h = f"/page/{p}/SectionHeader/0"
+            pages.append([heading(p, 0, "Analysis", tag="h1"), text(p, 1, "W", trail={"1": h})])
+        else:
+            pages.append([text(p, 0, "W", trail={"1": f"/page/{p - 1}/SectionHeader/0"})])
+    grouped = group(review(*pages), "datalab")
+    assert grouped.n_running_headings == 0 and len(grouped.sections) == 3
+
+
+def test_paragraph_and_bare_number_read_as_headings_become_text():
+    h1 = "/page/0/SectionHeader/0"
+    long_one = "/page/0/SectionHeader/2"
+    number = "/page/0/SectionHeader/4"
+    year = "/page/0/SectionHeader/6"
+    raw = review(
+        [
+            heading(0, 0, "Chronology", tag="h1"),
+            text(0, 1, "Words", trail={"1": h1}),
+            heading(0, 2, "A sentence " * 20, tag="h2", trail={"1": h1}),
+            text(0, 3, "More", trail={"1": h1, "2": long_one}),
+            heading(0, 4, "3.2", tag="h2", trail={"1": h1}),
+            text(0, 5, "Still more", trail={"1": h1, "2": number}),
+            heading(0, 6, "2016", tag="h2", trail={"1": h1}),
+            text(0, 7, "In 2016", trail={"1": h1, "2": year}),
+        ]
+    )
+    grouped = group(raw, "datalab")
+    assert grouped.n_demoted_headings == 2
+    assert [s.heading for s in grouped.sections] == ["Chronology", "2016"]  # a year is kept
+    kinds = {b.block_id: (b.block_type, b.section_id) for b in grouped.blocks}
+    assert kinds[long_one] == ("Text", h1) and kinds[number] == ("Text", h1)
+    assert kinds["/page/0/Text/5"] == ("Text", h1)
+
+
+def test_checked_headings_are_never_tidied():
+    raw = review(
+        [heading(0, 0, "3.2", level=1), text(0, 1, "W", section="/page/0/SectionHeader/0")]
+    )
+    assert [s.heading for s in group(raw, "checked").sections] == ["3.2"]
+
+
+def test_a_review_that_tidying_breaks_is_grouped_as_before(monkeypatch):
+    from f.dhr.O1.group_blocks_by_section import group_blocks_by_section as stage
+
+    def broken(blocks):
+        return [b for b in blocks if b["id"] != H1], 1, 0  # drops a heading others sit under
+
+    monkeypatch.setattr(stage, "tidy_datalab_headings", broken)
+    grouped = group(CHECKED, "datalab")
+    assert grouped.n_running_headings == 0 and len(grouped.sections) == 3

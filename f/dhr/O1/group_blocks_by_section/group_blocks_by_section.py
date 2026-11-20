@@ -16,7 +16,10 @@ section ranges before storing blocks and sections in the ``corpus`` schema.
 A heading printed after its own child content may move to the section's start,
 but only across blocks already assigned to that section. Invalid DHRC-100
 reviews fail the run; invalid DHRC-RAW reviews are skipped and reported.
-Regrouping replaces the current hierarchy and removes its template candidates.
+Datalab sometimes reads a running page header or a protective marking ("OFFICIAL
+SENSITIVE"), a paragraph, or a bare number as a heading; for DHRC-RAW those are tidied first
+(tidy_datalab_headings), so they don't cut the real sections into pieces.
+Regrouping replaces the current hierarchy and removes its template candidates and choices.
 Use ``check_only`` to validate without storing, or the CLI's ``--file`` option
 to inspect a single review without connecting to the database.
 """
@@ -27,7 +30,7 @@ import argparse
 import json
 import re
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -165,6 +168,8 @@ class Grouped:
     n_page_furniture: int  # page headers and footers left out
     n_loose_headings: int  # heading blocks outside the hierarchy, kept as ordinary blocks
     n_moved_headings: int = 0  # headings moved up to the start of their own section
+    n_running_headings: int = 0  # Datalab "headings" that were running headers (left out)
+    n_demoted_headings: int = 0  # Datalab "headings" that were text: kept as ordinary blocks
 
 
 def reading_order(raw: dict) -> tuple[list[dict], int]:
@@ -239,6 +244,99 @@ def datalab_structure(blocks: list[dict]) -> tuple[dict, list, list[str]]:
     return headings, sections, problems
 
 
+# Tidying Datalab's headings (DHRC-RAW only; DHRC-100's were checked by the team).
+EDGE_BLOCKS = 2  # a running header or footer is among the first or last blocks of its page
+RUNNING_PAGES = 3  # ...and the same words head at least this many pages, each next to another
+# (a running header repeats page after page; a real heading such as "Analysis" that happens
+# to start a few pages of one review doesn't)
+MARKING = re.compile(
+    r"official[\s-]*sensitive|\brestricted\b|\bconfidential\b|not for (?:further )?"
+    r"(?:distribution|publication)|anonymi[sz]ed (?:copy|version)|\bdraft\b|page \d+",
+    re.IGNORECASE,
+)
+MARKING_CHARS = 80  # a marking is short; a longer heading that mentions one is kept
+LONG_HEADING_CHARS = 150  # longer than this, a "heading" is a paragraph
+YEAR = re.compile(r"(?:19|20)\d\d")  # a year heading ("2016") groups a chronology: kept
+
+
+def _trail(block: dict) -> dict[int, str] | None:
+    try:
+        return {int(k): v for k, v in (block.get("section_hierarchy") or {}).items()}
+    except (TypeError, ValueError, AttributeError):
+        return None  # datalab_structure reports it
+
+
+def _running_key(text: str) -> str:
+    return re.sub(r"[\d\W_]+", " ", text.lower()).strip()
+
+
+def tidy_datalab_headings(blocks: list[dict]) -> tuple[list[dict], int, int]:
+    """Datalab's headings without the ones that aren't: returns (blocks, how many running
+    headers were left out, how many headings became ordinary text).
+
+    - A running header or footer, or a protective marking, read as a heading: among the first
+      or last EDGE_BLOCKS blocks of its page, and either the same words head RUNNING_PAGES
+      or more pages next to one another, or it is a short marking ("OFFICIAL SENSITIVE"). It
+      is left out like a page header.
+    - A paragraph (over LONG_HEADING_CHARS) or a bare number ("1.2"; a year is kept) read as
+      a heading: it stays, as an ordinary block.
+    Datalab put the blocks after such a "heading" under it, so their section_hierarchy is
+    rewritten to carry on the section that was running before it: a page header no longer
+    starts a new section on every page."""
+    edge = set()
+    by_page: dict[int, list[int]] = defaultdict(list)
+    for i, block in enumerate(blocks):
+        by_page[block["page"]].append(i)
+    for indices in by_page.values():
+        edge.update(indices[:EDGE_BLOCKS] + indices[-EDGE_BLOCKS:])
+    pages: dict[str, set] = defaultdict(set)
+    for i, block in enumerate(blocks):
+        if block["block_type"] == HEADING and i in edge:
+            pages[_running_key(heading_text(block))].add(block["page"])
+    running_keys = {
+        key
+        for key, found in pages.items()
+        if key and sum(p - 1 in found or p + 1 in found for p in found) >= RUNNING_PAGES
+    }
+    running, demoted = set(), set()
+    for i, block in enumerate(blocks):
+        if block["block_type"] != HEADING:
+            continue
+        words = heading_text(block).strip()
+        key = _running_key(words)
+        if i in edge and (
+            key in running_keys or (MARKING.search(words) and len(words) <= MARKING_CHARS)
+        ):
+            running.add(block["id"])
+        elif len(words) > LONG_HEADING_CHARS or (
+            not re.search(r"[A-Za-z]", words) and not YEAR.fullmatch(words)
+        ):
+            demoted.add(block["id"])
+    if not running and not demoted:
+        return blocks, 0, 0
+    gone, tidied, last = running | demoted, [], {}
+    for block in blocks:
+        if block["id"] in running:
+            continue
+        trail = _trail(block)
+        if trail is not None:
+            bad = [level for level, h in trail.items() if h in gone]
+            if bad:
+                cut = min(bad)
+                new = {k: v for k, v in trail.items() if k < cut}
+                deeper = {k: v for k, v in trail.items() if k > cut and v not in gone}
+                if all(last.get(k) == v for k, v in new.items()):  # same sections above
+                    below = min(deeper) if deeper else float("inf")
+                    new |= {k: v for k, v in last.items() if cut <= k < below}
+                trail = new | deeper
+                block = {**block, "section_hierarchy": trail}
+            last = trail
+        if block["id"] in demoted:
+            block = {**block, "block_type": "Text"}
+        tidied.append(block)
+    return tidied, len(running), len(demoted)
+
+
 STRUCTURES = {"checked": checked_structure, "datalab": datalab_structure}
 HEADINGS_FROM = {
     "checked": "the team's checked headings",
@@ -251,8 +349,27 @@ def group(raw: dict, headings_from: str) -> Grouped:
 
     Build section ancestry before adjusting heading order. Move a heading only
     across its own descendants, then validate order and section ranges. Raise
-    GroupError with a bounded list of problems instead of storing an invalid tree."""
+    GroupError with a bounded list of problems instead of storing an invalid tree. Datalab's
+    headings are tidied first; a review that no longer fits together once tidied (a few do)
+    is grouped as Datalab gave it, as before."""
     blocks, furniture = reading_order(raw)
+    if headings_from == "datalab":
+        tidied, n_running, n_demoted = tidy_datalab_headings(blocks)
+        if n_running or n_demoted:
+            try:
+                return _group(tidied, furniture + n_running, headings_from, n_running, n_demoted)
+            except GroupError:
+                pass  # tidied, it doesn't fit together: group it as Datalab gave it
+    return _group(blocks, furniture, headings_from)
+
+
+def _group(
+    blocks: list[dict],
+    furniture: int,
+    headings_from: str,
+    n_running: int = 0,
+    n_demoted: int = 0,
+) -> Grouped:
     headings, sections, problems = STRUCTURES[headings_from](blocks)
 
     ids = Counter(block["id"] for block in blocks)
@@ -374,7 +491,7 @@ def group(raw: dict, headings_from: str) -> Grouped:
                 n_blocks=direct[heading_id],
             )
         )
-    return Grouped(stored, grouped, furniture, len(loose), moved)
+    return Grouped(stored, grouped, furniture, len(loose), moved, n_running, n_demoted)
 
 
 def heading_text(block: dict) -> str:
@@ -410,6 +527,8 @@ class Totals:
     n_page_furniture: int = 0
     n_loose_headings: int = 0
     n_moved_headings: int = 0
+    n_running_headings: int = 0  # Datalab "headings" left out as running headers (DHRC-RAW)
+    n_demoted_headings: int = 0  # Datalab "headings" kept as ordinary text (DHRC-RAW)
 
     def add(self, grouped: Grouped) -> None:
         self.n_documents += 1
@@ -420,6 +539,8 @@ class Totals:
         self.n_page_furniture += grouped.n_page_furniture
         self.n_loose_headings += grouped.n_loose_headings
         self.n_moved_headings += grouped.n_moved_headings
+        self.n_running_headings += grouped.n_running_headings
+        self.n_demoted_headings += grouped.n_demoted_headings
 
 
 SECTION_COLUMNS = (
@@ -609,6 +730,12 @@ def run(dataset: str = "DHRC-100", check_only: bool = False) -> dict:
                 f"NOTE  {totals['n_moved_headings']} headings would be moved up to the start"
                 " of their own section"
             )
+        if totals["n_running_headings"] or totals["n_demoted_headings"]:
+            log_progress(
+                f"NOTE  {totals['n_running_headings']} running headers or markings read as"
+                f" headings would be left out; {totals['n_demoted_headings']} paragraphs or"
+                " bare numbers read as headings would be kept as text"
+            )
         if totals["skipped"]:
             log_progress(f"NOTE  {totals['n_skipped']} review(s) don't fit together:")
             for problem in totals["skipped"]:
@@ -633,6 +760,12 @@ def run(dataset: str = "DHRC-100", check_only: bool = False) -> dict:
         log_progress(
             f"NOTE  {totals['n_moved_headings']} headings printed below the start of their own"
             " section were moved up to its start"
+        )
+    if totals["n_running_headings"] or totals["n_demoted_headings"]:
+        log_progress(
+            f"NOTE  {totals['n_running_headings']} running headers or markings read as headings"
+            f" were left out; {totals['n_demoted_headings']} paragraphs or bare numbers read as"
+            " headings were kept as text"
         )
     if totals["skipped"]:
         log_progress(
