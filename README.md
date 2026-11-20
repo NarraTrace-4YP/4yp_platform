@@ -565,9 +565,13 @@ It identifies which headings and sections each text block belongs to, then place
 The source of the hierarchy depends on the dataset:
 
 - **DHRC-100:** Uses the headings, levels and relationships checked by the team.
-- **DHRC-RAW:** Uses the automatically extracted headings supplied by Datalab, which have not been manually checked.
+- **DHRC-RAW:** Uses the automatically extracted headings supplied by Datalab, which have not been manually checked. Some of Datalab's "headings" aren't headings, so they are tidied first (20 Nov 2026):
+  - A running page header or protective marking read as a heading (for example "OFFICIAL SENSITIVE", or the report's title repeated on every page) is left out like any other page header. It counts as one if it is among the first or last two blocks of its page, and either the same words head at least three pages next to one another, or it is a short marking. Without this, every such line started a new section, cutting real sections into page-sized pieces.
+  - A paragraph read as a heading (over 150 characters) or a bare number ("1.2") is kept as ordinary text. Year headings ("2016") in chronologies stay headings.
+  - The text after a removed heading carries on the section it was in. A review that no longer holds together once tidied is grouped as Datalab gave it.
+  - On the first run this left out 2,444 such headers and kept 1,343 headings as text. DHRC-RAW went from 48,242 sections to 44,460, all 702 reviews still grouped. DHRC-100 is unchanged.
 
-Run this step after loading a dataset. Reloading a dataset removes its previous section grouping, so it must be regenerated.
+Run this step after loading a dataset. Reloading a dataset removes its previous section grouping, so it must be regenerated. Regrouping a dataset removes its template candidates (step 4) and template choices (step 5), so run those again afterwards.
 
 The results are available through two database views:
 
