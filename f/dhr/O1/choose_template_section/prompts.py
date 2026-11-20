@@ -14,6 +14,10 @@ model's first-token probabilities, so every option's probability is kept):
    Several report sections can share one template section (a timeline and a timeline
    analysis both being the template's timeline, say); the answers are only labels, and the
    sections' text is never changed (the corpus.current_standardised view groups them).
+3. For a section that fits none of its template's sections and sits in no matched section,
+   or that the model matched with less than 50%: extra_prompt() asks whether it is one of a
+   few extra sections that many DHRs have but the templates don't name (glossary, front
+   matter...; refine.py). Z: still none.
 
 Every option is in the guidance's own order (appendix, then position), never in score order,
 so the letters don't hint at an answer. The options come before the section in a section
@@ -31,6 +35,7 @@ import re
 from dataclasses import dataclass, field
 
 PROMPT_VERSION = "choose-template-v2"
+EXTRA_PROMPT_VERSION = "extra-sections-v2"  # extra_prompt(): change it when that wording changes
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXY"  # one per option (a template has at most 21 sections)
 NONE = "Z"
 ACTION_PLAN = "action plan"  # the template kind that goes with a report
@@ -187,6 +192,20 @@ def document_prompt(document: Document, templates: list[Template], guidance_titl
     }
 
 
+def _report_section(section: Section) -> list[str]:
+    """A review section as a prompt shows it: where it sits, its heading, its subsections'
+    headings and the start of its own text."""
+    report = [f"Report: {section.doc_id}"]
+    if section.path:
+        report.append("Inside: " + shorten(" > ".join(section.path), PATH_CHARS))
+    report.append("Heading: " + (shorten(section.heading, HEADING_CHARS) or "(none)"))
+    if section.subsections:
+        report.append("Its subsections: " + shorten(section.subsections, SUBSECTION_CHARS))
+    text = shorten(section.text, TEXT_CHARS)
+    report.append("Start of its text: " + (text or "(no text of its own, only subsections)"))
+    return report
+
+
 def section_options(
     template: Template, plans: list[Template]
 ) -> list[tuple[Template, TemplateSection]]:
@@ -219,15 +238,7 @@ def section_prompt(
         lines.append(f"{line} ({guidance})" if guidance else line)
     lines.append(f"{NONE}. None of these")
 
-    report = [f"Report: {section.doc_id}"]
-    if section.path:
-        report.append("Inside: " + shorten(" > ".join(section.path), PATH_CHARS))
-    report.append("Heading: " + (shorten(section.heading, HEADING_CHARS) or "(none)"))
-    if section.subsections:
-        report.append("Its subsections: " + shorten(section.subsections, SUBSECTION_CHARS))
-    text = shorten(section.text, TEXT_CHARS)
-    report.append("Start of its text: " + (text or "(no text of its own, only subsections)"))
-
+    report = _report_section(section)
     plan = len({t.template for t, _ in options}) > 1
     user = "\n".join(
         [
@@ -259,6 +270,55 @@ def section_prompt(
             "section_id": section.section_id,
             "options": {
                 letter: [t.template, s.position] for letter, (t, s) in zip(letters, options)
+            },
+        },
+    }
+
+
+def extra_prompt(
+    section: Section, template: Template, extras: Template, guidance_title: str
+) -> dict:
+    """The third question, for a section the model said is none of its template's sections (and
+    that sits in no matched section) or matched with less than 50%: is it one of the extra
+    sections (refine.py), parts many DHRs have that the templates don't name, or none? One
+    letter per extra section offered (refine.asked_extras: not those the rules give)."""
+    options = sorted(extras.sections, key=lambda s: s.position)
+    if not options or len(options) > len(LETTERS):
+        raise ValueError(f"{extras.template} needs 1 to {len(LETTERS)} sections")
+    letters = LETTERS[: len(options)]
+    lines = []
+    for letter, s in zip(letters, options, strict=True):
+        guidance = shorten(s.guidance, GUIDANCE_CHARS)
+        lines.append(f"{letter}. {s.heading}" + (f" ({guidance})" if guidance else ""))
+    lines.append(f"{NONE}. None of these")
+    user = "\n".join(
+        [
+            f"The report section below, from a published DHR {template.kind} written to the "
+            f'{template.title} in "{guidance_title}", doesn\'t clearly fit any of that '
+            "template's sections. Many DHRs have parts the templates don't name. Which of these "
+            "is it?",
+            "",
+            "Judge by what the section is for and what it contains, not only by its heading. "
+            f"If none of them fits, choose {NONE}.",
+            "",
+            "EXTRA SECTIONS",
+            *lines,
+            "",
+            "REPORT SECTION",
+            *_report_section(section),
+            "",
+            "Answer with the letter only.",
+        ]
+    )
+    return {
+        "id": prompt_id(section.doc_id, section.section_id),
+        "messages": _messages(user),
+        "labels": [*letters, NONE],
+        "meta": {
+            "doc_id": section.doc_id,
+            "section_id": section.section_id,
+            "options": {
+                letter: [extras.template, s.position] for letter, s in zip(letters, options)
             },
         },
     }

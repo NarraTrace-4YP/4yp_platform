@@ -27,6 +27,7 @@ except ImportError:  # stand-ins for the workflow decorators, which only mark fu
 
 from f.dhr import blythe  # noqa: E402
 from f.dhr.O1.choose_template_section import choose_template_section as stage  # noqa: E402
+from f.dhr.O1.choose_template_section import refine as refining  # noqa: E402
 from f.dhr.O1.choose_template_section.prompts import (  # noqa: E402
     LETTERS,
     NONE,
@@ -37,6 +38,7 @@ from f.dhr.O1.choose_template_section.prompts import (  # noqa: E402
     TemplateSection,
     action_plans,
     document_prompt,
+    extra_prompt,
     interpret,
     interpret_document,
     section_options,
@@ -452,6 +454,297 @@ def test_state_command_only_takes_job_numbers():
         blythe.state_command("1; touch x")
 
 
+# ---------------------------------------------------------------- 3. refining the unmatched
+
+
+def test_extra_sections_per_guidance_keep_their_positions():
+    old, new = refining.extra_template("dhr-2016"), refining.extra_template("dardr-2026")
+    assert old.kind == new.kind == refining.EXTRA_KIND
+    assert [s.position for s in new.sections] == list(range(1, len(new.sections) + 1))
+    headings_old = [s.heading for s in old.sections]
+    assert "Equality and diversity" not in headings_old  # the 2016 template has its own
+    assert "Equality and diversity" in [s.heading for s in new.sections]
+    assert headings_old[0] == "Front matter" and len(new.sections) <= len(LETTERS)
+
+
+def test_extra_prompt_letters_the_extra_sections():
+    extras = refining.extra_template("dhr-2016")
+    prompt = extra_prompt(SECTION, REPORT, extras, GUIDANCE)
+    text = prompt["messages"][1]["content"]
+    assert "Overview-Report" in text and "A. Front matter (" in text
+    assert f"{NONE}. None of these" in text and SECTION.heading in text
+    assert prompt["labels"][-1] == NONE and len(prompt["labels"]) == len(extras.sections) + 1
+    assert prompt["meta"]["options"]["A"] == ["dhr-2016/extra", 1]
+    answer = interpret(
+        {"answer": "C", "probabilities": {"C": 0.7, NONE: 0.2}, "meta": prompt["meta"]}
+    )
+    assert (answer["template"], answer["template_position"]) == ("dhr-2016/extra", 3)
+
+
+def choice(section, template=None, position=None, answer="A", p=0.9, none=0.05, ps=None):
+    return {
+        "doc_id": "D",
+        "section_id": section,
+        "template": template,
+        "template_position": position,
+        "answer": answer,
+        "probability": p,
+        "none_probability": none,
+        "probabilities": ps or {},
+    }
+
+
+T = "g/report"
+# s0 matched; s1 (in s0) none; s2 (in s1) none; s3 top-level none; s4 (in s3) none;
+# s5 top-level none, unsure; s6 top-level none, sure.
+ROWS = [
+    choice("s0", T, 1, "A", 0.4),
+    choice("s1", answer=NONE, p=0.9, none=0.9),
+    choice("s2", answer=NONE, p=0.9, none=0.9),
+    choice("s3", answer=NONE, p=0.9, none=0.9),
+    choice("s4", answer=NONE, p=0.9, none=0.9),
+    choice("s5", answer=NONE, p=0.6, none=0.6, ps={"none": 0.6, f"{T}#2": 0.3, f"{T}#1": 0.1}),
+    choice("s6", answer=NONE, p=0.95, none=0.95, ps={"none": 0.95, f"{T}#2": 0.05}),
+]
+PARENTS = {
+    ("D", s): p
+    for s, p in [
+        ("s0", None),
+        ("s1", "s0"),
+        ("s2", "s1"),
+        ("s3", None),
+        ("s4", "s3"),
+        ("s5", None),
+        ("s6", None),
+    ]
+}
+DOCS = {"D": {"doc_id": "D", "template": T}}
+X = "g/extra"  # guidance "g" has no dardr-only extras: Appendices 8, Report part 9, Other 10
+APPENDICES, REPORT_PART, OTHER = 8, 9, 10
+
+
+def test_only_sections_inside_no_matched_section_or_doubtful_matches_are_asked():
+    # s0: a doubtful match (40%); s1 and s2 sit inside it, so they go with it instead
+    assert refining.to_ask(ROWS, PARENTS, DOCS) == [
+        ("D", s) for s in ("s0", "s3", "s4", "s5", "s6")
+    ]
+    assert refining.to_ask(ROWS, PARENTS, {"D": {"doc_id": "D", "template": None}}) == []
+
+
+def test_refining_parent_then_extra_then_nearest():
+    extras = {
+        ("D", "s3"): {
+            "answer": "B",
+            "probability": 0.7,
+            "template": "g/extra",
+            "template_position": 2,
+            "probabilities": {"g/extra#2": 0.7},
+            "error": None,
+        },
+        ("D", "s6"): {
+            "answer": NONE,
+            "probability": 0.8,
+            "template": None,
+            "template_position": None,
+            "probabilities": {"none": 0.8},
+            "error": None,
+        },
+    }
+    changes = {c["section_id"]: c for c in refining.refine(ROWS, PARENTS, DOCS, extras)}
+    assert set(changes) == {"s0", "s1", "s2", "s3", "s4", "s5", "s6"}  # every section
+    got = {
+        k: (c["method"], c["template"], c["template_position"], c["refined_doubtful"])
+        for k, c in changes.items()
+    }
+    assert got == {
+        "s0": ("model", T, 1, True),  # the model's own, only 40%, and no extra fitted
+        "s1": ("parent", T, 1, True),  # its parent's answer was only 40%
+        "s2": ("parent", T, 1, True),  # through s1
+        "s3": ("extra", "g/extra", 2, False),
+        "s4": ("parent", "g/extra", 2, False),  # goes with s3's extra section
+        "s5": ("nearest", T, 2, True),  # unsure of "none": its likeliest other option
+        "s6": ("other", "g/extra", OTHER, True),  # sure of "none", and no extra fitted
+    }
+    assert changes["s6"]["extra_answer"] == NONE  # the extra answer is kept even when unused
+    assert changes["s5"]["method_probability"] == 0.3
+
+
+def test_refining_again_starts_from_the_models_answers():
+    first = refining.refine(ROWS, PARENTS, DOCS, {})
+    assert refining.refine(ROWS, PARENTS, DOCS, {}) == first
+    assert refining.nearest(choice("x", answer=NONE, none=0.5, ps={"none": 0.5})) is None
+
+
+def row(section, template=None, position=None, p=0.9, none=0.05, ps=None, heading="", chars=None):
+    r = choice(section, template, position, "A" if template else NONE, p, none, ps)
+    r |= {"model_template": template, "model_template_position": position, "heading": heading}
+    if chars is not None:
+        r["own_chars"] = chars
+    return r
+
+
+def refined(rows, parents, extras=None, docs=DOCS):
+    return {
+        c["section_id"]: c
+        for c in refining.refine(
+            rows, {("D", s): p for s, p in parents.items()}, docs, extras or {}
+        )
+    }
+
+
+def test_torn_between_two_template_sections_is_both():
+    torn = row("a", T, 1, p=0.45, none=0.15, ps={f"{T}#1": 0.45, f"{T}#3": 0.4, "none": 0.15})
+    unsure = row("b", T, 1, p=0.45, none=0.4, ps={f"{T}#1": 0.45, f"{T}#3": 0.15, "none": 0.4})
+    got = refined([torn, unsure], {"a": None, "b": None})
+    assert (got["a"]["method"], got["a"]["also_template"], got["a"]["also_position"]) == (
+        "combined",
+        T,
+        3,
+    )
+    assert got["a"]["method_probability"] == pytest.approx(0.85)
+    assert not got["a"]["refined_doubtful"]
+    assert (got["b"]["method"], got["b"]["refined_doubtful"]) == ("model", True)
+    # only the one that isn't a combination is asked the extra question
+    assert refining.to_ask([torn, unsure], {}, DOCS) == [("D", "b")]
+
+
+def test_a_doubtful_match_can_become_an_extra_section():
+    r = row("a", T, 1, p=0.3, none=0.45, ps={f"{T}#1": 0.3, f"{T}#2": 0.25, "none": 0.45})
+    sure = {"template": X, "template_position": 3, "probability": 0.7, "answer": "C"}
+    unsure = {**sure, "probability": 0.25}
+    assert refined([r], {"a": None}, {("D", "a"): sure})["a"]["method"] == "extra"
+    kept = refined([r], {"a": None}, {("D", "a"): unsure})["a"]
+    assert (kept["method"], kept["template"], kept["refined_doubtful"]) == ("model", T, True)
+
+
+def test_a_heading_with_no_text_takes_its_subsections_mapping():
+    rows = [
+        row("part", none=0.9, heading="Section two", chars=10),
+        row("c1", T, 2, chars=1000),
+        row("c2", T, 2, p=0.8, chars=500),
+        row("c3", T, 4, chars=100),
+        row("mixed", none=0.9, heading="Part 4", chars=0),
+        row("m1", T, 2, chars=500),
+        row("m2", T, 4, chars=500),
+        row("m3", T, 5, chars=500),
+        row("long", none=0.9, heading="Background", chars=2000),
+        row("l1", T, 2, chars=100),
+    ]
+    parents = {
+        "part": None,
+        "c1": "part",
+        "c2": "part",
+        "c3": "part",
+        "mixed": None,
+        "m1": "mixed",
+        "m2": "mixed",
+        "m3": "mixed",
+        "long": None,
+        "l1": "long",
+    }
+    got = refined(rows, parents)
+    assert (got["part"]["method"], got["part"]["template_position"]) == ("subsections", 2)
+    assert got["part"]["method_probability"] == pytest.approx(1502 / 1603, abs=1e-3)
+    assert not got["part"]["refined_doubtful"]
+    # no mapping has most of its subsections' text: it only names a part of the report
+    assert (got["mixed"]["method"], got["mixed"]["template"]) == ("subsections", X)
+    assert got["mixed"]["template_position"] == REPORT_PART
+    # it has text of its own, so it is left to the other rules: nothing else fits
+    assert (got["long"]["method"], got["long"]["template_position"]) == ("other", OTHER)
+
+
+def test_a_subsection_that_goes_with_its_parent_follows_the_parents_final_mapping():
+    rows = [
+        row("part", none=0.9, heading="Section two", chars=0),
+        row("c1", none=0.9, chars=300),
+        row("c2", T, 3, chars=900),
+    ]
+    got = refined(rows, {"part": None, "c1": "part", "c2": "part"})
+    assert (got["part"]["method"], got["part"]["template_position"]) == ("subsections", 3)
+    assert (got["c1"]["method"], got["c1"]["template_position"]) == ("parent", 3)
+
+
+def test_appendices_go_to_appendices_and_keep_what_they_are_about():
+    rows = [
+        row("intro", T, 1),
+        row("app", T, 5, heading="Appendix A: Terms of reference"),
+        row("panel", T, 6, heading="Panel members"),
+        row("annex", none=0.95, heading="ANNEX 2", chars=500),
+    ]
+    got = refined(rows, {"intro": None, "app": None, "panel": "app", "annex": None})
+    assert got["intro"]["method"] == "model"
+    for s, about in (("app", (T, 5)), ("panel", (T, 6)), ("annex", None)):
+        c = got[s]
+        assert (c["method"], c["template"], c["template_position"]) == ("appendix", X, APPENDICES)
+        assert ((c["also_template"], c["also_position"]) if c["also_template"] else None) == about
+        assert not c["refined_doubtful"]
+
+
+def test_extra_sections_are_placed_where_reviews_most_often_have_them():
+    def mapped(doc, *mappings):
+        return [
+            {"doc_id": doc, "section_id": str(i), "template": t, "template_position": p}
+            for i, (t, p) in enumerate(mappings)
+        ]
+
+    changes = (
+        mapped("D1", (T, 1), (X, 3), (T, 2), (X, 8))
+        + mapped("D2", (T, 1), (T, 1), (X, 3), (X, 3), (T, 3))
+        + mapped("D3", (X, 3), (T, 1), (X, 1))
+    )
+    docs = {d: {"doc_id": d, "template": T} for d in ("D1", "D2", "D3")}
+    places = {p["extra_position"]: p for p in refining.placements(changes, docs, X, {8})}
+    assert set(places) == {1, 3}  # Appendices (8) is left to the view: always last
+    assert (places[3]["after_position"], places[3]["n_reviews"], places[3]["n_seen"]) == (1, 2, 3)
+    assert places[1]["after_position"] == 1 and places[1]["n_seen"] == 1
+
+
+def test_stored_extra_answers_are_read_back():
+    got = refining.stored_extra("B", 0.7, json.dumps({"g/extra#2": 0.7, "none": 0.3}), None)
+    assert (got["template"], got["template_position"], got["probability"]) == ("g/extra", 2, 0.7)
+    assert refining.stored_extra("Z", 0.8, {"none": 0.8}, None)["template"] is None
+    assert refining.stored_extra(None, None, None, None) is None
+
+
+def test_extra_question_offers_only_the_sections_the_model_can_choose():
+    asked = refining.asked_extras(refining.extra_template("dardr-2026"))
+    headings = [s.heading for s in asked.sections]
+    assert "Appendices" not in headings and "Other content" not in headings
+    assert headings[-1] == "References and correspondence"
+    assert [s.position for s in asked.sections] == list(range(1, 10))  # positions unchanged
+
+
+def test_unsure_reviews_get_the_template_their_sections_fit_best():
+    rows = [
+        {**row("s1", none=0.9, chars=1000), "answer": NONE},
+        {**row("s2", "g/a", 1, p=0.6, none=0.3, chars=100)},
+    ]
+
+    def result(section, none):
+        return {
+            "meta": {
+                "doc_id": "D",
+                "section_id": section,
+                "options": {"A": ["g/b", 1]},
+                "template": "g/b",
+            },
+            "answer": "A" if none < 0.5 else NONE,
+            "probabilities": {"A": 1 - none, NONE: none},
+        }
+
+    decisions = stage.choose_by_sections(
+        [result("s1", 0.1), result("s2", 0.2)], rows, {"D": "g/a"}, ["g/a", "g/b"]
+    )
+    d = decisions["D"]
+    assert d["template"] == "g/b" and d["previous"] == "g/a"
+    assert d["scores"]["g/a"] == pytest.approx((1100 * 0.1 + 200 * 0.7) / 1300, abs=1e-3)
+    assert d["scores"]["g/b"] == pytest.approx((1100 * 0.9 + 200 * 0.8) / 1300, abs=1e-3)
+    assert set(d["answers"]) == {"s1", "s2"}
+    # a review that matched no template at all is asked against every template
+    none_yet = stage.choose_by_sections([result("s1", 0.1)], rows[:1], {"D": None}, ["g/b"])
+    assert none_yet["D"]["template"] == "g/b" and none_yet["D"]["previous"] is None
+
+
 # ---------------------------------------------------------------- the database (optional)
 
 
@@ -615,6 +908,132 @@ def test_choices_tables_and_views(database):
         ("D", "unmatched", None, ["s3"]),
         ("E", "unmatched", None, ["s0", "s1", "s2", "s3"]),
     ]
+
+    # refining: D's s3 ("Glossary", said none at 70%) is asked the extra question
+    extras = refining.store_extra_template(conn, g)
+    refining.store_extra_template(conn, g)  # again: it only updates
+    rows_, parents_, documents_ = refining.read_choices(conn, rev, g)
+    # s2 (40%) is a doubtful match, so it is asked too
+    assert refining.to_ask(rows_, parents_, documents_) == [("D", "s2"), ("D", "s3")]
+    answer = {
+        "answer": "C",
+        "probability": 0.9,
+        "template": extras.template,
+        "template_position": 3,
+        "probabilities": {f"{extras.template}#3": 0.9},
+        "error": None,
+    }
+    # D's title page: text before its first heading
+    conn.execute(
+        "INSERT INTO corpus.blocks (revision, doc_id, block_id, position, page, block_type,"
+        " section_id, html, text) VALUES (%s, 'D', 'b0', 0, 0, 'Text', NULL, '', 'A title')",
+        (rev,),
+    )
+    x = {"rows": rows_, "parents": parents_, "documents": documents_}
+    changes, places = stage.apply_rules(x, g, {("D", "s3"): answer})
+    assert [(p["extra_position"], p["after_position"]) for p in places] == [(3, 2)]
+    counts = refining.store_refinement(conn, rev, g, changes, {"test": True}, places)
+    assert counts["n_extra"] == 1 and counts["n_unmatched"] == 4  # E's four
+    assert counts["n_doubtful"] == 1  # s2, still only 40%
+    assert conn.execute(
+        "SELECT method, template_heading, mapped_probability, doubtful, answer"
+        " FROM corpus.current_template_choices WHERE revision = %s AND section_id = 's3'"
+        " AND doc_id = 'D'",
+        (rev,),
+    ).fetchone() == ("extra", "Glossary and definitions", pytest.approx(0.9), False, NONE)
+    parts = conn.execute(
+        "SELECT template_heading, section_ids FROM corpus.current_standardised"
+        " WHERE revision = %s AND doc_id = 'D' ORDER BY part",
+        (rev,),
+    ).fetchall()
+    # the glossary where reviews have it (after the timeline), the title-page text first
+    assert parts == [
+        ("Front matter", []),
+        ("Timescales", ["s0"]),
+        ("Timeline", ["s1", "s2"]),
+        ("Glossary and definitions", ["s3"]),
+        ("Conclusions", []),
+        ("Recommendation", []),
+    ]
+    assert conn.execute(
+        "SELECT template_heading, n_opening_blocks FROM corpus.current_standardised"
+        " WHERE revision = %s AND doc_id = 'D' AND n_opening_blocks > 0",
+        (rev,),
+    ).fetchall() == [("Front matter", 1)]
+    # refining again from scratch, with no extra answer, undoes it
+    rows_, parents_, documents_ = refining.read_choices(conn, rev, g)
+    assert [
+        r["model_template"] for r in rows_ if r["section_id"] == "s3" and r["doc_id"] == "D"
+    ] == [None]
+    refining.store_refinement(conn, rev, g, refining.refine(rows_, parents_, documents_, {}), {})
+    assert conn.execute(
+        "SELECT method, template_heading, doubtful FROM corpus.current_template_choices"
+        " WHERE revision = %s AND section_id = 's3' AND doc_id = 'D'",
+        (rev,),
+    ).fetchone() == ("other", "Other content", True)  # nothing fits it: the catch-all
+    # the stored extra answer is read back, so the rules can run again without asking
+    assert [r["stored_extra"] for r in refining.read_choices(conn, rev, g)[0]][3] is None
+
+    # a review the model wasn't sure of gets the template its sections fit best
+    conn.execute(
+        "UPDATE corpus.document_choices SET fallback = true WHERE revision = %s AND doc_id = 'D'",
+        (rev,),
+    )
+    assert stage.unsure_reviews(conn, rev, g) == {"D": f"{g}/overview", "E": None}
+    assert conn.execute(
+        "SELECT bool_and(review_doubtful), bool_or(doubtful) FROM corpus.current_template_choices"
+        " WHERE revision = %s AND doc_id = 'D' AND section_id IN ('s0', 's1')",
+        (rev,),
+    ).fetchone() == (True, False)  # the review is doubtful, not its sure sections
+    decisions = {
+        "D": {
+            "doc_id": "D",
+            "previous": f"{g}/overview",
+            "template": f"{g}/overview",
+            "fit": 0.9,
+            "margin": 0.9,
+            "scores": {f"{g}/overview": 0.9},
+            "answers": None,
+            "section_ids": ["s0", "s1", "s2", "s3"],
+        },
+        "E": {
+            "doc_id": "E",
+            "previous": None,
+            "template": f"{g}/overview",
+            "fit": 0.5,
+            "margin": 0.05,
+            "scores": {f"{g}/overview": 0.5},
+            "answers": {
+                "s0": {
+                    **row("E", "s0", f"{g}/overview", 3, "C", 0.7),
+                    "none_probability": 0.1,
+                    "probabilities": {f"{g}/overview#3": 0.7},
+                }
+            },
+            "section_ids": ["s0", "s1", "s2", "s3"],
+        },
+    }
+    stage.store_retemplate(conn, rev, g, decisions)
+    assert conn.execute(
+        "SELECT doc_id, template, method, fallback, doubtful FROM corpus.current_document_choices"
+        " WHERE revision = %s ORDER BY doc_id",
+        (rev,),
+    ).fetchall() == [
+        ("D", f"{g}/overview", "sections", False, False),
+        ("E", f"{g}/overview", "sections", False, True),  # only 0.05 ahead of the next
+    ]
+    assert conn.execute(
+        "SELECT section_id, status, template_heading, model_template_position, error"
+        " FROM corpus.current_template_choices WHERE revision = %s AND doc_id = 'E'"
+        " ORDER BY section_position",
+        (rev,),
+    ).fetchall() == [
+        ("s0", "matched", "Conclusions", 3, None),
+        ("s1", "no answer", None, None, "no result: the job ended before answering it"),
+        ("s2", "no answer", None, None, "no result: the job ended before answering it"),
+        ("s3", "no answer", None, None, "no result: the job ended before answering it"),
+    ]
+    assert stage.unsure_reviews(conn, rev, g) == {}  # done: not asked again
 
     with pytest.raises(Exception):  # a template without its position isn't allowed
         conn.execute(

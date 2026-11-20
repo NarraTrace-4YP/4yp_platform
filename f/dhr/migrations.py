@@ -732,4 +732,294 @@ LEFT JOIN corpus.template_sections AS ts
   ON ts.template = c.template AND ts.position = c.template_position;
 """,
     ),
+    (
+        "010_refined_choices",
+        """
+-- O1 stage 5: accounting for the sections the model said fit none of their template's
+-- sections (Rowan, 20 Nov 2026; f/dhr/O1/choose_template_section/refine.py). Labels only.
+--   * method: how a section got its template section. 'model': the model chose it (or it
+--     stays unmatched); 'parent': its parent section's; 'extra': one of the extra sections
+--     (a template of kind 'extra sections' per guidance, for parts many DHRs have that the
+--     templates don't name); 'nearest': the model's likeliest after "none of these".
+--     answer, probability and probabilities stay the model's own answer.
+--   * method_probability: how sure the basis of a refined mapping is; refined_doubtful:
+--     whether it is doubtful (nearest always; extra under 50%; parent when the parent is).
+--   * extra_*: the model's answer to the extra-sections question, for the sections asked.
+ALTER TABLE corpus.template_choices
+    ADD COLUMN method text NOT NULL DEFAULT 'model'
+        CHECK (method IN ('model', 'parent', 'extra', 'nearest')),
+    ADD COLUMN method_probability real,
+    ADD COLUMN refined_doubtful boolean NOT NULL DEFAULT false,
+    ADD COLUMN extra_answer text,
+    ADD COLUMN extra_probability real,
+    ADD COLUMN extra_probabilities jsonb,
+    ADD COLUMN extra_error text;
+ALTER TABLE corpus.choice_versions
+    ADD COLUMN n_parent integer NOT NULL DEFAULT 0,
+    ADD COLUMN n_extra integer NOT NULL DEFAULT 0,
+    ADD COLUMN n_nearest integer NOT NULL DEFAULT 0,
+    ADD COLUMN refined_at timestamptz,
+    ADD COLUMN refine_details jsonb;
+
+CREATE OR REPLACE VIEW corpus.current_template_choices AS
+SELECT c.revision, v.dataset, c.guidance, c.doc_id, c.section_id,
+       s.position AS section_position, s.level AS section_level, s.heading AS section_heading,
+       CASE WHEN c.template IS NOT NULL THEN 'matched'
+            WHEN c.answer IS NOT NULL OR d.answer = 'Z' THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template AS document_template, dt.title AS document_template_title,
+       c.template, t.title AS template_title, t.kind AS template_kind,
+       c.template_position, ts.heading AS template_heading,
+       c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error,
+       cv.model, cv.prompt_version, cv.reviews,
+       c.template IS NOT NULL
+           AND (CASE WHEN c.method = 'model' THEN c.probability < 0.5 ELSE c.refined_doubtful END
+                OR d.fallback OR d.probability < 0.5) AS doubtful,
+       c.method,
+       CASE WHEN c.method = 'model' THEN c.probability ELSE c.method_probability END
+           AS mapped_probability,
+       c.extra_answer, c.extra_probability, c.extra_probabilities, c.extra_error
+FROM corpus.template_choices AS c
+JOIN corpus.document_choices AS d USING (revision, doc_id, guidance)
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.sections AS s USING (revision, doc_id, section_id)
+LEFT JOIN corpus.templates AS dt ON dt.template = d.template
+LEFT JOIN corpus.templates AS t ON t.template = c.template
+LEFT JOIN corpus.template_sections AS ts
+  ON ts.template = c.template AND ts.position = c.template_position;
+
+-- The standardised view also lists the extra sections, after the template and its action
+-- plan, but only those the review has. min_probability is now how sure each mapping is.
+CREATE OR REPLACE VIEW corpus.current_standardised AS
+WITH parts AS (
+    SELECT d.revision, d.doc_id, d.guidance, ts.template, ts.position, ts.heading,
+           t.title, t.kind,
+           row_number() OVER (PARTITION BY d.revision, d.doc_id, d.guidance
+                              ORDER BY ts.template <> d.template, t.appendix, ts.position) AS part
+    FROM corpus.document_choices AS d
+    JOIN corpus.templates AS dt ON dt.template = d.template
+    JOIN corpus.templates AS t ON t.guidance = d.guidance
+     AND (t.template = d.template OR (t.kind = 'action plan' AND dt.kind <> 'action plan')
+          OR t.kind = 'extra sections')
+    JOIN corpus.template_sections AS ts ON ts.template = t.template
+), mapped AS (
+    SELECT revision, doc_id, guidance, template, template_position, status,
+           array_agg(section_id ORDER BY section_position) AS section_ids,
+           array_agg(section_heading ORDER BY section_position) AS section_headings,
+           min(mapped_probability) AS min_probability
+    FROM corpus.current_template_choices
+    GROUP BY revision, doc_id, guidance, template, template_position, status
+)
+SELECT p.revision, v.dataset, p.guidance, p.doc_id, p.part, 'template section' AS status,
+       p.template, p.title AS template_title, p.position AS template_position,
+       p.heading AS template_heading, coalesce(cardinality(m.section_ids), 0) AS n_sections,
+       coalesce(m.section_ids, '{}') AS section_ids,
+       coalesce(m.section_headings, '{}') AS section_headings, m.min_probability
+FROM parts AS p
+JOIN corpus.current_versions AS v USING (revision)
+LEFT JOIN mapped AS m
+  ON m.revision = p.revision AND m.doc_id = p.doc_id AND m.guidance = p.guidance
+ AND m.template = p.template AND m.template_position = p.position
+WHERE p.kind <> 'extra sections' OR m.section_ids IS NOT NULL
+UNION ALL
+SELECT m.revision, v.dataset, m.guidance, m.doc_id,
+       CASE m.status WHEN 'unmatched' THEN 100000 ELSE 100001 END, m.status,
+       NULL, NULL, NULL, NULL, cardinality(m.section_ids), m.section_ids, m.section_headings,
+       m.min_probability
+FROM mapped AS m
+JOIN corpus.current_versions AS v USING (revision)
+WHERE m.status <> 'matched';
+""",
+    ),
+    (
+        "011_complete_mapping",
+        """
+-- O1 stage 5: every section mapped, as few doubtful as possible (Rowan, 20 Nov 2026;
+-- f/dhr/O1/choose_template_section/refine.py). Labels only: no section's text changes.
+--   * template_choices.model_template/_position: the model's own mapping, kept apart from
+--     template/template_position (the final one) now that rules can change a match too.
+--   * method gains 'combined' (torn between two template sections that together it was sure
+--     of: mapped to the likelier, also_* is the other), 'subsections' (a heading with little
+--     text of its own takes what its subsections mostly got, or the extra section "Report
+--     part heading"), 'appendix' (inside an Appendix/Annex heading: the extra section
+--     "Appendices", also_* what the appendix is about) and 'other' (the extra section "Other
+--     content": a catch-all for what nothing else fits, always doubtful).
+--   * A section is doubtful only for its own mapping now. A review's template being doubtful
+--     shows on the review (current_template_choices.review_doubtful), not on every section.
+--   * document_choices.method 'sections': a review the model wasn't sure of (a fallback, under
+--     50%, or none of them) got the template its sections fit best, each section asked
+--     against every template; sections_fit is the share of its text that fits that template,
+--     sections_margin how far ahead of the next that was (doubtful under 0.1).
+--   * extra_placements: where each extra section sits among a template's own sections (after
+--     after_position; 0 = before the first), from where reviews most often have it.
+--   * current_standardised orders the extra sections by their placement (Front matter first
+--     if it has none), Appendices last, and counts the text before a review's first heading
+--     (n_opening_blocks) under its template's title page (Front matter if it has none).
+ALTER TABLE corpus.template_choices
+    ADD COLUMN model_template text,
+    ADD COLUMN model_template_position integer,
+    ADD COLUMN also_template text,
+    ADD COLUMN also_position integer;
+UPDATE corpus.template_choices
+SET model_template = template, model_template_position = template_position
+WHERE method = 'model';
+ALTER TABLE corpus.template_choices DROP CONSTRAINT template_choices_method_check;
+ALTER TABLE corpus.template_choices ADD CONSTRAINT template_choices_method_check
+    CHECK (method IN ('model', 'parent', 'extra', 'nearest', 'combined', 'subsections',
+                      'appendix', 'other'));
+ALTER TABLE corpus.document_choices
+    ADD COLUMN method text NOT NULL DEFAULT 'model' CHECK (method IN ('model', 'sections')),
+    ADD COLUMN sections_fit real,
+    ADD COLUMN sections_margin real,
+    ADD COLUMN sections_scores jsonb;
+ALTER TABLE corpus.choice_versions
+    ADD COLUMN n_combined integer NOT NULL DEFAULT 0,
+    ADD COLUMN n_subsections integer NOT NULL DEFAULT 0,
+    ADD COLUMN n_appendix integer NOT NULL DEFAULT 0,
+    ADD COLUMN n_other integer NOT NULL DEFAULT 0,
+    ADD COLUMN n_reviews_by_sections integer NOT NULL DEFAULT 0;
+
+CREATE TABLE corpus.extra_placements (
+    revision        text NOT NULL,
+    guidance        text NOT NULL,
+    template        text NOT NULL REFERENCES corpus.templates ON DELETE CASCADE,
+    extra_template  text NOT NULL,
+    extra_position  integer NOT NULL,
+    after_position  integer NOT NULL,   -- after this section of template; 0 = before the first
+    rank            real NOT NULL,      -- order among extras in the same place (lower first)
+    n_reviews       integer NOT NULL,   -- reviews with it there
+    n_seen          integer NOT NULL,   -- reviews written to template that have it at all
+    PRIMARY KEY (revision, guidance, template, extra_template, extra_position),
+    FOREIGN KEY (revision, guidance) REFERENCES corpus.choice_versions ON DELETE CASCADE,
+    FOREIGN KEY (extra_template, extra_position)
+        REFERENCES corpus.template_sections (template, position) ON DELETE CASCADE
+);
+
+CREATE OR REPLACE VIEW corpus.current_document_choices AS
+SELECT d.revision, v.dataset, d.guidance, d.doc_id,
+       CASE WHEN d.template IS NOT NULL THEN 'matched'
+            WHEN d.answer IS NOT NULL THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template, t.title AS template_title, t.kind AS template_kind,
+       d.answer, d.probability, d.probabilities, d.error,
+       cv.model, cv.prompt_version, cv.reviews,
+       d.fallback,
+       d.template IS NOT NULL
+           AND CASE WHEN d.method = 'sections' THEN d.sections_margin < 0.1
+                    ELSE d.fallback OR d.probability < 0.5 END AS doubtful,
+       d.method, d.sections_fit, d.sections_margin, d.sections_scores
+FROM corpus.document_choices AS d
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+LEFT JOIN corpus.templates AS t ON t.template = d.template;
+
+CREATE OR REPLACE VIEW corpus.current_template_choices AS
+SELECT c.revision, v.dataset, c.guidance, c.doc_id, c.section_id,
+       s.position AS section_position, s.level AS section_level, s.heading AS section_heading,
+       CASE WHEN c.template IS NOT NULL THEN 'matched'
+            WHEN c.answer IS NOT NULL OR (d.answer = 'Z' AND d.template IS NULL)
+                THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template AS document_template, dt.title AS document_template_title,
+       c.template, t.title AS template_title, t.kind AS template_kind,
+       c.template_position, ts.heading AS template_heading,
+       c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error,
+       cv.model, cv.prompt_version, cv.reviews,
+       c.template IS NOT NULL
+           AND CASE WHEN c.method = 'model' THEN c.probability < 0.5
+                    ELSE c.refined_doubtful END AS doubtful,
+       c.method,
+       CASE WHEN c.method = 'model' THEN c.probability ELSE c.method_probability END
+           AS mapped_probability,
+       c.extra_answer, c.extra_probability, c.extra_probabilities, c.extra_error,
+       d.template IS NOT NULL
+           AND CASE WHEN d.method = 'sections' THEN d.sections_margin < 0.1
+                    ELSE d.fallback OR d.probability < 0.5 END AS review_doubtful,
+       c.model_template, c.model_template_position,
+       c.also_template, c.also_position, als.heading AS also_heading
+FROM corpus.template_choices AS c
+JOIN corpus.document_choices AS d USING (revision, doc_id, guidance)
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+JOIN corpus.sections AS s USING (revision, doc_id, section_id)
+LEFT JOIN corpus.templates AS dt ON dt.template = d.template
+LEFT JOIN corpus.templates AS t ON t.template = c.template
+LEFT JOIN corpus.template_sections AS ts
+  ON ts.template = c.template AND ts.position = c.template_position
+LEFT JOIN corpus.template_sections AS als
+  ON als.template = c.also_template AND als.position = c.also_position;
+
+CREATE OR REPLACE VIEW corpus.current_standardised AS
+WITH opening AS (
+    SELECT revision, doc_id, count(*) AS n
+    FROM corpus.blocks
+    WHERE section_id IS NULL AND text <> ''
+    GROUP BY revision, doc_id
+), placed AS (
+    SELECT d.revision, d.doc_id, d.guidance, ts.template, ts.position, ts.heading,
+           t.title, t.kind,
+           CASE WHEN t.template = d.template THEN 0
+                WHEN t.kind = 'extra sections' AND ts.heading = 'Appendices' THEN 3
+                WHEN t.kind = 'extra sections'
+                     AND (pl.after_position IS NOT NULL OR ts.heading = 'Front matter') THEN 0
+                WHEN t.kind = 'action plan' THEN 1
+                ELSE 2 END AS grp,
+           CASE WHEN t.template = d.template THEN ts.position::real
+                WHEN t.kind = 'extra sections' THEN coalesce(pl.after_position + 0.5, 0.25)
+                END AS place,
+           pl.rank, t.appendix,
+           CASE WHEN (t.template = d.template AND ts.heading ~* '^title page')
+                  OR (t.kind = 'extra sections' AND ts.heading = 'Front matter'
+                      AND NOT EXISTS (SELECT 1 FROM corpus.template_sections AS x
+                                      WHERE x.template = d.template
+                                        AND x.heading ~* '^title page'))
+                THEN coalesce(o.n, 0) ELSE 0 END AS n_opening_blocks
+    FROM corpus.document_choices AS d
+    JOIN corpus.templates AS dt ON dt.template = d.template
+    JOIN corpus.templates AS t ON t.guidance = d.guidance
+     AND (t.template = d.template OR (t.kind = 'action plan' AND dt.kind <> 'action plan')
+          OR t.kind = 'extra sections')
+    JOIN corpus.template_sections AS ts ON ts.template = t.template
+    LEFT JOIN corpus.extra_placements AS pl
+      ON pl.revision = d.revision AND pl.guidance = d.guidance AND pl.template = d.template
+     AND pl.extra_template = ts.template AND pl.extra_position = ts.position
+    LEFT JOIN opening AS o ON o.revision = d.revision AND o.doc_id = d.doc_id
+), mapped AS (
+    SELECT revision, doc_id, guidance, template, template_position, status,
+           array_agg(section_id ORDER BY section_position) AS section_ids,
+           array_agg(section_heading ORDER BY section_position) AS section_headings,
+           min(mapped_probability) AS min_probability
+    FROM corpus.current_template_choices
+    GROUP BY revision, doc_id, guidance, template, template_position, status
+), parts AS (
+    SELECT p.*, m.section_ids, m.section_headings, m.min_probability
+    FROM placed AS p
+    LEFT JOIN mapped AS m
+      ON m.revision = p.revision AND m.doc_id = p.doc_id AND m.guidance = p.guidance
+     AND m.template = p.template AND m.template_position = p.position
+    WHERE p.kind <> 'extra sections' OR m.section_ids IS NOT NULL OR p.n_opening_blocks > 0
+)
+SELECT p.revision, v.dataset, p.guidance, p.doc_id,
+       row_number() OVER (PARTITION BY p.revision, p.doc_id, p.guidance
+                          ORDER BY p.grp, p.place NULLS LAST, p.rank NULLS LAST, p.appendix,
+                                   p.position) AS part,
+       'template section' AS status,
+       p.template, p.title AS template_title, p.position AS template_position,
+       p.heading AS template_heading, coalesce(cardinality(p.section_ids), 0) AS n_sections,
+       coalesce(p.section_ids, '{}') AS section_ids,
+       coalesce(p.section_headings, '{}') AS section_headings, p.min_probability,
+       p.n_opening_blocks
+FROM parts AS p
+JOIN corpus.current_versions AS v USING (revision)
+UNION ALL
+SELECT m.revision, v.dataset, m.guidance, m.doc_id,
+       CASE m.status WHEN 'unmatched' THEN 100000 ELSE 100001 END, m.status,
+       NULL, NULL, NULL, NULL, cardinality(m.section_ids), m.section_ids, m.section_headings,
+       m.min_probability, 0
+FROM mapped AS m
+JOIN corpus.current_versions AS v USING (revision)
+WHERE m.status <> 'matched';
+""",
+    ),
 ]

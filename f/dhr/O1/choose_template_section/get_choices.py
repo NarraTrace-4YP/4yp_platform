@@ -17,7 +17,13 @@ template_position: the review sections mapped to that template section. With sta
 ('doubtful', 'unmatched' or 'no answer'): the sections flagged that way. Doubtful: the model
 gave its answer less than 50%, or the section's review has a doubtful template (also under
 50%, or a fallback: the model said "none of these" but wasn't sure, so the review was given
-its likeliest template). Doubtful answers are the ones to check by hand.
+its likeliest template). Doubtful answers are the ones to check by hand. Each section also
+says how it got its template section (method, refine.py: the model's own choice, two template
+sections combined, its parent section's, an extra section, the nearest fit, its subsections',
+Appendices or Other content), with mapped_probability, how sure that was, and also_* (the
+other template section it combines, or what an appendix is about). A section is doubtful for
+its own mapping; review_doubtful says its review's template is. A review's method 'sections'
+means it got the template its sections fit best (sections_fit, sections_margin).
 """
 
 import json
@@ -35,7 +41,9 @@ VERSION_SQL = """
 SELECT c.revision, c.reviews, c.model, c.model_revision, c.prompt_version, c.chosen_at,
        c.git_commit, c.slurm_job_ids, c.blythe_runs, c.n_reviews, c.n_reviews_matched,
        c.n_sections, c.n_matched, c.n_unmatched, c.n_no_answer, c.n_reviews_doubtful,
-       c.n_doubtful, c.run_details, g.title, g.source_url
+       c.n_doubtful, c.n_parent, c.n_extra, c.n_nearest, c.refined_at, c.n_combined,
+       c.n_subsections, c.n_appendix, c.n_other, c.n_reviews_by_sections, c.run_details,
+       g.title, g.source_url
 FROM corpus.current_versions AS v
 JOIN corpus.choice_versions AS c USING (revision)
 JOIN corpus.guidance_documents AS g ON g.guidance = c.guidance
@@ -59,6 +67,15 @@ VERSION_COLUMNS = (
     "n_no_answer",
     "n_reviews_doubtful",
     "n_doubtful",
+    "n_parent",  # sections given their parent section's template section
+    "n_extra",  # sections given an extra section
+    "n_nearest",  # sections given the model's likeliest after "none of these"
+    "refined_at",
+    "n_combined",  # torn between two template sections that together it was sure of
+    "n_subsections",  # headings that took their subsections' mapping
+    "n_appendix",  # in an appendix
+    "n_other",  # the catch-all: nothing else fits
+    "n_reviews_by_sections",  # reviews given the template their sections fit best
 )
 RUN_DETAILS = ("vllm", "gpu", "driver", "prompt_tokens_per_second", "seconds_generating")
 
@@ -82,7 +99,7 @@ ORDER BY t.appendix, ts.position
 """
 REVIEWS_SQL = """
 SELECT d.doc_id, d.status, d.template, d.template_title, d.probability, d.error,
-       d.fallback, d.doubtful,
+       d.fallback, d.doubtful, d.method,
        count(c.*), count(c.*) FILTER (WHERE c.status = 'matched'),
        count(c.*) FILTER (WHERE c.status = 'unmatched'),
        count(c.*) FILTER (WHERE c.status = 'no answer'),
@@ -91,7 +108,7 @@ FROM corpus.current_document_choices AS d
 LEFT JOIN corpus.current_template_choices AS c USING (revision, guidance, doc_id)
 WHERE d.revision = %(revision)s AND d.guidance = %(guidance)s
 GROUP BY d.doc_id, d.status, d.template, d.template_title, d.probability, d.error,
-         d.fallback, d.doubtful
+         d.fallback, d.doubtful, d.method
 ORDER BY d.doubtful DESC, d.doc_id
 """
 REVIEW_COLUMNS = (
@@ -103,6 +120,7 @@ REVIEW_COLUMNS = (
     "error",
     "fallback",  # the model said "none of these" but wasn't sure: given its likeliest template
     "doubtful",  # its template is doubtful: check by hand (listed first)
+    "method",  # 'model', or 'sections': the template its sections fit best
     "n_sections",
     "n_matched",
     "n_unmatched",
@@ -112,7 +130,7 @@ REVIEW_COLUMNS = (
 
 DOCUMENT_SQL = """
 SELECT status, template, template_title, template_kind, answer, probability, probabilities,
-       error, fallback, doubtful
+       error, fallback, doubtful, method, sections_fit, sections_margin, sections_scores
 FROM corpus.current_document_choices
 WHERE revision = %(revision)s AND guidance = %(guidance)s AND doc_id = %(doc_id)s
 """
@@ -127,12 +145,19 @@ DOCUMENT_COLUMNS = (
     "error",
     "fallback",
     "doubtful",
+    "method",
+    "sections_fit",  # share of its text that fits its template (method 'sections')
+    "sections_margin",  # how far ahead of the next template that was
+    "sections_scores",
 )
 SECTIONS_SQL = """
 SELECT s.section_id, s.parent_id, s.level, s.heading, s.position, s.first_page, s.last_page,
        c.status, c.template, c.template_position, c.template_title, c.template_heading,
        c.answer, c.probability, c.none_probability, c.probabilities, c.n_options, c.error,
-       coalesce(c.doubtful, false)
+       coalesce(c.doubtful, false), c.method, c.mapped_probability, c.extra_answer,
+       c.extra_probability, c.extra_probabilities, coalesce(c.review_doubtful, false),
+       c.also_template, c.also_position, c.also_heading, c.model_template,
+       c.model_template_position
 FROM corpus.sections AS s
 LEFT JOIN corpus.current_template_choices AS c
   ON c.revision = s.revision AND c.doc_id = s.doc_id AND c.section_id = s.section_id
@@ -160,6 +185,17 @@ SECTION_COLUMNS = (
     "n_options",
     "error",
     "doubtful",
+    "method",  # how it got its mapping (refine.METHODS)
+    "mapped_probability",  # how sure the mapping is, whichever way it was made
+    "extra_answer",  # the extra-sections question, if it was asked
+    "extra_probability",
+    "extra_probabilities",
+    "review_doubtful",  # its review's template is doubtful
+    "also_template",  # combined: the other template section; appendix: what it is about
+    "also_position",
+    "also_heading",
+    "model_template",  # the model's own choice
+    "model_template_position",
 )
 # Stage 4's ranks for each section's candidates, to compare with what the model chose.
 RANKS_SQL = """
@@ -170,7 +206,7 @@ WHERE c.revision = %(revision)s AND c.doc_id = %(doc_id)s AND t.guidance = %(gui
 """
 STANDARDISED_SQL = """
 SELECT part, status, template, template_title, template_position, template_heading,
-       n_sections, section_ids, min_probability
+       n_sections, section_ids, min_probability, n_opening_blocks
 FROM corpus.current_standardised
 WHERE revision = %(revision)s AND guidance = %(guidance)s AND doc_id = %(doc_id)s
 ORDER BY part
@@ -185,15 +221,17 @@ STANDARDISED_COLUMNS = (
     "n_sections",
     "section_ids",  # the review's sections in this part, in the review's order
     "min_probability",
+    "n_opening_blocks",  # text before the review's first heading (its title page) shown here
 )
 
 # Review sections mapped to one template section, or flagged with one status.
 FOUND_SQL = """
 SELECT c.doc_id, c.section_id, c.section_level, c.section_heading, c.section_position,
-       c.probability, c.none_probability, c.error, c.doubtful, c.template_heading
+       c.mapped_probability, c.none_probability, c.error, c.doubtful, c.template_heading,
+       c.method, c.also_heading
 FROM corpus.current_template_choices AS c
 WHERE c.revision = %(revision)s AND c.guidance = %(guidance)s AND {where}
-ORDER BY c.probability {order} NULLS LAST, c.doc_id, c.section_position
+ORDER BY c.mapped_probability {order} NULLS LAST, c.doc_id, c.section_position
 LIMIT %(limit)s
 """
 COUNT_SQL = """
@@ -217,6 +255,8 @@ FOUND_COLUMNS = (
     "error",
     "doubtful",
     "template_heading",  # what it was mapped to
+    "method",
+    "also_heading",
 )
 
 
@@ -233,6 +273,8 @@ def version_summary(row) -> dict | None:
         return None
     version = dict(zip(VERSION_COLUMNS, row[: len(VERSION_COLUMNS)], strict=True))
     version["chosen_at"] = version["chosen_at"].isoformat()
+    if version["refined_at"]:
+        version["refined_at"] = version["refined_at"].isoformat()
     details, title, source_url = row[len(VERSION_COLUMNS) :]
     details = as_json(details)
     # The section job's details, or the document job's if there was no section job.
@@ -307,9 +349,9 @@ def attach_weighed(sections, ranks, templates: dict[str, dict]) -> list[dict]:
     for section in result:
         probabilities = as_json(section["probabilities"])
         section["probabilities"] = probabilities
-        chosen = (
-            f"{section['template']}#{section['template_position']}" if section["template"] else None
-        )
+        section["extra_probabilities"] = as_json(section["extra_probabilities"])
+        own = section["model_template"]  # what the model chose, whatever the rules made of it
+        chosen = f"{own}#{section['model_template_position']}" if own else None
         weighed = []
         for key, p in probabilities.items():
             if p < WEIGHED and key != chosen:
@@ -322,8 +364,7 @@ def attach_weighed(sections, ranks, templates: dict[str, dict]) -> list[dict]:
                         "template_title": None,
                         "template_heading": "None of these",
                         "probability": p,
-                        "chosen": section["status"] == "unmatched"
-                        and section["answer"] is not None,
+                        "chosen": section["answer"] == "Z",
                         "heading_rank": None,
                         "text_rank": None,
                     }
@@ -390,6 +431,7 @@ def main(
             if document:
                 document["weighed"] = weighed_templates(document, by_template)
                 document["probabilities"] = as_json(document["probabilities"])
+                document["sections_scores"] = as_json(document["sections_scores"])
             sections = conn.execute(SECTIONS_SQL, args).fetchall()
             ranks = conn.execute(RANKS_SQL, args).fetchall()
             parts = as_dicts(conn.execute(STANDARDISED_SQL, args).fetchall(), STANDARDISED_COLUMNS)
