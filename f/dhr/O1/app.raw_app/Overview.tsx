@@ -124,10 +124,13 @@ const STEPS: Step[] = [
       'decides which of the guidance’s templates each whole review is written to (overview ' +
       'report, executive summary…), then which section of that template, or of its action plan, ' +
       'each of the review’s sections is. Several sections can share one template section (a ' +
-      'timeline and a timeline analysis, say); their text is never changed. Sections that fit ' +
-      'none are kept and flagged as unmatched. Every answer keeps the model’s confidence; ' +
-      'answers under 50%, and reviews it was unsure about, are marked doubtful, to be checked ' +
-      'by hand. The same type of material can then be found ' +
+      'timeline and a timeline analysis, say); their text is never changed. A review the model ' +
+      'was unsure about gets the template its sections fit best. Every section is then mapped: ' +
+      'to two template sections at once when it is plainly both, to a few extra sections many ' +
+      'reviews have but the templates lack (placed where reviews usually have them), with the ' +
+      'section it sits in, or with its subsections; appendices go to Appendices, and what ' +
+      'nothing fits to Other content. Every mapping keeps how sure it is; those under 50% are ' +
+      'marked doubtful, to be checked by hand. The same type of material can then be found ' +
       'consistently across reviews.',
     built: true,
     see: { tab: 'choices', label: 'See the standardised sections' },
