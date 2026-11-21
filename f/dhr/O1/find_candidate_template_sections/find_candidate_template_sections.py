@@ -222,7 +222,7 @@ TEMPLATE_SQL = """
 SELECT ts.template, ts.position, ts.heading, ts.guidance
 FROM corpus.template_sections AS ts
 JOIN corpus.templates AS t USING (template)
-WHERE t.guidance = %s
+WHERE t.guidance = %s AND t.kind <> 'extra sections'  -- step 5's own additions
 ORDER BY t.appendix, ts.position
 """
 # Removes one dataset version's candidates against one guidance (before storing new ones).
