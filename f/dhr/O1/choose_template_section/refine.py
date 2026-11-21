@@ -24,7 +24,9 @@ mapping, and
   7. other: whatever still has no mapping goes to "Other content", a catch-all that is always
      doubtful, so the few sections nothing fits are kept together and easy to review;
   8. appendix: anything under an Appendix or Annex heading goes to "Appendices", whatever it
-     is about; what it is about (the mapping it would otherwise have) is kept as also_*.
+     is about; what it is about (the mapping it would otherwise have) is kept as also_*. Except
+     an action plan: a section mapped to the action plan stays there, even in an appendix
+     ("Appendix 2: Action plan"; Rowan, 21 Nov 2026).
 A section is doubtful only for its own mapping: the model under DOUBTFUL for its own choice, an
 extra section under DOUBTFUL, the nearest fit and Other content always, a parent's or
 subsections' mapping when that is. Refining starts from the model's answers every time, so it
@@ -325,13 +327,19 @@ def _first_pass(r: dict, document: dict, extra: dict, parent: dict | None) -> di
 
 
 def refine(
-    rows: list[dict], parents: dict, documents: dict, extras: dict, guidance: str | None = None
+    rows: list[dict],
+    parents: dict,
+    documents: dict,
+    extras: dict,
+    guidance: str | None = None,
+    action_plans: set[str] | None = None,
 ) -> list[dict]:
     """Every section's final row: template, template_position, method, method_probability,
     refined_doubtful, also_* and the extra question's answer (extras: (doc, section) ->
     interpreted answer). rows must be in reading order within each review, so a parent comes
     before its subsections; a row may carry heading and own_chars (its own text's length) for
-    rules 6 and 8. guidance: whose extra sections (taken from the rows' keys if not given)."""
+    rules 6 and 8. guidance: whose extra sections (taken from the rows' keys if not given).
+    action_plans: the action plan templates, whose sections stay put in an appendix."""
     guidance = guidance or _guidance(rows, documents)
     xt = extra_template(guidance) if guidance else None
     by_key: dict[tuple[str, str], dict] = {}
@@ -413,6 +421,8 @@ def refine(
         c = by_key[key]
         if documents[key[0]]["template"] is None:
             continue
+        if c["template"] in (action_plans or ()):
+            continue  # an action plan stays the action plan, even in an appendix
         about = (c["template"], c["template_position"]) if c["template"] is not None else None
         _set(c, "appendix", appendix, None, False, about if about not in no_vote else None)
     return [by_key[k] for k in order]

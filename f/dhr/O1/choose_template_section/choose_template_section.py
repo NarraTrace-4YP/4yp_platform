@@ -1359,6 +1359,7 @@ def refine_inputs(conn, dataset: str, guidance: str, store: bool) -> dict:
         extras = extra_template(guidance)
     rows, parents, documents = read_choices(conn, revision, guidance)
     prompts = extra_prompts(inputs, rows, parents, documents, extras)
+    plans = {t.template for t in action_plans(list(inputs["templates"].values()))}
     return {
         "revision": revision,
         "reviews": reviews,
@@ -1366,6 +1367,7 @@ def refine_inputs(conn, dataset: str, guidance: str, store: bool) -> dict:
         "rows": rows,
         "parents": parents,
         "documents": documents,
+        "action_plans": plans,
         "prompts": prompts,
     }
 
@@ -1386,7 +1388,9 @@ def method_counts(changes: list[dict]) -> dict:
 
 def apply_rules(x: dict, guidance: str, answers: dict) -> tuple[list[dict], list[dict]]:
     """Every section's final mapping, and where the extra sections go."""
-    changes = refine(x["rows"], x["parents"], x["documents"], answers, guidance)
+    changes = refine(
+        x["rows"], x["parents"], x["documents"], answers, guidance, x.get("action_plans")
+    )
     extras = extra_template(guidance)
     appendices = {s.position for s in extras.sections if s.heading == APPENDICES}
     return changes, placements(changes, x["documents"], extras.template, appendices)

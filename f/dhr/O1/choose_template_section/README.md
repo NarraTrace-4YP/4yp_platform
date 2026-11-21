@@ -92,7 +92,7 @@ The model's own answer always stays in `answer`, `probability`, `probabilities` 
 | `nearest`     | Said "none of these" but under 80% sure: its likeliest template section                                                                       | Always             |
 | `subsections` | A heading with under 200 characters of its own text: what most of its subsections' text got, or "Report part heading" if nothing has most     | If that mapping is |
 | `other`       | Nothing else fits: "Other content", the catch-all                                                                                             | Always             |
-| `appendix`    | Under an Appendix or Annex heading: "Appendices", whatever it is, with what it is about kept in `also_*`                                      | No                 |
+| `appendix`    | Under an Appendix or Annex heading: "Appendices", with what it is about kept in `also_*`; an action plan stays the action plan                                      | No                 |
 
 The third question is asked for sections that said "none of these" and sit in no matched
 section, and for doubtful matches that aren't two sections in one. The extra sections are
