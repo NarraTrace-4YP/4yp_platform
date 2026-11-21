@@ -680,6 +680,22 @@ def test_appendices_go_to_appendices_and_keep_what_they_are_about():
         assert not c["refined_doubtful"]
 
 
+def test_an_action_plan_in_an_appendix_stays_the_action_plan():
+    plan = "g/action-plan"
+    rows = [
+        row("app2", plan, 1, heading="Appendix 2: Action Plan"),
+        row("rec1", none=0.95, heading="Recommendation 1", chars=500),
+        row("app1", T, 5, heading="Appendix 1: Terms of reference"),
+    ]
+    parents = {("D", "app2"): None, ("D", "rec1"): "app2", ("D", "app1"): None}
+    got = {
+        c["section_id"]: c for c in refining.refine(rows, parents, DOCS, {}, action_plans={plan})
+    }
+    assert (got["app2"]["method"], got["app2"]["template"]) == ("model", plan)
+    assert (got["rec1"]["method"], got["rec1"]["template"]) == ("parent", plan)  # goes with it
+    assert got["app1"]["method"] == "appendix"  # other appendices still go to Appendices
+
+
 def test_extra_sections_are_placed_where_reviews_most_often_have_them():
     def mapped(doc, *mappings):
         return [
