@@ -42,17 +42,15 @@ other user's run stops on its first line, dry runs included. That is also why it
 step of `f/dhr/O1/pipeline`, which anyone in the team can run. Run it on its own, after stage 4
 has run for the same dataset and guidance.
 
-| Input                 | Meaning                                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------------------- |
-| `dataset`, `guidance` | Whose reviews, against which guidance's templates                                                   |
-| `reviews`             | `pilot`: the specification's 10 pilot reviews (do this first); `all`: every review                  |
-| `hours`               | SLURM time limit for the section job; 0 works it out from the prompts' size (at most 48)            |
-| `check_every_minutes` | How often to check a job that hasn't reported back                                                  |
-| `give_up_after_hours` | When to stop waiting for a job and cancel it                                                        |
-| `retemplate`          | For stored choices: the section-led template choice, then the extra question and rules (2 GPU jobs) |
-| `refine_only`         | For stored choices: only the extra question (1 GPU job) and the rules (see below)                   |
-| `rules_only`          | For stored choices: only the rules, using the extra answers already stored (no GPU, about a minute) |
-| `dry_run`             | Shows what would be sent or done, without contacting Blythe or changing the database                |
+| Input                 | Meaning                                                                                                                                                                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dataset`, `guidance` | Whose reviews, against which guidance's templates                                                                                                                                                                                                   |
+| `reviews`             | `pilot`: the specification's 10 pilot reviews (do this first); `all`: every review                                                                                                                                                                  |
+| `hours`               | SLURM time limit for the section job; 0 works it out from the prompts' size (at most 48)                                                                                                                                                            |
+| `check_every_minutes` | How often to check a job that hasn't reported back                                                                                                                                                                                                  |
+| `give_up_after_hours` | When to stop waiting for a job and cancel it                                                                                                                                                                                                        |
+| `stage`               | How much to run: `full` (everything), or for stored choices `retemplate` (section-led template choice, then the extra question and rules: 2 GPU jobs), `refine only` (extra question and rules: 1 GPU job) or `rules only` (no GPU, about a minute) |
+| `dry_run`             | Shows what would be sent or done, without contacting Blythe or changing the database                                                                                                                                                                |
 
 After submitting each job, the workflow pauses without holding a Windmill worker. The job's
 last step wakes it, with a safety check every `check_every_minutes` in case that call is
@@ -63,13 +61,21 @@ there.
 ## Reviews the model wasn't sure of
 
 A review the model said follows none of the templates, or gave its template under 50%, is
-then judged by its structure (Rowan, 20 Nov 2026): each of its sections is asked the second
-question against every other document template too, and the review gets the template whose
-sections cover most of its text (each section weighted by its own text, up to 4,000
-characters). `document_choices.method` is then `'sections'`, with `sections_fit` (the share of
-the text that fits) and `sections_margin` (how far ahead of the next template). The review's
-template is doubtful only if the margin is under 0.1. A full run does this automatically
-after the first two questions.
+then judged by its structure (Rowan, 20–21 Nov 2026): each of its sections is asked the
+second question against every other document template too, and the review gets the template
+with the best score:
+
+> share of its text that fits the template (each section weighted by its own text, up to 4,000 characters) × how many different template sections its sections fill ÷ the most any template got
+
+Text alone would favour a small template with a few broad sections (the 2026 IMR template has
+six) over the full report template a report really follows. `document_choices.method` is then
+`'sections'`, with `sections_fit`, `sections_filled` and `sections_margin` (how far ahead of
+the next template its score is); the review's template is doubtful if that is under 0.1.
+
+Every answer against every template is kept in `corpus.retemplate_answers`, so each is asked
+only once: running `retemplate` again scores reviews already given a template by their
+sections again, asking only what hasn't been asked. A full run does this automatically after
+the first two questions.
 
 ## Giving every section a mapping
 
@@ -105,9 +111,9 @@ always last. The text before a review's first heading (its title page) is shown 
 template's title page, or Front matter if the template has none (`n_opening_blocks` in
 `corpus.current_standardised`).
 
-`retemplate = true` and `refine_only = true` run these parts on stored choices;
-`rules_only = true` runs only the rules, with the extra answers already stored, so changes
-to the rules need no GPU.
+`stage = retemplate` and `stage = refine only` run these parts on stored choices;
+`stage = rules only` runs only the rules, with the extra answers already stored, so changes to
+the rules need no GPU.
 
 ## What it stores
 
