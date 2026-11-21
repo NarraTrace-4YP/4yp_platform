@@ -118,9 +118,36 @@ def time_limit(hours: int | None) -> str | None:
     return f"{hours:02d}:00:00"
 
 
-def sbatch_command(job_file: str, run_dir: str, hours: int | None = None) -> str:
+GPUS_PER_NODE = 3  # Blythe's L40 nodes (sea001-sea016), each with 192 GB of memory
+MAX_MEM_GB = 180
+CPUS_PER_GPU = 8  # as llm_batch.sbatch asks for one GPU
+
+
+def resources(gpus: int | None, mem_gb: int | None) -> str:
+    """sbatch options for more L40s or memory than the job file asks for ("" for its own)."""
+    options = ""
+    if gpus is not None:
+        if not isinstance(gpus, int) or not 1 <= gpus <= GPUS_PER_NODE:
+            raise BlytheError(f"gpus must be 1 to {GPUS_PER_NODE} (one node), not {gpus!r}")
+        options += f" --gres=gpu:lovelace_l40:{gpus} --cpus-per-task={CPUS_PER_GPU * gpus}"
+    if mem_gb is not None:
+        if not isinstance(mem_gb, int) or not 1 <= mem_gb <= MAX_MEM_GB:
+            raise BlytheError(f"mem_gb must be 1 to {MAX_MEM_GB}, not {mem_gb!r}")
+        cpus = CPUS_PER_GPU * (gpus or 1)
+        options += f" --mem-per-cpu={-(-mem_gb * 1024 // cpus)}M"  # the job file uses per-CPU
+    return options
+
+
+def sbatch_command(
+    job_file: str,
+    run_dir: str,
+    hours: int | None = None,
+    gpus: int | None = None,
+    mem_gb: int | None = None,
+) -> str:
+    """The sbatch call; its options override the job file's #SBATCH lines."""
     limit = time_limit(hours)
-    options = f" --time={limit}" if limit else ""
+    options = (f" --time={limit}" if limit else "") + resources(gpus, mem_gb)
     return f"sbatch --parsable{options} --chdir {q(run_dir)} {q(job_file)}"
 
 
@@ -356,10 +383,13 @@ class Blythe:
         files: dict[str, bytes | str],
         callback_url: str,
         hours: int | None = None,
+        gpus: int | None = None,
+        mem_gb: int | None = None,
     ) -> dict:
         """Makes the run folder, uploads files into its input/, leaves the wake-up address,
         and submits the job. The run folder must be new, so runs never mix."""
         check_job(job)
+        resources(gpus, mem_gb)  # refuse bad numbers before making anything
         for name in files:
             check_name(name)
         job_file = self.path("jobs", f"{job}.sbatch")
@@ -374,7 +404,7 @@ class Blythe:
         for name, data in files.items():
             self.write(posixpath.join(input_dir, name), data)
         self.set_callback(run_dir, callback_url)
-        status, out, err = self.slurm(sbatch_command(job_file, run_dir, hours))
+        status, out, err = self.slurm(sbatch_command(job_file, run_dir, hours, gpus, mem_gb))
         job_id = parse_sbatch(out)
         if status != 0 or not job_id:
             raise BlytheError(f"sbatch failed (exit {status}): {(err or out).strip()[:2000]}")

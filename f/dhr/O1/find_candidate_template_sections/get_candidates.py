@@ -35,7 +35,7 @@ SELECT t.template, t.appendix, t.title, t.kind, t.source_url,
        ts.position, ts.heading, ts.printed, ts.guidance, ts.page
 FROM corpus.templates AS t
 JOIN corpus.template_sections AS ts USING (template)
-WHERE t.guidance = %s
+WHERE t.guidance = %s AND t.kind <> 'extra sections'  -- step 5's own additions
 ORDER BY t.appendix, ts.position
 """
 

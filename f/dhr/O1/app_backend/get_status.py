@@ -143,7 +143,7 @@ CHOICES_COLUMNS = (
 TEMPLATES_SQL = """
 SELECT g.guidance, g.title, g.source_url, g.loaded_at, count(DISTINCT t.template), count(ts.*)
 FROM corpus.guidance_documents AS g
-JOIN corpus.templates AS t ON t.guidance = g.guidance
+JOIN corpus.templates AS t ON t.guidance = g.guidance AND t.kind <> 'extra sections'
 JOIN corpus.template_sections AS ts ON ts.template = t.template
 GROUP BY g.guidance, g.title, g.source_url, g.loaded_at
 ORDER BY g.guidance DESC
