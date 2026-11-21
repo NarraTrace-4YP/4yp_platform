@@ -130,7 +130,8 @@ REVIEW_COLUMNS = (
 
 DOCUMENT_SQL = """
 SELECT status, template, template_title, template_kind, answer, probability, probabilities,
-       error, fallback, doubtful, method, sections_fit, sections_margin, sections_scores
+       error, fallback, doubtful, method, sections_fit, sections_margin, sections_scores,
+       sections_filled
 FROM corpus.current_document_choices
 WHERE revision = %(revision)s AND guidance = %(guidance)s AND doc_id = %(doc_id)s
 """
@@ -148,7 +149,8 @@ DOCUMENT_COLUMNS = (
     "method",
     "sections_fit",  # share of its text that fits its template (method 'sections')
     "sections_margin",  # how far ahead of the next template that was
-    "sections_scores",
+    "sections_scores",  # each template's fit, sections filled and score
+    "sections_filled",  # how many different sections of its template it fills
 )
 SECTIONS_SQL = """
 SELECT s.section_id, s.parent_id, s.level, s.heading, s.position, s.first_page, s.last_page,

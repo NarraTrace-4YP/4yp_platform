@@ -114,7 +114,8 @@ type DocumentChoice = {
   method: 'model' | 'sections'
   sections_fit: number | null // share of its text that fits its template
   sections_margin: number | null // how far ahead of the next template
-  sections_scores: Record<string, number>
+  sections_scores: Record<string, { fit: number; filled: number; score: number }>
+  sections_filled: number | null // how many different sections of its template it fills
   weighed: WeighedTemplate[]
 }
 type Weighed = {
@@ -369,8 +370,10 @@ function DocumentLine({ document }: { document: DocumentChoice | null }) {
         </p>
         <p>
           The model wasn’t sure which template the whole review follows, so each section was asked
-          against every template. {percent(document.sections_fit)} of its text fits this one,{' '}
-          {percent(document.sections_margin)} ahead of the next
+          against every template, and the review was given the one that fits its structure best:{' '}
+          {percent(document.sections_fit)} of its text fits this one, and its sections fill{' '}
+          {document.sections_filled ?? '?'} of the template’s sections. Its score is{' '}
+          {percent(document.sections_margin)} ahead of the next template
           {document.doubtful ? ': too close to call, so check the review’s template by hand.' : '.'}
         </p>
       </div>

@@ -33,11 +33,11 @@ marked doubtful, like every answer under 50%.
      (refine.py): two template sections at once, an extra section, its parent's, the nearest
      fit, its subsections', Appendices for appendices, and Other content for what nothing fits;
      and place each extra section where reviews most often have it.
-Each section records how it was mapped (template_choices.method). For choices already stored,
-retemplate=True does 3 and 4, refine_only=True does 4, rules_only=True only the rules (no
-GPU). Choosing again for the same dataset version and guidance replaces its choices.
-reviews="pilot" does only the specification's 10 pilot reviews, to check the answers and the
-speed first.
+Each section records how it was mapped (template_choices.method). stage chooses how much to
+run: "full" does 1 to 4; for choices already stored, "retemplate" does 3 and 4, "refine only"
+does 4, "rules only" only the rules (no GPU). Choosing again for the same dataset version
+and guidance replaces its choices. reviews="pilot" does only the specification's 10 pilot
+reviews, to check the answers and the speed first.
 
 This is a workflow: after submitting each job it pauses without holding a Windmill worker
 until the job's last step wakes it (or a safety check every check_every_minutes), checks
@@ -46,8 +46,8 @@ logs in with Rowan's own Blythe account (f/dhr/blythe.py), so only Rowan can run
 anyone else's run stops at its first line. Cancelling this run does not cancel a SLURM job on
 Blythe: use `scancel <job>` there.
 
-dry_run=True shows what would be sent or done (with retemplate, refine_only or rules_only,
-for that part), without contacting Blythe or changing the database.
+dry_run=True shows what would be sent or done (for the chosen stage), without contacting
+Blythe or changing the database.
 """
 
 from __future__ import annotations
@@ -129,6 +129,7 @@ DOUBTFUL = 0.5  # answers the model gave less probability than this are counted 
 # A review the model says matches none of the templates, with less probability than this, is
 # given its likeliest template anyway, and it and its sections are marked doubtful.
 FALLBACK_BELOW = 0.8
+STAGES = ("full", "retemplate", "refine only", "rules only")  # how much main() runs
 NOT_ASKED = "not asked: its review matched none of the templates"
 NO_DOCUMENT = "not asked: there was no answer for its review's template"
 
@@ -888,12 +889,21 @@ def log_to_mlflow(result: dict) -> str | None:
 # ---------------------------------------------------------------- 3. which template, by its sections
 
 # A review the model wasn't sure of: it said "none of these" (with or without a fallback
-# template) or gave its template under 50%. Each of its sections is asked against every other
-# document template too, and the review gets the template its sections fit best.
+# template) or gave its template under 50%, or it was already given one by its sections (so a
+# better score can be applied again). Each of its sections is asked against every other document
+# template too (answers kept in corpus.retemplate_answers, so each is asked only once), and the
+# review gets the template that fits its structure best (choose_by_sections).
 UNSURE_SQL = """
 SELECT doc_id, template FROM corpus.document_choices
-WHERE revision = %(revision)s AND guidance = %(guidance)s AND method = 'model'
-  AND (answer = 'Z' OR fallback OR probability < %(doubtful)s)
+WHERE revision = %(revision)s AND guidance = %(guidance)s
+  AND (method = 'sections'
+       OR (method = 'model' AND (answer = 'Z' OR fallback OR probability < %(doubtful)s)))
+"""
+STORED_ANSWERS_SQL = """
+SELECT doc_id, template, section_id, template_position, answer, probability, none_probability,
+       probabilities, n_options, error
+FROM corpus.retemplate_answers
+WHERE revision = %(revision)s AND guidance = %(guidance)s
 """
 SECTIONS_MARGIN = (
     0.1  # a template its sections fit less than this far ahead of the next is doubtful
@@ -907,9 +917,35 @@ def unsure_reviews(conn, revision: str, guidance: str) -> dict[str, str | None]:
     return dict(conn.execute(UNSURE_SQL, args).fetchall())
 
 
-def retemplate_prompts(inputs: dict, unsure: dict[str, str | None]) -> list[dict]:
+def stored_retemplate_answers(conn, revision: str, guidance: str) -> dict:
+    """The answers kept from earlier runs: (doc, template) -> section -> answer."""
+    answers: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+    args = {"revision": revision, "guidance": guidance}
+    for doc, t, section, position, answer, p, none, ps, n, error in conn.execute(
+        STORED_ANSWERS_SQL, args
+    ):
+        answers[(doc, t)][section] = {
+            "doc_id": doc,
+            "section_id": section,
+            # position is kept only for one of the asked template's own sections
+            "template": t if position is not None else None,
+            "template_position": position,
+            "answer": answer,
+            "probability": p,
+            "none_probability": none,
+            "probabilities": ps if isinstance(ps, dict) else json.loads(ps or "{}"),
+            "n_options": n,
+            "error": error,
+        }
+    return answers
+
+
+def retemplate_prompts(
+    inputs: dict, unsure: dict[str, str | None], have: set | None = None
+) -> list[dict]:
     """For each section of each unsure review, a section prompt against every document
-    template other than the one it already has answers for, grouped by template."""
+    template other than the one it already has answers for (its current template, and any in
+    have: (doc, template) pairs answered in an earlier run), grouped by template."""
     templates = list(inputs["templates"].values())
     plans = action_plans(templates)
     candidates = document_templates(templates)
@@ -918,7 +954,7 @@ def retemplate_prompts(inputs: dict, unsure: dict[str, str | None]) -> list[dict
         if section.doc_id not in unsure:
             continue
         for t in candidates:
-            if t.template == unsure[section.doc_id]:
+            if t.template == unsure[section.doc_id] or (section.doc_id, t.template) in (have or ()):
                 continue
             p = section_prompt(section, t, plans, inputs["guidance_title"])
             p["id"] = prompt_id(section.doc_id, section.section_id, t.template)
@@ -932,13 +968,25 @@ def _weight(row: dict) -> int:
 
 
 def choose_by_sections(
-    results: list[dict], rows: list[dict], unsure: dict[str, str | None], candidates: list[str]
+    results: list[dict],
+    rows: list[dict],
+    unsure: dict[str, str | None],
+    candidates: list[str],
+    stored: dict | None = None,
 ) -> dict[str, dict]:
-    """For each unsure review, the template its sections fit best: each template's fit is the
-    share of the review's text (rows' own_chars) the model put in one of its sections rather
-    than "none of these". Answers for the template the review already has come from rows (the
-    stored answers), the others from results."""
+    """For each unsure review, the template that fits its structure best. Each template's
+    score is fit x filled / most filled:
+      fit: the share of the review's text (rows' own_chars) the model put in one of the
+        template's sections rather than "none of these";
+      filled: how many different sections of the template the review's sections were put in.
+    A template with a few broad sections (the 2026 IMR template has six) can take most of any
+    review's text, but a full report fills many more sections of a full template, so fit alone
+    would favour the small template (Rowan, 21 Nov 2026). Answers for the template the review
+    already has come from rows (the stored choices), the others from results or stored (earlier
+    runs' answers, corpus.retemplate_answers)."""
     answers: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+    for key, by_section in (stored or {}).items():
+        answers[key].update(by_section)
     for result in results:
         row = interpret(result)
         template = (result.get("meta") or {}).get("template")
@@ -951,26 +999,36 @@ def choose_by_sections(
     for doc, current in unsure.items():
         sections = by_doc.get(doc, [])
         total = sum(_weight(r) for r in sections) or 1
-        scores = {}
+        fits, filled = {}, {}
         for t in candidates:
-            fit = 0.0
+            fit, positions = 0.0, set()
             for r in sections:
                 if t == current:
                     a = r if r["answer"] is not None else None
+                    chosen = (r.get("model_template"), r.get("model_template_position"))
                 else:
                     a = answers[(doc, t)].get(r["section_id"])
                     a = a if a and a["answer"] is not None else None
+                    chosen = (a["template"], a["template_position"]) if a else (None, None)
                 if a is not None:
                     fit += _weight(r) * (1 - (a["none_probability"] or 0))
-            scores[t] = round(fit / total, 4)
-        ranked = sorted(scores, key=lambda t: -scores[t])
+                    if chosen[0] == t:
+                        positions.add(chosen[1])
+            fits[t], filled[t] = round(fit / total, 4), len(positions)
+        most = max(filled.values(), default=0) or 1
+        scores = {
+            t: {"fit": fits[t], "filled": filled[t], "score": round(fits[t] * filled[t] / most, 4)}
+            for t in candidates
+        }
+        ranked = sorted(candidates, key=lambda t: -scores[t]["score"])
         best = ranked[0]
-        margin = scores[best] - (scores[ranked[1]] if len(ranked) > 1 else 0)
+        margin = scores[best]["score"] - (scores[ranked[1]]["score"] if len(ranked) > 1 else 0)
         decisions[doc] = {
             "doc_id": doc,
             "previous": current,
             "template": best,
-            "fit": scores[best],
+            "fit": scores[best]["fit"],
+            "filled": scores[best]["filled"],
             "margin": round(margin, 4),
             "scores": scores,
             "answers": None if best == current else answers[(doc, best)],
@@ -994,11 +1052,98 @@ WHERE c.revision = %(revision)s AND c.guidance = %(guidance)s
 """
 
 
-def store_retemplate(conn, revision: str, guidance: str, decisions: dict[str, dict]) -> None:
-    """Gives each unsure review the template its sections fit best and, where that changed,
-    its sections the model's answers for that template. One transaction."""
+KEEP_ANSWERS_SQL = """
+INSERT INTO corpus.retemplate_answers (revision, guidance, doc_id, section_id, template,
+    template_position, answer, probability, none_probability, probabilities, n_options, error)
+SELECT %(revision)s, %(guidance)s, doc_id, section_id, template, template_position, answer,
+       probability, none_probability, probabilities, n_options, error
+FROM kept
+ON CONFLICT (revision, guidance, doc_id, section_id, template) DO UPDATE
+SET template_position = EXCLUDED.template_position, answer = EXCLUDED.answer,
+    probability = EXCLUDED.probability, none_probability = EXCLUDED.none_probability,
+    probabilities = EXCLUDED.probabilities, n_options = EXCLUDED.n_options,
+    error = EXCLUDED.error
+"""
+
+
+def keep_answers(
+    conn,
+    revision: str,
+    guidance: str,
+    results: list[dict],
+    rows: list[dict],
+    unsure: dict[str, str | None],
+) -> int:
+    """Keeps every answer against every template (corpus.retemplate_answers): this run's, and
+    each unsure review's answers for the template it has now, so the score can be worked out
+    again later without asking. template_position is that of the template section chosen, if
+    it is one of the asked template's own (not the action plan's)."""
+    kept = []
+    for result in results:
+        a = interpret(result)
+        t = (result.get("meta") or {}).get("template")
+        own = a["template"] == t
+        kept.append(
+            (
+                a["doc_id"],
+                a["section_id"],
+                t,
+                a["template_position"] if own else None,
+                a["answer"],
+                a["probability"],
+                a["none_probability"],
+                json.dumps(a["probabilities"]),
+                a["n_options"],
+                a["error"],
+            )
+        )
+    for r in rows:
+        t = unsure.get(r["doc_id"])
+        if r["doc_id"] not in unsure or t is None:
+            continue
+        own = r.get("model_template") == t
+        kept.append(
+            (
+                r["doc_id"],
+                r["section_id"],
+                t,
+                r.get("model_template_position") if own else None,
+                r["answer"],
+                r["probability"],
+                r["none_probability"],
+                json.dumps(r["probabilities"]),
+                r.get("n_options") or 0,
+                None,
+            )
+        )
+    conn.execute(
+        "CREATE TEMP TABLE kept (doc_id text, section_id text, template text,"
+        " template_position integer, answer text, probability real, none_probability real,"
+        " probabilities jsonb, n_options integer, error text) ON COMMIT DROP"
+    )
+    with conn.cursor() as cursor:
+        with cursor.copy("COPY kept FROM STDIN") as copy:
+            for k in kept:
+                copy.write_row(k)
+    conn.execute(KEEP_ANSWERS_SQL, {"revision": revision, "guidance": guidance})
+    return len(kept)
+
+
+def store_retemplate(
+    conn,
+    revision: str,
+    guidance: str,
+    decisions: dict[str, dict],
+    results: list[dict] | None = None,
+    rows: list[dict] | None = None,
+    unsure: dict[str, str | None] | None = None,
+) -> None:
+    """Keeps every answer (keep_answers), gives each unsure review the template that fits its
+    structure best and, where that changed, its sections the model's answers for that
+    template. One transaction."""
     args = {"revision": revision, "guidance": guidance}
     with conn.transaction():
+        keep_answers(conn, revision, guidance, results or [], rows or [], unsure or {})
         conn.execute(
             "CREATE TEMP TABLE retemplated (doc_id text, section_id text, template text,"
             " template_position integer, answer text, probability real, none_probability real,"
@@ -1039,7 +1184,7 @@ def store_retemplate(conn, revision: str, guidance: str, decisions: dict[str, di
             conn.execute(
                 "UPDATE corpus.document_choices SET template = %(template)s, method = 'sections',"
                 " fallback = false, sections_fit = %(fit)s, sections_margin = %(margin)s,"
-                " sections_scores = %(scores)s"
+                " sections_scores = %(scores)s, sections_filled = %(filled)s"
                 " WHERE revision = %(revision)s AND guidance = %(guidance)s"
                 " AND doc_id = %(doc_id)s",
                 {**args, **d, "scores": json.dumps(d["scores"])},
@@ -1053,6 +1198,8 @@ def retemplate_inputs(conn, dataset: str, guidance: str) -> dict:
         raise ValueError(f"{dataset} has been reloaded or regrouped since its choices were made")
     unsure = unsure_reviews(conn, revision, guidance)
     rows, _, _ = read_choices(conn, revision, guidance)
+    stored = stored_retemplate_answers(conn, revision, guidance)
+    have = {key for key in stored if key[0] in unsure}
     return {
         "revision": revision,
         "reviews": reviews,
@@ -1061,13 +1208,14 @@ def retemplate_inputs(conn, dataset: str, guidance: str) -> dict:
         "unsure": unsure,
         "rows": rows,
         "candidates": [t.template for t in document_templates(list(inputs["templates"].values()))],
-        "prompts": retemplate_prompts(inputs, unsure),
+        "stored": stored,
+        "prompts": retemplate_prompts(inputs, unsure, have),
     }
 
 
 @task
 async def preview_retemplate(dataset: str, guidance: str):
-    """dry_run with retemplate: what would be asked, without Blythe or any change."""
+    """dry_run for "retemplate": what would be asked, without Blythe or any change."""
     with connect() as conn:
         x = retemplate_inputs(conn, dataset, guidance)
     by_kind: dict[str, int] = {}
@@ -1120,13 +1268,19 @@ async def finish_retemplate(dataset: str, guidance: str, job: dict, state: dict 
     if job["retemplate_job"]:
         results, summary, log_tail = download(job["retemplate_job"], state)
     else:
-        results, summary, log_tail = [], {}, "(no job: every review's template was sure)"
+        results, summary, log_tail = (
+            [],
+            {},
+            "(no job: nothing new to ask; scored from kept answers)",
+        )
     with connect() as conn:
         x = retemplate_inputs(conn, dataset, guidance)
         if x["revision"] != job["revision"]:
             raise ValueError(f"{dataset} has been reloaded or regrouped since. Nothing stored.")
-        decisions = choose_by_sections(results, x["rows"], x["unsure"], x["candidates"])
-        store_retemplate(conn, x["revision"], guidance, decisions)
+        decisions = choose_by_sections(
+            results, x["rows"], x["unsure"], x["candidates"], x["stored"]
+        )
+        store_retemplate(conn, x["revision"], guidance, decisions, results, x["rows"], x["unsure"])
     changed = [d for d in decisions.values() if d["template"] != d["previous"]]
     doubtful = [d for d in decisions.values() if d["margin"] < SECTIONS_MARGIN]
     moves: dict[str, int] = {}
@@ -1187,7 +1341,7 @@ def stored_version(conn, dataset: str, guidance: str) -> tuple[str, str, str]:
     row = conn.execute(STORED_SQL, (dataset, guidance)).fetchone()
     if not row:
         raise ValueError(
-            f"No stored choices for {dataset} against {guidance}: run without refine_only"
+            f"No stored choices for {dataset} against {guidance}: run the full stage first"
         )
     return row
 
@@ -1246,7 +1400,7 @@ def stored_answers(x: dict) -> dict:
 
 @task
 async def preview_extras(dataset: str, guidance: str):
-    """dry_run with refine_only or rules_only: what refining would do, without Blythe or any
+    """dry_run for "refine only" or "rules only": what refining would do, without Blythe or any
     change (using the extra-question answers already stored)."""
     with connect() as conn:
         x = refine_inputs(conn, dataset, guidance, store=False)
@@ -1359,7 +1513,7 @@ async def rules_only_task(dataset: str, guidance: str):
             log(f"OK    Database tables updated: {', '.join(applied)}")
         x = refine_inputs(conn, dataset, guidance, store=True)
         details = {
-            "extra_prompt_version": "stored answers (rules_only)",
+            "extra_prompt_version": "stored answers (rules only)",
             "extra_sections": [s.heading for s in extra_template(guidance).sections],
         }
         return store_rules(conn, x, guidance, stored_answers(x), details)
@@ -1428,9 +1582,7 @@ async def main(
     hours: int = 0,
     check_every_minutes: int = 30,
     give_up_after_hours: int = 96,
-    refine_only: bool = False,
-    retemplate: bool = False,
-    rules_only: bool = False,
+    stage: Literal["full", "retemplate", "refine only", "rules only"] = "full",
     dry_run: bool = False,
 ):
     """Windmill runs this; only Rowan's runs can use Blythe. dataset and guidance: whose
@@ -1439,18 +1591,19 @@ async def main(
     model: the LLM on Blythe. hours: the section job's SLURM time limit (0 = worked out from
     the size of its prompts; at most 48). check_every_minutes: how often to check a job that
     hasn't woken this run. give_up_after_hours: when to stop waiting for a job and cancel it.
-    For choices already stored (each skips the first two questions):
-      retemplate: give the reviews the model wasn't sure of the template their sections fit
-        best (a GPU job), then the extra-sections question and the rules (another);
-      refine_only: only the extra-sections question (a GPU job), then the rules;
-      rules_only: only the rules, with the extra-section answers already stored (no GPU).
+    stage: how much to run. "full": everything. For choices already stored (skipping the
+    first two questions): "retemplate" gives the reviews the model wasn't sure of the template
+    their sections fit best (a GPU job), then the extra-sections question and the rules
+    (another); "refine only" only the extra-sections question (a GPU job) and the rules;
+    "rules only" only the rules, with the extra-section answers already stored (no GPU).
     hours is then each job's limit. dry_run: only show what would be sent or done."""
     check_owner()  # Rowan's Blythe account: no one else may run this, not even a dry run
     check_choices(dataset, guidance, reviews, model)
     if hours and not 1 <= hours <= MAX_HOURS:
         raise ValueError(f"hours must be 0 (automatic) or 1 to {MAX_HOURS}")
-    if sum((refine_only, retemplate, rules_only)) > 1:
-        raise ValueError("Choose at most one of refine_only, retemplate and rules_only")
+    if stage not in STAGES:
+        raise ValueError(f"Unknown stage {stage!r}: choose one of {STAGES}")
+    retemplate, refine_only, rules_only = (stage == s for s in STAGES[1:])
     if dry_run:
         if retemplate:
             return await preview_retemplate(dataset, guidance)

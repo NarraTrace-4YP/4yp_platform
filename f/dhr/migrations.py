@@ -1022,4 +1022,50 @@ JOIN corpus.current_versions AS v USING (revision)
 WHERE m.status <> 'matched';
 """,
     ),
+    (
+        "012_retemplate_answers",
+        """
+-- O1 stage 5: a review's template chosen by its structure (Rowan, 21 Nov 2026). The model's
+-- answers for every section of an unsure review against every document template are kept, so
+-- the score can be worked out again without asking. sections_filled: how many different
+-- sections of its template the review's sections were put in (the score is the share of its
+-- text that fits x sections filled / the most any template got; choose_template_section.py).
+CREATE TABLE corpus.retemplate_answers (
+    revision           text NOT NULL,
+    guidance           text NOT NULL,
+    doc_id             text NOT NULL,
+    section_id         text NOT NULL,
+    template           text NOT NULL REFERENCES corpus.templates ON DELETE CASCADE,
+    template_position  integer,          -- the asked template's section chosen, if one of its own
+    answer             text,
+    probability        real,
+    none_probability   real,
+    probabilities      jsonb NOT NULL DEFAULT '{}',
+    n_options          integer NOT NULL,
+    error              text,
+    PRIMARY KEY (revision, guidance, doc_id, section_id, template),
+    FOREIGN KEY (revision, guidance) REFERENCES corpus.choice_versions ON DELETE CASCADE,
+    FOREIGN KEY (revision, doc_id, section_id) REFERENCES corpus.sections ON DELETE CASCADE
+);
+ALTER TABLE corpus.document_choices ADD COLUMN sections_filled integer;
+
+CREATE OR REPLACE VIEW corpus.current_document_choices AS
+SELECT d.revision, v.dataset, d.guidance, d.doc_id,
+       CASE WHEN d.template IS NOT NULL THEN 'matched'
+            WHEN d.answer IS NOT NULL THEN 'unmatched'
+            ELSE 'no answer' END AS status,
+       d.template, t.title AS template_title, t.kind AS template_kind,
+       d.answer, d.probability, d.probabilities, d.error,
+       cv.model, cv.prompt_version, cv.reviews,
+       d.fallback,
+       d.template IS NOT NULL
+           AND CASE WHEN d.method = 'sections' THEN d.sections_margin < 0.1
+                    ELSE d.fallback OR d.probability < 0.5 END AS doubtful,
+       d.method, d.sections_fit, d.sections_margin, d.sections_scores, d.sections_filled
+FROM corpus.document_choices AS d
+JOIN corpus.choice_versions AS cv USING (revision, guidance)
+JOIN corpus.current_versions AS v USING (revision)
+LEFT JOIN corpus.templates AS t ON t.template = d.template;
+""",
+    ),
 ]

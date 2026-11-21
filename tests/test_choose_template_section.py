@@ -737,12 +737,40 @@ def test_unsure_reviews_get_the_template_their_sections_fit_best():
     )
     d = decisions["D"]
     assert d["template"] == "g/b" and d["previous"] == "g/a"
-    assert d["scores"]["g/a"] == pytest.approx((1100 * 0.1 + 200 * 0.7) / 1300, abs=1e-3)
-    assert d["scores"]["g/b"] == pytest.approx((1100 * 0.9 + 200 * 0.8) / 1300, abs=1e-3)
+    assert d["scores"]["g/a"]["fit"] == pytest.approx((1100 * 0.1 + 200 * 0.7) / 1300, abs=1e-3)
+    assert d["scores"]["g/b"]["fit"] == pytest.approx((1100 * 0.9 + 200 * 0.8) / 1300, abs=1e-3)
+    assert d["scores"]["g/b"]["filled"] == 1 and d["filled"] == 1
     assert set(d["answers"]) == {"s1", "s2"}
     # a review that matched no template at all is asked against every template
     none_yet = stage.choose_by_sections([result("s1", 0.1)], rows[:1], {"D": None}, ["g/b"])
     assert none_yet["D"]["template"] == "g/b" and none_yet["D"]["previous"] is None
+
+
+def test_a_template_must_fit_the_reviews_structure_not_just_take_its_text():
+    """A small template with broad sections (the 2026 IMR template) can take most of a full
+    report's text, but a full template fills many more of its own sections."""
+    sections = [f"s{i}" for i in range(6)]
+    rows = [{**row(s, "g/full", i + 1, p=0.6, none=0.3, chars=500)} for i, s in enumerate(sections)]
+
+    def small(section, i):  # every section fits one of the small template's 2 sections
+        return {
+            "meta": {
+                "doc_id": "D",
+                "section_id": section,
+                "options": {"A": ["g/small", 1], "B": ["g/small", 2]},
+                "template": "g/small",
+            },
+            "answer": "AB"[i % 2],
+            "probabilities": {"AB"[i % 2]: 0.95, NONE: 0.05},
+        }
+
+    d = stage.choose_by_sections(
+        [small(s, i) for i, s in enumerate(sections)], rows, {"D": "g/full"}, ["g/full", "g/small"]
+    )["D"]
+    assert d["scores"]["g/small"]["fit"] > d["scores"]["g/full"]["fit"]  # 0.95 against 0.7
+    assert (d["scores"]["g/full"]["filled"], d["scores"]["g/small"]["filled"]) == (6, 2)
+    assert d["template"] == "g/full"  # 0.7 x 6/6 against 0.95 x 2/6
+    assert d["scores"]["g/small"]["score"] == pytest.approx(0.95 * 2 / 6, abs=1e-3)
 
 
 # ---------------------------------------------------------------- the database (optional)
@@ -991,8 +1019,9 @@ def test_choices_tables_and_views(database):
             "previous": f"{g}/overview",
             "template": f"{g}/overview",
             "fit": 0.9,
+            "filled": 3,
             "margin": 0.9,
-            "scores": {f"{g}/overview": 0.9},
+            "scores": {f"{g}/overview": {"fit": 0.9, "filled": 3, "score": 0.9}},
             "answers": None,
             "section_ids": ["s0", "s1", "s2", "s3"],
         },
@@ -1001,8 +1030,9 @@ def test_choices_tables_and_views(database):
             "previous": None,
             "template": f"{g}/overview",
             "fit": 0.5,
+            "filled": 1,
             "margin": 0.05,
-            "scores": {f"{g}/overview": 0.5},
+            "scores": {f"{g}/overview": {"fit": 0.5, "filled": 1, "score": 0.5}},
             "answers": {
                 "s0": {
                     **row("E", "s0", f"{g}/overview", 3, "C", 0.7),
@@ -1013,7 +1043,17 @@ def test_choices_tables_and_views(database):
             "section_ids": ["s0", "s1", "s2", "s3"],
         },
     }
-    stage.store_retemplate(conn, rev, g, decisions)
+    asked = {
+        "meta": {
+            "doc_id": "E",
+            "section_id": "s0",
+            "options": {"A": [f"{g}/overview", 3]},
+            "template": f"{g}/overview",
+        },
+        "answer": "A",
+        "probabilities": {"A": 0.7, "Z": 0.1},
+    }
+    stage.store_retemplate(conn, rev, g, decisions, [asked], rows_, {"D": f"{g}/overview"})
     assert conn.execute(
         "SELECT doc_id, template, method, fallback, doubtful FROM corpus.current_document_choices"
         " WHERE revision = %s ORDER BY doc_id",
@@ -1033,7 +1073,12 @@ def test_choices_tables_and_views(database):
         ("s2", "no answer", None, None, "no result: the job ended before answering it"),
         ("s3", "no answer", None, None, "no result: the job ended before answering it"),
     ]
-    assert stage.unsure_reviews(conn, rev, g) == {}  # done: not asked again
+    # every answer is kept, so a review is never asked the same thing twice
+    kept = stage.stored_retemplate_answers(conn, rev, g)
+    assert kept[("E", f"{g}/overview")]["s0"]["template_position"] == 3
+    assert len(kept[("D", f"{g}/overview")]) == 4  # D's answers for the template it has
+    # reviews given a template by their sections are scored again on the next run
+    assert stage.unsure_reviews(conn, rev, g) == {"D": f"{g}/overview", "E": f"{g}/overview"}
 
     with pytest.raises(Exception):  # a template without its position isn't allowed
         conn.execute(
