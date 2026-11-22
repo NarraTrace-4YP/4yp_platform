@@ -49,7 +49,8 @@ has run for the same dataset and guidance.
 | `hours`               | SLURM time limit for the section job; 0 works it out from the prompts' size (at most 48)                                                                                                                                                            |
 | `check_every_minutes` | How often to check a job that hasn't reported back                                                                                                                                                                                                  |
 | `give_up_after_hours` | When to stop waiting for a job and cancel it                                                                                                                                                                                                        |
-| `stage`               | How much to run: `full` (everything), or for stored choices `retemplate` (section-led template choice, then the extra question and rules: 2 GPU jobs), `refine only` (extra question and rules: 1 GPU job) or `rules only` (no GPU, about a minute) |
+| `stage`               | How much to run: `full` (everything), or for stored choices `retemplate` (section-led template choice, then the extra question and rules: 2 GPU jobs), `refine only` (extra question and rules: 1 GPU job) `rules only` (no GPU, about a minute) or `model trial` (see below) |
+| `trial_model`         | For `model trial` only: the model to compare with the stored answers |
 | `dry_run`             | Shows what would be sent or done, without contacting Blythe or changing the database                                                                                                                                                                |
 
 After submitting each job, the workflow pauses without holding a Windmill worker. The job's
@@ -114,6 +115,25 @@ template's title page, or Front matter if the template has none (`n_opening_bloc
 `stage = retemplate` and `stage = refine only` run these parts on stored choices;
 `stage = rules only` runs only the rules, with the extra answers already stored, so changes to
 the rules need no GPU.
+
+## Trying another model
+
+`stage = model trial` asks `trial_model` the same questions the stored choices answered, for the
+chosen reviews (`pilot`: the 10 pilot reviews), and keeps its answers in
+`corpus.trial_answers`. Each section is asked against the template its review has now, so
+every trial answer lines up with a stored one. Nothing stored changes, and the rules aren't
+run on the trial answers.
+
+- `corpus.trial_comparison`: each trial answer next to the stored one. For a section, the
+  stored answer is the model's own (before the rules).
+- `corpus.trial_summary`: per trial and question, how often the two agree and how often each
+  is unsure (under 50%).
+
+Agreement isn't accuracy: where the two differ, the rows have to be checked by hand to say
+which model was right. The trial models, with the GPUs and memory each needs, are in
+`TRIAL_MODELS` in `choose_template_section.py`. A model must be downloaded on Blythe first:
+`sbatch ~/narratrace/jobs/setup_env.sbatch <model>`. Running the current model as the trial
+model is a check: it should agree with the stored answers almost every time.
 
 ## What it stores
 
