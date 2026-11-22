@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Report O1 corpus coverage and the latest outputs of each implemented stage.
+"""O1 stages 1-5, app: corpus coverage and each stage's latest outputs (Overview, Data tabs).
 
 Read dataset versions, metadata coverage, grouped sections, and template-matching
 summaries for the overview app. The pipeline also runs this script as its final
@@ -143,7 +143,7 @@ CHOICES_COLUMNS = (
 TEMPLATES_SQL = """
 SELECT g.guidance, g.title, g.source_url, g.loaded_at, count(DISTINCT t.template), count(ts.*)
 FROM corpus.guidance_documents AS g
-JOIN corpus.templates AS t ON t.guidance = g.guidance
+JOIN corpus.templates AS t ON t.guidance = g.guidance AND t.kind <> 'extra sections'
 JOIN corpus.template_sections AS ts ON ts.template = t.template
 GROUP BY g.guidance, g.title, g.source_url, g.loaded_at
 ORDER BY g.guidance DESC

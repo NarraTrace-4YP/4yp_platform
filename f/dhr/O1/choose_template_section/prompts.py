@@ -1,4 +1,4 @@
-"""The prompts that map a review onto a statutory template, and reading the answers.
+"""O1 stage 5, shared: the prompts that map a review onto a template, and reading answers.
 
 Two questions, both answered with one letter (llm_batch.py in narratrace-slurm reads it from the
 model's first-token probabilities, so every option's probability is kept):
@@ -221,23 +221,7 @@ def section_prompt(
     section: Section, template: Template, plans: list[Template], guidance_title: str
 ) -> dict:
     """Which section of its review's template a section is: one letter per template section."""
-    options = section_options(template, plans)
-    if not options:
-        raise ValueError(f"{template.template} has no sections")
-    if len(options) > len(LETTERS):
-        raise ValueError(f"{len(options)} options is more than the {len(LETTERS)} letters")
-    letters = LETTERS[: len(options)]
-
-    lines, shown = [], None
-    for letter, (t, s) in zip(letters, options, strict=True):
-        if t.template != shown:
-            lines.append(f"{t.title}:")
-            shown = t.template
-        guidance = shorten(s.guidance, GUIDANCE_CHARS)
-        line = f"{letter}. {shorten(s.heading, HEADING_CHARS)}"
-        lines.append(f"{line} ({guidance})" if guidance else line)
-    lines.append(f"{NONE}. None of these")
-
+    options, letters, lines = _option_lines(template, plans)
     report = _report_section(section)
     plan = len({t.template for t, _ in options}) > 1
     user = "\n".join(
@@ -261,6 +245,32 @@ def section_prompt(
             "Answer with the letter only.",
         ]
     )
+    return _section_answer(section, user, letters, options)
+
+
+def _option_lines(
+    template: Template, plans: list[Template]
+) -> tuple[list[tuple[Template, TemplateSection]], str, list[str]]:
+    """A section question's options, their letters, and the lines that list them."""
+    options = section_options(template, plans)
+    if not options:
+        raise ValueError(f"{template.template} has no sections")
+    if len(options) > len(LETTERS):
+        raise ValueError(f"{len(options)} options is more than the {len(LETTERS)} letters")
+    letters = LETTERS[: len(options)]
+    lines, shown = [], None
+    for letter, (t, s) in zip(letters, options, strict=True):
+        if t.template != shown:
+            lines.append(f"{t.title}:")
+            shown = t.template
+        guidance = shorten(s.guidance, GUIDANCE_CHARS)
+        line = f"{letter}. {shorten(s.heading, HEADING_CHARS)}"
+        lines.append(f"{line} ({guidance})" if guidance else line)
+    lines.append(f"{NONE}. None of these")
+    return options, letters, lines
+
+
+def _section_answer(section: Section, user: str, letters: str, options: list) -> dict:
     return {
         "id": prompt_id(section.doc_id, section.section_id),
         "messages": _messages(user),
@@ -273,6 +283,96 @@ def section_prompt(
             },
         },
     }
+
+
+# ---------------------------------------------------------------- prompt v3: the whole review
+
+# Prompt v3 (Rowan, 22 Nov 2026; for now only in a model trial): the section question again,
+# but each one first shows the whole review's outline: every section in reading order,
+# numbered and indented, with the start of its text. The model then sees what sits next to
+# what, which tells apart sections a heading alone can't (an analysis vs lessons learnt,
+# background facts vs the chronology). Still one letter per section, so every answer keeps
+# its probabilities. Every question about one review starts with the same words (options,
+# then outline), so vLLM can reuse them instead of reading them again for each section.
+SKIM_PROMPT_VERSION = "choose-template-v3-outline"
+SKIM_TEXT_CHARS = (240, 160, 80, 0)  # start of each section's text in the outline: the
+# longest that keeps the outline under SKIM_OUTLINE_CHARS
+SKIM_OUTLINE_CHARS = 60_000  # about 15,000 tokens; the longest DHRC-RAW outline at 300 is ~70,000
+SKIM_MAX_MODEL_LEN = 32_768  # the prompts' token limit a v3 job needs
+
+
+@dataclass
+class Outline:
+    doc_id: str
+    text: str  # the numbered outline, as the prompt shows it
+    numbers: dict[str, int]  # section_id -> its number in the outline
+    text_chars: int  # how much of each section's text it shows
+
+
+def review_outline(sections: list[Section]) -> Outline:
+    """One review's sections (in reading order) as a numbered, indented outline, each with the
+    start of its own text: as much of it as keeps the outline under SKIM_OUTLINE_CHARS."""
+    if not sections or len({s.doc_id for s in sections}) != 1:
+        raise ValueError("an outline is of one review's sections")
+    numbers = {s.section_id: n for n, s in enumerate(sections, 1)}
+    for chars in SKIM_TEXT_CHARS:
+        lines, used = [], 0
+        for n, s in enumerate(sections, 1):
+            line = "  " * len(s.path) + f"[{n}] " + (shorten(s.heading, HEADING_CHARS) or "(none)")
+            text = shorten(s.text, chars) if chars else ""
+            if text:
+                line += f" — {text}"
+            if chars == 0 and used + len(line) > SKIM_OUTLINE_CHARS:
+                lines.append(f"… and {len(sections) - n + 1} more sections")
+                break
+            lines.append(line)
+            used += len(line) + 1
+        if used <= SKIM_OUTLINE_CHARS or chars == 0:
+            return Outline(sections[0].doc_id, "\n".join(lines), numbers, chars)
+    raise AssertionError("unreachable")
+
+
+def skim_section_prompt(
+    section: Section,
+    outline: Outline,
+    template: Template,
+    plans: list[Template],
+    guidance_title: str,
+) -> dict:
+    """Prompt v3: section_prompt's question, after the whole review's outline."""
+    options, letters, lines = _option_lines(template, plans)
+    plan = len({t.template for t, _ in options}) > 1
+    number = outline.numbers[section.section_id]
+    user = "\n".join(
+        [
+            f"Below are the sections of the {template.title}"
+            + (" and of the action plan that goes with it" if plan else "")
+            + f' in "{guidance_title}", then the outline of a published DHR {template.kind} '
+            "written to it: every section in reading order, numbered, indented under the "
+            "section it sits in"
+            + (", with the start of its text" if outline.text_chars else "")
+            + ". After the outline you are asked which template section one of its sections is.",
+            "",
+            "Judge by what the section is for and what it contains, not only by its heading, "
+            "and use the outline: the sections around it and the order they come in often "
+            "show what it is for. Reports often split one template section over several "
+            "sections (a chronology and an analysis of it, say), so choose the template section "
+            "this one belongs to even if others belong to it too. If none of them fits, "
+            f"choose {NONE}.",
+            "",
+            "TEMPLATE SECTIONS",
+            *lines,
+            "",
+            f"OUTLINE OF THE REPORT: {section.doc_id}",
+            outline.text,
+            "",
+            f"QUESTION: which template section is section [{number}]?",
+            *_report_section(section),
+            "",
+            "Answer with the letter only.",
+        ]
+    )
+    return _section_answer(section, user, letters, options)
 
 
 def extra_prompt(

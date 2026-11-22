@@ -5,8 +5,9 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Read the template choices (O1 stage 5) for the O1 app. Read-only.
+"""O1 stage 5, app: the template choices and the standardised reviews (Standardised tab).
 
+Read-only.
 With only a dataset and guidance: how the choices were made, the guidance's templates (each
 with how many reviews are written to it, and each of its sections with how many review
 sections were mapped to it), and each review with its template and counts. With doc_id: that

@@ -8,9 +8,10 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Map each review onto a statutory template with an LLM on Blythe (O1 stage 5).
+"""O1 stage 5: map each review onto a statutory template with an LLM on Blythe.
 
-For the newest grouped version of a dataset, against one guidance, in up to four GPU jobs:
+For the newest grouped version of a dataset, against one guidance, in up to four GPU jobs
+(dataset and guidance can each be "both": one run then covers every pair, see below):
   1. documents: one prompt per review asks which of the guidance's templates the whole review
      is written to (overview report, executive summary, ...) or none (prompts.py).
   2. sections: one prompt per section of every review that got a template asks which
@@ -39,6 +40,10 @@ does 4, "rules only" only the rules (no GPU). Choosing again for the same datase
 and guidance replaces its choices. reviews="pilot" does only the specification's 10 pilot
 reviews, to check the answers and the speed first.
 
+Several dataset x guidance pairs in one run (Rowan, 22 Nov 2026): each pair goes through
+the same steps with its own GPU jobs, side by side on Blythe, so the run takes about as
+long as its slowest pair. A pair that fails doesn't stop the others.
+
 This is a workflow: after submitting each job it pauses without holding a Windmill worker
 until the job's last step wakes it (or a safety check every check_every_minutes), checks
 with SLURM that the job has ended, and downloads the answers. Each step that talks to Blythe
@@ -66,6 +71,11 @@ from typing import Literal
 
 from wmill import get_approval_urls, step, task, wait_for_approval, workflow
 
+try:
+    from wmill.client import TaskError  # a task that failed, inside a workflow
+except ImportError:  # outside Windmill (tests)
+    TaskError = Exception
+
 from ...blythe import MAX_HOURS, Blythe, BlytheError, check_owner
 from ...datasets import check_dataset
 from ...db import apply_migrations, connect
@@ -75,6 +85,8 @@ from .prompts import (
     EXTRA_PROMPT_VERSION,
     NONE,
     PROMPT_VERSION,
+    SKIM_MAX_MODEL_LEN,
+    SKIM_PROMPT_VERSION,
     Document,
     Section,
     Template,
@@ -86,7 +98,9 @@ from .prompts import (
     interpret,
     interpret_document,
     prompt_id,
+    review_outline,
     section_prompt,
+    skim_section_prompt,
 )
 from .refine import (
     APPENDICES,
@@ -149,6 +163,10 @@ TRIAL_MODELS = {
         "max_num_seqs": 64,
     },
 }
+# The section question a trial asks: "v2" is the stored answers' (the section alone), "v3" the
+# same question after the whole review's outline (prompts.skim_section_prompt; Rowan, 22 Nov
+# 2026). The review question is the same in both.
+TRIAL_PROMPTS = {"v2": PROMPT_VERSION, "v3": SKIM_PROMPT_VERSION}
 NOT_ASKED = "not asked: its review matched none of the templates"
 NO_DOCUMENT = "not asked: there was no answer for its review's template"
 
@@ -279,22 +297,33 @@ def document_prompts(inputs: dict) -> list[dict]:
     return [document_prompt(d, templates, inputs["guidance_title"]) for d in inputs["documents"]]
 
 
-def section_prompts(inputs: dict, document_templates: dict[str, str | None]) -> list[dict]:
+def section_prompts(
+    inputs: dict, document_templates: dict[str, str | None], prompt: str = "v2"
+) -> list[dict]:
     """A prompt for every section of each review that was given a template, grouped by
-    template so prompts that start alike follow each other."""
+    template so prompts that start alike follow each other (a review's sections stay
+    together, in reading order). prompt: "v2" (the section alone, the stored answers' prompt)
+    or "v3" (the section after its whole review's outline; TRIAL_PROMPTS)."""
+    if prompt not in TRIAL_PROMPTS:
+        raise ValueError(f"Unknown prompt {prompt!r}: choose one of {sorted(TRIAL_PROMPTS)}")
     plans = action_plans(list(inputs["templates"].values()))
+    outlines = {}
+    if prompt == "v3":
+        by_doc: dict[str, list[Section]] = defaultdict(list)
+        for section in inputs["sections"]:
+            by_doc[section.doc_id].append(section)
+        outlines = {doc: review_outline(sections) for doc, sections in by_doc.items()}
     prompts = []
     for section in inputs["sections"]:
         template = document_templates.get(section.doc_id)
-        if template:
-            prompts.append(
-                (
-                    template,
-                    section_prompt(
-                        section, inputs["templates"][template], plans, inputs["guidance_title"]
-                    ),
-                )
-            )
+        if not template:
+            continue
+        args = (inputs["templates"][template], plans, inputs["guidance_title"])
+        if prompt == "v3":
+            p = skim_section_prompt(section, outlines[section.doc_id], *args)
+        else:
+            p = section_prompt(section, *args)
+        prompts.append((template, p))
     return [p for _, p in sorted(prompts, key=lambda pair: pair[0])]
 
 
@@ -537,16 +566,6 @@ async def submit_documents(
         automatic_hours(prompt_chars(prompts)),
     )
     return {**submitted, "revision": inputs["revision"], "model": model}
-
-
-@task
-async def check(run_dir: str, slurm_job_id: str, next_callback_url: str):
-    with Blythe() as b:
-        state = b.job_state(slurm_job_id)
-        log(f"SLURM job {slurm_job_id}: {state}")
-        if not state["finished"]:
-            b.set_callback(run_dir, next_callback_url)
-    return state
 
 
 @task
@@ -1321,31 +1340,6 @@ async def finish_retemplate(dataset: str, guidance: str, job: dict, state: dict 
     }
 
 
-async def retemplate_choices(
-    dataset: str,
-    guidance: str,
-    hours: int,
-    run_id: str,
-    check_every_minutes: int,
-    give_up_after_hours: int,
-) -> dict:
-    """Section-led templates for the reviews the model wasn't sure of, on Blythe."""
-    urls = await step("retemplate_callback_1", lambda: get_approval_urls("retemplate_finished_1"))
-    job = await submit_retemplate(dataset, guidance, hours, f"{run_id}-retemplate", urls["resume"])
-    state = None
-    if job["retemplate_job"]:
-        state = await wait_for_job(
-            "retemplate", job["retemplate_job"], check_every_minutes, give_up_after_hours
-        )
-        if state is None:
-            return {
-                "result": f"Gave up waiting for the retemplate job after {give_up_after_hours} h"
-                " and cancelled it. Nothing changed.",
-                **job["retemplate_job"],
-            }
-    return {**await finish_retemplate(dataset, guidance, job, state), "retemplate_job": state}
-
-
 # ---------------------------------------------------------------- 4. extra sections and the rules
 
 STORED_SQL = """
@@ -1542,9 +1536,6 @@ async def rules_only_task(dataset: str, guidance: str):
         return store_rules(conn, x, guidance, stored_answers(x), details)
 
 
-# ---------------------------------------------------------------- the workflow
-
-
 # ---------------------------------------------------------------- model trial (stage "model trial")
 
 TRIAL_TEMPLATES_SQL = """
@@ -1568,19 +1559,28 @@ FROM corpus.trial_summary WHERE trial_id = %s ORDER BY question
 """
 
 
-def trial_request(base: dict, trial_model: str) -> dict:
-    """llm_batch.py's request for a trial: the stored run's settings with the trial model's."""
+def trial_request(base: dict, trial_model: str, trial_prompt: str = "v2") -> dict:
+    """llm_batch.py's request for a trial: the stored run's settings with the trial model's,
+    and the section prompt's version (v3's prompts need a longer token limit)."""
     spec = TRIAL_MODELS[trial_model]
-    request = {**base, "model": trial_model, "purpose": "O1 stage 5: model trial"}
+    request = {
+        **base,
+        "model": trial_model,
+        "purpose": "O1 stage 5: model trial",
+        "prompt_version": TRIAL_PROMPTS[trial_prompt],
+    }
+    if trial_prompt == "v3":
+        request["max_model_len"] = SKIM_MAX_MODEL_LEN
     for key in ("engine", "env", "max_num_seqs", "max_model_len", "gpu_memory_utilization"):
         if key in spec:
             request[key] = spec[key]
     return request
 
 
-def trial_inputs(conn, dataset: str, guidance: str, reviews: str) -> dict:
+def trial_inputs(conn, dataset: str, guidance: str, reviews: str, trial_prompt: str = "v2") -> dict:
     """The sample's prompts: every review's question, and each section asked against the
-    template its review has now (so each answer has a stored one to compare with)."""
+    template its review has now (so each answer has a stored one to compare with), with the
+    trial_prompt version of the section question."""
     revision, _, stored_model = stored_version(conn, dataset, guidance)
     inputs = read_inputs(conn, dataset, guidance, reviews)
     if inputs["revision"] != revision:
@@ -1588,7 +1588,7 @@ def trial_inputs(conn, dataset: str, guidance: str, reviews: str) -> dict:
     templates = dict(conn.execute(TRIAL_TEMPLATES_SQL, (revision, guidance)).fetchall())
     asked = {d.doc_id for d in inputs["documents"]}
     templates = {doc: t for doc, t in templates.items() if doc in asked}
-    prompts = document_prompts(inputs) + section_prompts(inputs, templates)
+    prompts = document_prompts(inputs) + section_prompts(inputs, templates, trial_prompt)
     return {
         "revision": revision,
         "stored_model": stored_model,
@@ -1624,14 +1624,22 @@ def trial_rows(trial_id: str, results: list[dict]) -> list[dict]:
 
 
 @task
-async def preview_trial(dataset: str, guidance: str, reviews: str, trial_model: str):
+async def preview_trial(
+    dataset: str, guidance: str, reviews: str, trial_model: str, trial_prompt: str = "v2"
+):
     """dry_run for a trial: what would be asked and what the job would ask SLURM for."""
     with connect() as conn:
-        x = trial_inputs(conn, dataset, guidance, reviews)
+        x = trial_inputs(conn, dataset, guidance, reviews, trial_prompt)
     spec = TRIAL_MODELS[trial_model]
+    sections = [p for p in x["prompts"] if p["meta"].get("section_id") is not None]
+    longest = max(sections, key=lambda p: len(p["messages"][1]["content"]), default=None)
     return {
         "result": "Dry run: nothing was sent to Blythe or stored.",
         "trial_model": trial_model,
+        "trial_prompt": f"{trial_prompt} ({TRIAL_PROMPTS[trial_prompt]})",
+        "section_prompt_chars_max": len(longest["messages"][1]["content"]) if longest else 0,
+        "prompts_file_mb": round(len(gzip_lines(x["prompts"])) / 1e6, 2),
+        "sample_section_prompt": sections[0]["messages"][1]["content"] if sections else None,
         "stored_model": x["stored_model"],
         "n_reviews": x["n_reviews"],
         "n_section_questions": x["n_sections"],
@@ -1639,7 +1647,9 @@ async def preview_trial(dataset: str, guidance: str, reviews: str, trial_model: 
         "mem_gb": spec.get("mem_gb"),
         "hours": automatic_hours(prompt_chars(x["prompts"])),
         "request": trial_request(
-            _request(dataset, guidance, reviews, x["stored_model"], x["revision"]), trial_model
+            _request(dataset, guidance, reviews, x["stored_model"], x["revision"]),
+            trial_model,
+            trial_prompt,
         ),
     }
 
@@ -1653,21 +1663,25 @@ async def submit_trial(
     hours: int,
     run_id: str,
     callback_url: str,
+    trial_prompt: str = "v2",
 ):
     with connect() as conn:
         applied = apply_migrations(conn)
         if applied:
             log(f"OK    Database tables updated: {', '.join(applied)}")
-        x = trial_inputs(conn, dataset, guidance, reviews)
+        x = trial_inputs(conn, dataset, guidance, reviews, trial_prompt)
     spec = TRIAL_MODELS[trial_model]
     request = trial_request(
-        _request(dataset, guidance, reviews, x["stored_model"], x["revision"]), trial_model
+        _request(dataset, guidance, reviews, x["stored_model"], x["revision"]),
+        trial_model,
+        trial_prompt,
     )
     request["gpus"], request["mem_gb"] = spec.get("gpus", 1), spec.get("mem_gb")
     hours = hours or automatic_hours(prompt_chars(x["prompts"]))
     data = gzip_lines(x["prompts"])
     log(
-        f"Trial of {trial_model}: {x['n_reviews']} reviews, {x['n_sections']} sections,"
+        f"Trial of {trial_model}, prompt {trial_prompt}: {x['n_reviews']} reviews,"
+        f" {x['n_sections']} sections,"
         f" {request['gpus']} GPU(s), {hours} h limit"
     )
     with Blythe() as b:
@@ -1739,85 +1753,251 @@ async def finish_trial(job: dict, state: dict):
     }
 
 
-async def model_trial(
-    dataset: str,
-    guidance: str,
-    reviews: str,
-    trial_model: str,
-    hours: int,
-    run_id: str,
-    check_every_minutes: int,
-    give_up_after_hours: int,
-) -> dict:
-    urls = await step("trial_callback_1", lambda: get_approval_urls("trial_finished_1"))
-    job = await submit_trial(
-        dataset, guidance, reviews, trial_model, hours, f"{run_id}-trial", urls["resume"]
-    )
-    state = await wait_for_job("trial", job, check_every_minutes, give_up_after_hours)
-    if state is None:
-        return {
-            "result": f"Gave up waiting for the trial job after {give_up_after_hours} h and"
-            " cancelled it. Nothing stored but the trial's start.",
-            **job,
-        }
-    return {**await finish_trial(job, state), "trial_job": state}
+# ---------------------------------------------------------------- the workflow
+
+DATASET_ORDER = ("DHRC-100", "DHRC-RAW")  # the order one run takes them in
+GUIDANCE_ORDER = ("dhr-2016", "dardr-2026")
+BOTH = "both"
+FIRST_PHASE = {
+    "full": "documents",
+    "retemplate": "retemplate",
+    "refine only": "extras",
+    "model trial": "trial",
+}
+# What is left in the database when a job is given up on, by the job it was.
+GAVE_UP = {
+    "documents": "Nothing stored.",
+    "sections": "Nothing stored.",
+    "retemplate": "The stored choices are unchanged.",
+    "extras": "The choices are stored, not refined.",
+    "trial": "Nothing stored but the trial's start.",
+}
+
+
+def combinations(dataset: str, guidance: str) -> list[tuple[str, str]]:
+    """The (dataset, guidance) pairs one run covers; "both" stands for each of the two.
+    DHRC-100 comes first, so its much shorter jobs reach the queue first."""
+    datasets = DATASET_ORDER if dataset == BOTH else (dataset,)
+    guidances = GUIDANCE_ORDER if guidance == BOTH else (guidance,)
+    return [(d, g) for d in datasets for g in guidances]
+
+
+def label(dataset: str, guidance: str) -> str:
+    return f"{dataset} / {guidance}"
+
+
+def run_suffix() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"{stamp}-{secrets.token_hex(2)}"
+
+
+def chain_run_id(dataset: str, guidance: str, reviews: str, suffix: str) -> str:
+    """One pair's Blythe run folder prefix: every pair of one run shares the suffix."""
+    return f"o1-choose-{dataset}-{guidance}-{reviews}-{suffix}".lower()
 
 
 def new_run_id(dataset: str, guidance: str, reviews: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return f"o1-choose-{dataset}-{guidance}-{reviews}-{stamp}-{secrets.token_hex(2)}".lower()
+    return chain_run_id(dataset, guidance, reviews, run_suffix())
 
 
-async def wait_for_job(
-    phase: str, job: dict, check_every_minutes: int, give_up_after_hours: int
-) -> dict | None:
-    """Waits until SLURM says the job has ended (its last step wakes this run; otherwise a
-    check every check_every_minutes). Returns its state, or None after giving up (the job is
-    then cancelled)."""
-    rounds = max(1, (give_up_after_hours * 60) // max(1, check_every_minutes))
-    for i in range(1, rounds + 1):
-        woke = await wait_for_approval(
-            key=f"{phase}_finished_{i}", timeout=check_every_minutes * 60
+@task(retry={"attempts": 2, "delay": 60})
+async def check_jobs(jobs: list[dict], next_callback_url: str) -> list[dict]:
+    """One login for every job still running. First points each job's wake-up at the next
+    round, so a job that ends during the check still wakes the run; then asks SLURM about
+    each. Tried again twice, a minute apart, so one failed login doesn't end a long run."""
+    states = []
+    with Blythe() as b:
+        for job in jobs:
+            b.set_callback(job["run_dir"], next_callback_url)
+        for job in jobs:
+            state = b.job_state(job["slurm_job_id"])
+            log(f"SLURM job {job['slurm_job_id']}: {state}")
+            states.append(state)
+    return states
+
+
+def new_chain(dataset: str, guidance: str, run_id: str) -> dict:
+    """One dataset x guidance pair's progress through the run. job: the GPU job it waits for
+    (None when it waits for nothing); pending: what its next task needs; result: what the
+    run returns for it."""
+    return {
+        "dataset": dataset,
+        "guidance": guidance,
+        "run_id": run_id,
+        "phase": "start",
+        "job": None,
+        "pending": {},
+        "since": None,
+        "checks": 0,
+        "result": {},
+        "error": None,
+    }
+
+
+def _wait(chain: dict, phase: str, waiting_on: dict, **pending) -> None:
+    chain.update(phase=phase, job=waiting_on, pending=pending, since=None, checks=0)
+
+
+def _done(chain: dict) -> None:
+    chain.update(phase="done", job=None, pending={})
+
+
+async def advance(chain: dict, state: dict | None, settings: dict, callback_url: str) -> None:
+    """Runs one pair's next tasks until it waits for a new GPU job (chain["job"]) or is done.
+    state: what SLURM said about the job it was waiting for (None at the start). Jobs it
+    submits wake the run at callback_url. The tasks are the same as for a single pair."""
+    d, g, rid, out = chain["dataset"], chain["guidance"], chain["run_id"], chain["result"]
+    stage, reviews, hours = settings["stage"], settings["reviews"], settings["hours"]
+    later_hours = 0 if stage == "full" else hours  # a full run works these limits out
+    p = chain["pending"]
+    phase = FIRST_PHASE[stage] if chain["phase"] == "start" else chain["phase"]
+    starting = chain["phase"] == "start"
+    chain["phase"] = phase
+
+    if phase == "documents":
+        if starting:
+            job = await submit_documents(
+                d, g, reviews, settings["model"], f"{rid}-documents", callback_url
+            )
+            return _wait(chain, "documents", job, documents_job=job)
+        out["documents_job"] = state
+        sections = await submit_sections(
+            d, g, reviews, p["documents_job"], state, hours, f"{rid}-sections", callback_url
         )
-        nxt = await step(
-            f"{phase}_callback_{i + 1}", lambda i=i: get_approval_urls(f"{phase}_finished_{i + 1}")
-        )
-        state = await check(job["run_dir"], job["slurm_job_id"], nxt["resume"])
-        if state["finished"]:
-            return {**state, "checks": i, "woken_by": "Blythe" if woke.get("approved") else "timer"}
-    await cancel(job["slurm_job_id"])
-    return None
-
-
-async def refine_choices(
-    dataset: str,
-    guidance: str,
-    hours: int,
-    run_id: str,
-    check_every_minutes: int,
-    give_up_after_hours: int,
-) -> dict:
-    """The extra-sections question on Blythe, then the rules (refine.py)."""
-    urls = await step("extras_callback_1", lambda: get_approval_urls("extras_finished_1"))
-    extras = await submit_extras(dataset, guidance, hours, f"{run_id}-extras", urls["resume"])
-    state = None
-    if extras["extras_job"]:
-        state = await wait_for_job(
-            "extras", extras["extras_job"], check_every_minutes, give_up_after_hours
-        )
-        if state is None:
-            return {
-                "result": f"Gave up waiting for the extras job after {give_up_after_hours} h and"
-                " cancelled it. The choices are stored, not refined.",
-                **extras["extras_job"],
+        if sections["sections_job"]:
+            return _wait(
+                chain,
+                "sections",
+                sections["sections_job"],
+                documents_job=p["documents_job"],
+                sections=sections,
+            )
+        p = {"documents_job": p["documents_job"], "sections": sections}
+        phase, state, starting = "sections", None, False
+        chain["phase"] = phase
+    if phase == "sections":
+        out.update(await load_results(d, g, reviews, p["documents_job"], p["sections"], state))
+        out["sections_job"] = state
+        phase, starting = "retemplate", True
+        chain["phase"] = phase
+    if phase == "retemplate":
+        if starting:
+            p = {
+                "retemplate": await submit_retemplate(
+                    d, g, later_hours, f"{rid}-retemplate", callback_url
+                )
             }
-    return {**await finish_refining(dataset, guidance, extras, state), "extras_job": state}
+            if p["retemplate"]["retemplate_job"]:
+                return _wait(chain, "retemplate", p["retemplate"]["retemplate_job"], **p)
+            state = None
+        finished = await finish_retemplate(d, g, p["retemplate"], state)
+        out["retemplated"] = {**finished, "retemplate_job": state}
+        phase, starting = "extras", True
+        chain["phase"] = phase
+    if phase == "extras":
+        if starting:
+            p = {"extras": await submit_extras(d, g, later_hours, f"{rid}-extras", callback_url)}
+            if p["extras"]["extras_job"]:
+                return _wait(chain, "extras", p["extras"]["extras_job"], **p)
+            state = None
+        finished = await finish_refining(d, g, p["extras"], state)
+        out["after_refining"] = {**finished, "extras_job": state}
+        return _done(chain)
+    if phase == "trial":
+        if starting:
+            job = await submit_trial(
+                d,
+                g,
+                reviews,
+                settings["trial_model"],
+                hours,
+                f"{rid}-trial",
+                callback_url,
+                settings["trial_prompt"],
+            )
+            return _wait(chain, "trial", job, job=job)
+        out.update(await finish_trial(p["job"], state))
+        out["trial_job"] = state
+        return _done(chain)
+    raise ValueError(f"Unknown phase {phase!r}")
+
+
+async def advance_or_fail(chain: dict, state: dict | None, settings: dict, url: str) -> None:
+    """advance(), but a failed task ends only this pair: the others carry on."""
+    try:
+        await advance(chain, state, settings, url)
+    except TaskError as error:
+        chain["error"] = f"{chain['phase']}: {getattr(error, 'message', None) or error}"
+        _done(chain)
+
+
+async def run_chains(chains: list[dict], settings: dict) -> None:
+    """Moves every pair along at once. Each pair's GPU jobs are its own, so up to one job per
+    pair runs on Blythe at a time, side by side. The run sleeps (holding no Windmill worker)
+    until any job wakes it or check_every_minutes pass; then one login checks every job still
+    running, and each pair whose job has ended goes on to its next task. Tasks run one after
+    another, so the run never logs in to Blythe twice at once (each 2FA code works once)."""
+    every, give_up = settings["check_every_minutes"], settings["give_up_after_hours"]
+    url = (await step("callback_1", lambda: get_approval_urls("finished_1")))["resume"]
+    for chain in chains:
+        await advance_or_fail(chain, None, settings, url)
+    now = await step("clock_1", time.time)
+    i = 1
+    while True:
+        for chain in chains:
+            if chain["job"] and chain["since"] is None:
+                chain["since"] = now
+        waiting = [c for c in chains if c["job"]]
+        if not waiting:
+            return
+        woke = await wait_for_approval(key=f"finished_{i}", timeout=every * 60)
+        url = (await step(f"callback_{i + 1}", lambda i=i: get_approval_urls(f"finished_{i + 1}")))[
+            "resume"
+        ]
+        states = await check_jobs([c["job"] for c in waiting], url)
+        now = await step(f"clock_{i + 1}", time.time)
+        for chain, state in zip(waiting, states, strict=True):
+            chain["checks"] += 1
+            if state["finished"]:
+                woken_by = "Blythe" if (woke or {}).get("approved") else "timer"
+                state = {**state, "checks": chain["checks"], "woken_by": woken_by}
+                await advance_or_fail(chain, state, settings, url)
+            elif now - chain["since"] > give_up * 3600:
+                cancelled = await cancel(chain["job"]["slurm_job_id"])
+                chain["error"] = (
+                    f"Gave up waiting for the {chain['phase']} job"
+                    f" ({chain['job']['slurm_job_id']}) after {give_up} h and cancelled it"
+                    f" ({cancelled}). {GAVE_UP[chain['phase']]}"
+                )
+                chain["result"]["given_up_job"] = chain["job"]
+                _done(chain)
+        i += 1
+
+
+def summary_of(chains: list[dict], stage: str, reviews: str) -> dict:
+    runs = {}
+    for chain in chains:
+        result = dict(chain["result"])
+        if chain["error"]:
+            result["error"] = chain["error"]
+        runs[label(chain["dataset"], chain["guidance"])] = result
+    failed = [label(c["dataset"], c["guidance"]) for c in chains if c["error"]]
+    return {
+        "stage": stage,
+        "reviews": reviews,
+        "result": (
+            f"{len(chains) - len(failed)} of {len(chains)} dataset x guidance pairs finished"
+            + (f"; failed: {', '.join(failed)}" if failed else "")
+        ),
+        "failed": failed,
+        "runs": runs,
+    }
 
 
 @workflow
 async def main(
-    dataset: Literal["DHRC-100", "DHRC-RAW"] = "DHRC-100",
-    guidance: Literal["dhr-2016", "dardr-2026"] = "dhr-2016",
+    dataset: Literal["DHRC-100", "DHRC-RAW", "both"] = "DHRC-100",
+    guidance: Literal["dhr-2016", "dardr-2026", "both"] = "dhr-2016",
     reviews: Literal["pilot", "all"] = "pilot",
     model: Literal["Qwen/Qwen3.8-27B-FP8"] = "Qwen/Qwen3.8-27B-FP8",
     hours: int = 0,
@@ -1827,124 +2007,86 @@ async def main(
     trial_model: Literal[
         "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16", "Qwen/Qwen3.8-27B-FP8"
     ] = "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16",
+    trial_prompt: Literal["v2", "v3"] = "v2",
     dry_run: bool = False,
 ):
     """Windmill runs this; only Rowan's runs can use Blythe. dataset and guidance: whose
-    reviews, against which templates (stage 4 must have run for them, which stores the
-    templates). reviews: 'pilot' (the 10 pilot reviews, minutes of GPU time) or 'all'.
-    model: the LLM on Blythe. hours: the section job's SLURM time limit (0 = worked out from
-    the size of its prompts; at most 48). check_every_minutes: how often to check a job that
-    hasn't woken this run. give_up_after_hours: when to stop waiting for a job and cancel it.
-    stage: how much to run. "full": everything. For choices already stored (skipping the
-    first two questions): "retemplate" gives the reviews the model wasn't sure of the template
-    their sections fit best (a GPU job), then the extra-sections question and the rules
-    (another); "refine only" only the extra-sections question (a GPU job) and the rules;
-    "rules only" only the rules, with the extra-section answers already stored (no GPU).
-    hours is then each job's limit. "model trial": asks trial_model the same questions as the
-    stored choices for the chosen reviews and stores its answers beside them (corpus.trial_answers;
-    compare in corpus.trial_summary); nothing stored is changed. dry_run: only show what would be sent or done."""
+    reviews, against which templates; "both" runs each of the two, so dataset = both and
+    guidance = both covers all four pairs in one run, their GPU jobs side by side on Blythe
+    (stage 4 must have run for each pair, which stores the templates). A pair that fails
+    doesn't stop the others; the result lists each pair's outcome under "runs".
+    reviews: 'pilot' (the 10 pilot reviews, minutes of GPU time) or 'all'. model: the LLM on
+    Blythe. hours: the SLURM time limit of each pair's section job (0 = worked out from the
+    size of its prompts; at most 48). check_every_minutes: how often to check jobs that
+    haven't woken this run. give_up_after_hours: when to stop waiting for a job and cancel it.
+    stage: how much to run. "full": everything (replaces the pair's stored choices). For
+    choices already stored (skipping the first two questions): "retemplate" gives the
+    reviews the model wasn't sure of the template their sections fit best (a GPU job), then
+    the extra-sections question and the rules (another); "refine only" only the
+    extra-sections question (a GPU job) and the rules; "rules only" only the rules, with the
+    extra-section answers already stored (no GPU). hours is then each job's limit. "model
+    trial": asks trial_model the same questions as the stored choices for the chosen reviews
+    and stores its answers beside them (corpus.trial_answers; compare in
+    corpus.trial_summary); nothing stored is changed. trial_prompt (model trial only): the
+    section question to ask, "v2" (the section alone, as stored) or "v3" (the section after
+    its whole review's outline, prompts.skim_section_prompt); to try v3 on its own, keep the
+    current model as trial_model. dry_run: only show what would be sent or done."""
     check_owner()  # Rowan's Blythe account: no one else may run this, not even a dry run
-    check_choices(dataset, guidance, reviews, model)
+    pairs = combinations(dataset, guidance)
+    for d, g in pairs:
+        check_choices(d, g, reviews, model)
     if hours and not 1 <= hours <= MAX_HOURS:
         raise ValueError(f"hours must be 0 (automatic) or 1 to {MAX_HOURS}")
+    if check_every_minutes < 1 or give_up_after_hours < 1:
+        raise ValueError("check_every_minutes and give_up_after_hours must be 1 or more")
     if stage not in STAGES:
         raise ValueError(f"Unknown stage {stage!r}: choose one of {STAGES}")
-    retemplate, refine_only, rules_only, trial = (stage == s for s in STAGES[1:])
-    if trial and trial_model not in TRIAL_MODELS:
+    if stage == "model trial" and trial_model not in TRIAL_MODELS:
         raise ValueError(
             f"Unknown trial model {trial_model!r}: choose one of {sorted(TRIAL_MODELS)}"
         )
+    if trial_prompt not in TRIAL_PROMPTS:
+        raise ValueError(f"Unknown trial prompt {trial_prompt!r}: choose one of {TRIAL_PROMPTS}")
+
     if dry_run:
-        if trial:
-            return await preview_trial(dataset, guidance, reviews, trial_model)
-        if retemplate:
-            return await preview_retemplate(dataset, guidance)
-        if refine_only or rules_only:
-            return await preview_extras(dataset, guidance)
-        return await preview(dataset, guidance, reviews)
-    if rules_only:
+        previews = {}
+        for d, g in pairs:
+            if stage == "model trial":
+                previews[label(d, g)] = await preview_trial(
+                    d, g, reviews, trial_model, trial_prompt
+                )
+            elif stage == "retemplate":
+                previews[label(d, g)] = await preview_retemplate(d, g)
+            elif stage in ("refine only", "rules only"):
+                previews[label(d, g)] = await preview_extras(d, g)
+            else:
+                previews[label(d, g)] = await preview(d, g, reviews)
         return {
-            "dataset": dataset,
-            "guidance": guidance,
-            **await rules_only_task(dataset, guidance),
+            "result": "Dry run: nothing was sent to Blythe or stored.",
+            "stage": stage,
+            "runs": previews,
         }
 
-    run_id = await step("run_id", lambda: new_run_id(dataset, guidance, reviews))
-    if trial:
-        return {
-            "dataset": dataset,
-            "guidance": guidance,
-            "reviews": reviews,
-            **await model_trial(
-                dataset,
-                guidance,
-                reviews,
-                trial_model,
-                hours,
-                run_id,
-                check_every_minutes,
-                give_up_after_hours,
-            ),
-        }
-    if refine_only or retemplate:
-        result = {"dataset": dataset, "guidance": guidance}
-        if retemplate:
-            result["retemplated"] = await retemplate_choices(
-                dataset, guidance, hours, run_id, check_every_minutes, give_up_after_hours
-            )
-            if "result" in result["retemplated"]:
-                return {**result, **result["retemplated"]}
-        refined = await refine_choices(
-            dataset, guidance, hours, run_id, check_every_minutes, give_up_after_hours
-        )
-        return {**result, **refined}
-    urls = await step("documents_callback_1", lambda: get_approval_urls("documents_finished_1"))
-    documents_job = await submit_documents(
-        dataset, guidance, reviews, model, f"{run_id}-documents", urls["resume"]
-    )
-    documents_state = await wait_for_job(
-        "documents", documents_job, check_every_minutes, give_up_after_hours
-    )
-    if documents_state is None:
-        return {
-            "result": f"Gave up waiting for the document job after {give_up_after_hours} h"
-            " and cancelled it. Nothing stored.",
-            **documents_job,
-        }
+    if stage == "rules only":
+        chains = [new_chain(d, g, "") for d, g in pairs]
+        for chain in chains:
+            try:
+                chain["result"] = await rules_only_task(chain["dataset"], chain["guidance"])
+            except TaskError as error:
+                chain["error"] = f"rules: {getattr(error, 'message', None) or error}"
+        return summary_of(chains, stage, reviews)
 
-    urls = await step("sections_callback_1", lambda: get_approval_urls("sections_finished_1"))
-    sections = await submit_sections(
-        dataset,
-        guidance,
-        reviews,
-        documents_job,
-        documents_state,
-        hours,
-        f"{run_id}-sections",
-        urls["resume"],
-    )
-    sections_state = None
-    if sections["sections_job"]:
-        sections_state = await wait_for_job(
-            "sections", sections["sections_job"], check_every_minutes, give_up_after_hours
-        )
-        if sections_state is None:
-            return {
-                "result": f"Gave up waiting for the section job after {give_up_after_hours}"
-                " h and cancelled it. Nothing stored.",
-                **sections["sections_job"],
-            }
-    result = await load_results(dataset, guidance, reviews, documents_job, sections, sections_state)
-    retemplated = await retemplate_choices(
-        dataset, guidance, 0, run_id, check_every_minutes, give_up_after_hours
-    )
-    refined = await refine_choices(
-        dataset, guidance, 0, run_id, check_every_minutes, give_up_after_hours
-    )
-    return {
-        **result,
-        "documents_job": documents_state,
-        "sections_job": sections_state,
-        "retemplated": retemplated,
-        "after_refining": refined,
+    suffix = await step("run_suffix", run_suffix)
+    chains = [new_chain(d, g, chain_run_id(d, g, reviews, suffix)) for d, g in pairs]
+    settings = {
+        "stage": stage,
+        "reviews": reviews,
+        "model": model,
+        "trial_model": trial_model,
+        "trial_prompt": trial_prompt,
+        "hours": hours,
+        "check_every_minutes": check_every_minutes,
+        "give_up_after_hours": give_up_after_hours,
     }
+    await run_chains(chains, settings)
+    return summary_of(chains, stage, reviews)

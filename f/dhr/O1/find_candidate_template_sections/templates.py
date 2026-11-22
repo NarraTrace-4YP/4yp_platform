@@ -1,4 +1,4 @@
-"""Read statutory report templates from the supported GOV.UK guidance editions.
+"""O1 stage 4, shared: read the report templates from the GOV.UK guidance.
 
 Each guidance specification identifies source files, template boundaries, and
 expected section headings. Parse PDF or Word text against that specification

@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Count case attributes across each dataset and the complete DHR Library.
+"""O1 stage 2, app: count case details per dataset and in the library (Attributes tab).
 
 Group library filter labels into the same sections used by the case viewer.
 Return dataset and library totals for comparing attribute coverage in the app.

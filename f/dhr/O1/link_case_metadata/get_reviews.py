@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""List loaded reviews and filter facets for the O1 case viewer.
+"""O1 stage 2, app: list the reviews and their case-detail filters (Cases tab).
 
 Join review provenance with linked DHR Library metadata. Keep facet counts and
 review facts in the response shape consumed by the React app.
