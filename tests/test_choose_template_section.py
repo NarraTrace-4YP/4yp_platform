@@ -1131,10 +1131,16 @@ def test_choices_tables_and_views(database):
     rows = stage.trial_rows(
         "t1",
         [
-            {"meta": {"doc_id": "D", "options": {"A": stored_d}}, "answer": "A",
-             "probabilities": {"A": 0.9}},
-            {"meta": {"doc_id": "D", "section_id": "s0", "options": {"A": [stored_d, 1]}},
-             "answer": "Z", "probabilities": {"Z": 0.7}},
+            {
+                "meta": {"doc_id": "D", "options": {"A": stored_d}},
+                "answer": "A",
+                "probabilities": {"A": 0.9},
+            },
+            {
+                "meta": {"doc_id": "D", "section_id": "s0", "options": {"A": [stored_d, 1]}},
+                "answer": "Z",
+                "probabilities": {"Z": 0.7},
+            },
         ],
     )
     with conn.cursor() as cur:

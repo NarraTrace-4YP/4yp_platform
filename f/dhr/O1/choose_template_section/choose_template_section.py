@@ -1646,7 +1646,12 @@ async def preview_trial(dataset: str, guidance: str, reviews: str, trial_model: 
 
 @task
 async def submit_trial(
-    dataset: str, guidance: str, reviews: str, trial_model: str, hours: int, run_id: str,
+    dataset: str,
+    guidance: str,
+    reviews: str,
+    trial_model: str,
+    hours: int,
+    run_id: str,
     callback_url: str,
 ):
     with connect() as conn:
@@ -1681,8 +1686,15 @@ async def submit_trial(
     with connect() as conn:
         conn.execute(
             START_TRIAL_SQL,
-            (run_id, x["revision"], guidance, reviews, trial_model, json.dumps(request),
-             submitted["slurm_job_id"]),
+            (
+                run_id,
+                x["revision"],
+                guidance,
+                reviews,
+                trial_model,
+                json.dumps(request),
+                submitted["slurm_job_id"],
+            ),
         )
     return {
         **submitted,
@@ -1703,15 +1715,16 @@ async def finish_trial(job: dict, state: dict):
             with conn.cursor() as cur:
                 cur.executemany(TRIAL_ANSWER_SQL, rows)
             conn.execute(
-                "UPDATE corpus.model_trials SET summary = %s, finished = now()"
-                " WHERE trial_id = %s",
+                "UPDATE corpus.model_trials SET summary = %s, finished = now() WHERE trial_id = %s",
                 (json.dumps(summary), job["trial_id"]),
             )
         cur = conn.execute(TRIAL_SUMMARY_SQL, (job["trial_id"],))
         names = [c.name for c in cur.description]
         compared = [
-            {k: (float(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, int) else v)
-             for k, v in zip(names, row)}
+            {
+                k: (float(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, int) else v)
+                for k, v in zip(names, row)
+            }
             for row in cur.fetchall()
         ]
     log(f"OK    Stored {len(rows)} trial answers")
@@ -1727,8 +1740,14 @@ async def finish_trial(job: dict, state: dict):
 
 
 async def model_trial(
-    dataset: str, guidance: str, reviews: str, trial_model: str, hours: int, run_id: str,
-    check_every_minutes: int, give_up_after_hours: int,
+    dataset: str,
+    guidance: str,
+    reviews: str,
+    trial_model: str,
+    hours: int,
+    run_id: str,
+    check_every_minutes: int,
+    give_up_after_hours: int,
 ) -> dict:
     urls = await step("trial_callback_1", lambda: get_approval_urls("trial_finished_1"))
     job = await submit_trial(
@@ -1832,7 +1851,9 @@ async def main(
         raise ValueError(f"Unknown stage {stage!r}: choose one of {STAGES}")
     retemplate, refine_only, rules_only, trial = (stage == s for s in STAGES[1:])
     if trial and trial_model not in TRIAL_MODELS:
-        raise ValueError(f"Unknown trial model {trial_model!r}: choose one of {sorted(TRIAL_MODELS)}")
+        raise ValueError(
+            f"Unknown trial model {trial_model!r}: choose one of {sorted(TRIAL_MODELS)}"
+        )
     if dry_run:
         if trial:
             return await preview_trial(dataset, guidance, reviews, trial_model)
@@ -1855,8 +1876,14 @@ async def main(
             "guidance": guidance,
             "reviews": reviews,
             **await model_trial(
-                dataset, guidance, reviews, trial_model, hours, run_id,
-                check_every_minutes, give_up_after_hours,
+                dataset,
+                guidance,
+                reviews,
+                trial_model,
+                hours,
+                run_id,
+                check_every_minutes,
+                give_up_after_hours,
             ),
         }
     if refine_only or retemplate:
