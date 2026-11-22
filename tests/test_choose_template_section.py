@@ -32,6 +32,9 @@ from f.dhr.O1.choose_template_section.prompts import (  # noqa: E402
     LETTERS,
     NONE,
     PROMPT_VERSION,
+    SKIM_MAX_MODEL_LEN,
+    SKIM_OUTLINE_CHARS,
+    SKIM_PROMPT_VERSION,
     Document,
     Section,
     Template,
@@ -41,9 +44,11 @@ from f.dhr.O1.choose_template_section.prompts import (  # noqa: E402
     extra_prompt,
     interpret,
     interpret_document,
+    review_outline,
     section_options,
     section_prompt,
     shorten,
+    skim_section_prompt,
 )
 
 GUIDANCE = "Multi-agency Statutory Guidance (2016)"
@@ -438,18 +443,6 @@ def test_sbatch_can_ask_for_more_gpus_and_memory():
     for gpus, mem in ((4, None), (0, None), (None, 200), (2, 2.5)):
         with pytest.raises(blythe.BlytheError):
             blythe.sbatch_command("/j", "/r", gpus=gpus, mem_gb=mem)
-
-
-def test_trial_request_uses_the_trial_models_settings():
-    base = stage._request("DHRC-100", "dhr-2016", "pilot", "Qwen/Qwen3.8-27B-FP8", "rev")
-    for model, spec in stage.TRIAL_MODELS.items():
-        request = stage.trial_request(base, model)
-        assert request["model"] == model and request["revision"] == "rev"
-        assert request.get("engine") == spec.get("engine")
-        assert 1 <= spec.get("gpus", 1) <= blythe.GPUS_PER_NODE
-        tp = (spec.get("engine") or {}).get("tensor_parallel_size", 1)
-        assert tp == spec.get("gpus", 1)  # every GPU asked for is used
-    assert set(stage.TRIAL_MODELS) >= {"Qwen/Qwen3.8-27B-FP8"}
 
 
 @pytest.mark.parametrize(
@@ -934,6 +927,10 @@ def test_choices_tables_and_views(database):
     assert version["n_unmatched"] == 5 and version["n_no_answer"] == 0
     stage.store(conn, version, documents, rows)
     stage.store(conn, version, documents, rows)  # choosing again replaces the choices
+    assert stage.stored_prompt(conn, rev, g) == "v2"  # later stages ask the same way
+    stage.store(conn, {**version, "prompt_version": SKIM_PROMPT_VERSION}, documents, rows)
+    assert stage.stored_prompt(conn, rev, g) == "v3"
+    stage.store(conn, version, documents, rows)
 
     statuses = conn.execute(
         "SELECT doc_id, section_id, status, template_heading FROM corpus.current_template_choices"
@@ -1117,43 +1114,6 @@ def test_choices_tables_and_views(database):
     # reviews given a template by their sections are scored again on the next run
     assert stage.unsure_reviews(conn, rev, g) == {"D": f"{g}/overview", "E": f"{g}/overview"}
 
-    # a model trial: its answers sit beside the stored ones, which don't change
-    stored_d = conn.execute(
-        "SELECT template FROM corpus.document_choices WHERE revision = %s AND doc_id = 'D'",
-        (rev,),
-    ).fetchone()[0]
-    conn.execute(
-        "INSERT INTO corpus.model_trials (trial_id, revision, guidance, reviews, model, request)"
-        " VALUES ('t1', %s, %s, 'pilot', 'other/model', '{}')",
-        (rev, g),
-    )
-    job = {"trial_id": "t1"}
-    rows = stage.trial_rows(
-        "t1",
-        [
-            {
-                "meta": {"doc_id": "D", "options": {"A": stored_d}},
-                "answer": "A",
-                "probabilities": {"A": 0.9},
-            },
-            {
-                "meta": {"doc_id": "D", "section_id": "s0", "options": {"A": [stored_d, 1]}},
-                "answer": "Z",
-                "probabilities": {"Z": 0.7},
-            },
-        ],
-    )
-    with conn.cursor() as cur:
-        cur.executemany(stage.TRIAL_ANSWER_SQL, rows)
-    compared = conn.execute(
-        "SELECT question, trial_answer, trial_probability FROM corpus.trial_comparison"
-        " WHERE trial_id = %s ORDER BY question",
-        (job["trial_id"],),
-    ).fetchall()
-    assert [(q, a) for q, a, _ in compared] == [("review", stored_d), ("section", "none")]
-    summary = conn.execute(stage.TRIAL_SUMMARY_SQL, ("t1",)).fetchall()
-    assert [(q, n, same) for q, n, same, *_ in summary] == [("review", 1, 1), ("section", 1, 0)]
-
     with pytest.raises(Exception):  # a template without its position isn't allowed
         conn.execute(
             "UPDATE corpus.template_choices SET template_position = NULL WHERE section_id = 's1'"
@@ -1171,3 +1131,307 @@ def test_choices_tables_and_views(database):
 def test_gzip_member_helper_is_standard():
     raw = stage.gzip_lines([{"id": "a"}])
     assert gzip.GzipFile(fileobj=io.BytesIO(raw)).read() == b'{"id": "a"}\n'
+
+
+# ---------------------------------------------------------------- several pairs in one run
+
+
+def test_both_means_every_pair_in_a_fixed_order():
+    assert stage.combinations("both", "both") == [
+        ("DHRC-100", "dhr-2016"),
+        ("DHRC-100", "dardr-2026"),
+        ("DHRC-RAW", "dhr-2016"),
+        ("DHRC-RAW", "dardr-2026"),
+    ]
+    assert stage.combinations("DHRC-RAW", "both") == [
+        ("DHRC-RAW", "dhr-2016"),
+        ("DHRC-RAW", "dardr-2026"),
+    ]
+    assert stage.combinations("DHRC-100", "dardr-2026") == [("DHRC-100", "dardr-2026")]
+    suffix = "20261122-170000-ab12"
+    ids = {stage.chain_run_id(d, g, "all", suffix) for d, g in stage.combinations("both", "both")}
+    assert len(ids) == 4
+    for run_id in ids:  # the longest phase name still makes a safe folder name
+        blythe.check_name(f"{run_id}-retemplate")
+
+
+class FakeBlythe:
+    """Stands in for the workflow's tasks and Windmill's suspend/step calls: jobs end after a
+    set number of checks, and every call is recorded in order."""
+
+    def __init__(self, monkeypatch, finish_after=None, fail=(), clock_step=600.0):
+        self.calls, self.jobs, self.callbacks, self.args = [], {}, [], {}
+        self.finish_after = finish_after or {}  # (dataset, phase) -> checks before it ends
+        self.fail = set(fail)  # (dataset, guidance, task name) that raise
+        self.clock, self.clock_step = 0.0, clock_step
+        self.next_id = 1000
+        monkeypatch.setenv("WM_USERNAME", "rshields2004")
+
+        async def fake_step(name, fn):
+            if name.startswith("clock_"):
+                self.clock += self.clock_step
+                return self.clock
+            return fn()
+
+        async def fake_wait(key=None, timeout=None, **_):
+            self.calls.append(("wait", key, timeout))
+            return {"approved": True}
+
+        monkeypatch.setattr(stage, "step", fake_step)
+        monkeypatch.setattr(stage, "wait_for_approval", fake_wait)
+        monkeypatch.setattr(stage, "get_approval_urls", lambda key: {"resume": f"url:{key}"})
+        monkeypatch.setattr(stage, "check_jobs", self.check_jobs)
+        monkeypatch.setattr(stage, "cancel", self.cancel)
+        for name in (
+            "submit_documents",
+            "submit_sections",
+            "load_results",
+            "submit_retemplate",
+            "finish_retemplate",
+            "submit_extras",
+            "finish_refining",
+            "rules_only_task",
+            "preview",
+            "preview_retemplate",
+            "preview_extras",
+        ):
+            monkeypatch.setattr(stage, name, self.recorder(name))
+
+    def job(self, dataset, phase, callback_url):
+        self.next_id += 1
+        job = {"run_dir": f"runs/{dataset}-{phase}", "slurm_job_id": str(self.next_id)}
+        self.jobs[job["slurm_job_id"]] = [self.finish_after.get((dataset, phase), 1), dataset]
+        self.callbacks.append((job["slurm_job_id"], callback_url))
+        return job
+
+    def recorder(self, name):
+        async def fake(*args):
+            dataset, guidance = args[0], args[1]
+            self.calls.append((name, dataset, guidance))
+            self.args.setdefault(name, []).append(args)
+            if (dataset, guidance, name) in self.fail:
+                raise RuntimeError(f"{name} failed")
+            if name == "submit_documents":
+                return {**self.job(dataset, "documents", args[5]), "revision": "r", "model": "m"}
+            if name == "submit_sections":
+                return {"documents": [], "sections_job": self.job(dataset, "sections", args[7])}
+            if name == "submit_retemplate":
+                return {"revision": "r", "retemplate_job": self.job(dataset, "retemplate", args[4])}
+            if name == "submit_extras":
+                return {"revision": "r", "extras_job": self.job(dataset, "extras", args[4])}
+            return {"done": name, "dataset": dataset, "guidance": guidance}
+
+        return fake
+
+    async def check_jobs(self, jobs, next_callback_url):
+        self.calls.append(("check", tuple(j["slurm_job_id"] for j in jobs), next_callback_url))
+        states = []
+        for job in jobs:
+            entry = self.jobs[job["slurm_job_id"]]
+            entry[0] -= 1
+            states.append(
+                {"finished": entry[0] <= 0, "state": "COMPLETED" if entry[0] <= 0 else "RUNNING"}
+            )
+        return states
+
+    async def cancel(self, slurm_job_id):
+        self.calls.append(("cancel", slurm_job_id))
+        return {"exit_status": 0}
+
+
+def test_a_full_run_of_both_datasets_runs_their_jobs_side_by_side(monkeypatch):
+    fake = FakeBlythe(monkeypatch, finish_after={("DHRC-RAW", "sections"): 3})
+    result = asyncio.run(stage.main(dataset="both", guidance="dhr-2016", reviews="all"))
+    assert result["failed"] == [] and set(result["runs"]) == {
+        "DHRC-100 / dhr-2016",
+        "DHRC-RAW / dhr-2016",
+    }
+    for run in result["runs"].values():
+        assert {"documents_job", "sections_job", "retemplated", "after_refining"} <= set(run)
+    names = [c[0] for c in fake.calls]
+    # both documents jobs are submitted before the run first waits
+    assert names[:3] == ["submit_documents", "submit_documents", "wait"]
+    # DHRC-100 finishes every step while DHRC-RAW's section job is still running
+    raw_loaded = fake.calls.index(("load_results", "DHRC-RAW", "dhr-2016"))
+    hundred_done = fake.calls.index(("finish_refining", "DHRC-100", "dhr-2016"))
+    assert hundred_done < raw_loaded
+    # every job wakes the round the run waits for next: submitted before round i's wait,
+    # it carries round i's address; check_jobs moves running jobs on to the next round
+    waits = [c for c in fake.calls if c[0] == "wait"]
+    assert [w[1] for w in waits] == [f"finished_{i}" for i in range(1, len(waits) + 1)]
+    assert all(w[2] == 30 * 60 for w in waits)
+    assert fake.callbacks[0][1] == fake.callbacks[1][1] == "url:finished_1"
+    checks = [c for c in fake.calls if c[0] == "check"]
+    assert [c[2] for c in checks] == [f"url:finished_{i}" for i in range(2, len(checks) + 2)]
+    # one login per round, for every job still running
+    assert len(checks[0][1]) == 2
+
+
+def test_a_failing_pair_does_not_stop_the_others(monkeypatch):
+    fake = FakeBlythe(monkeypatch, fail={("DHRC-100", "dardr-2026", "submit_sections")})
+    result = asyncio.run(stage.main(dataset="DHRC-100", guidance="both", reviews="pilot"))
+    assert result["failed"] == ["DHRC-100 / dardr-2026"]
+    assert result["runs"]["DHRC-100 / dardr-2026"]["error"].startswith("documents:")
+    assert "after_refining" in result["runs"]["DHRC-100 / dhr-2016"]
+    assert ("finish_refining", "DHRC-100", "dardr-2026") not in fake.calls
+
+
+def test_a_job_that_never_ends_is_cancelled_after_give_up_after_hours(monkeypatch):
+    fake = FakeBlythe(monkeypatch, finish_after={("DHRC-RAW", "documents"): 10**6})
+    result = asyncio.run(
+        stage.main(dataset="both", guidance="dardr-2026", reviews="all", give_up_after_hours=2)
+    )
+    assert result["failed"] == ["DHRC-RAW / dardr-2026"]
+    assert (
+        "Gave up waiting for the documents job" in result["runs"]["DHRC-RAW / dardr-2026"]["error"]
+    )
+    assert [c for c in fake.calls if c[0] == "cancel"] == [("cancel", "1002")]
+    assert "after_refining" in result["runs"]["DHRC-100 / dardr-2026"]
+
+
+def test_other_stages_and_dry_runs_cover_every_pair(monkeypatch):
+    fake = FakeBlythe(monkeypatch)
+    result = asyncio.run(stage.main(dataset="both", guidance="both", stage="retemplate"))
+    assert len(result["runs"]) == 4 and result["failed"] == []
+    assert all(set(r) == {"retemplated", "after_refining"} for r in result["runs"].values())
+    assert not any(c[0] == "submit_documents" for c in fake.calls)
+
+    result = asyncio.run(stage.main(dataset="both", guidance="both", stage="rules only"))
+    assert [c for c in fake.calls if c[0] == "rules_only_task"] == [
+        ("rules_only_task", d, g) for d, g in stage.combinations("both", "both")
+    ]
+    assert result["failed"] == []
+
+    result = asyncio.run(stage.main(dataset="both", guidance="dhr-2016", dry_run=True))
+    assert set(result["runs"]) == {"DHRC-100 / dhr-2016", "DHRC-RAW / dhr-2016"}
+    assert all(r["done"] == "preview" for r in result["runs"].values())
+
+
+def test_waiting_settings_are_checked(monkeypatch):
+    monkeypatch.setenv("WM_USERNAME", "rshields2004")
+    for bad in ({"check_every_minutes": 0}, {"give_up_after_hours": 0}, {"hours": 49}):
+        with pytest.raises(ValueError):
+            asyncio.run(stage.main(dry_run=True, **bad))
+
+
+# ---------------------------------------------------------------- prompt v3: the whole review
+
+REVIEW = [
+    Section("R", "s1", "1 Introduction", [], "This review looks at the death of Mary.", "Scope"),
+    Section("R", "s2", "1.1 Scope", ["1 Introduction"], "It covers 2015 to 2018.", ""),
+    Section("R", "s3", "2 Chronology", [], "In March 2016 Mary went to her GP.", ""),
+    Section("R", "s4", "3 Analysis", [], "The GP did not ask about abuse.", ""),
+    Section("R", "s5", "4 Lessons learnt", [], "Agencies should share information.", ""),
+]
+
+
+def test_the_outline_numbers_and_indents_every_section_with_its_start():
+    outline = review_outline(REVIEW)
+    lines = outline.text.splitlines()
+    assert lines[0] == "[1] 1 Introduction — This review looks at the death of Mary."
+    assert lines[1] == "  [2] 1.1 Scope — It covers 2015 to 2018."  # inside section 1
+    assert len(lines) == 5 and outline.numbers == {f"s{n}": n for n in range(1, 6)}
+    assert outline.text_chars == 240
+    with pytest.raises(ValueError):
+        review_outline(REVIEW + [Section("Other", "x", "h", [], "", "")])
+
+
+def test_a_long_outline_shows_less_of_each_section_to_fit():
+    long = [Section("R", f"s{n}", f"Heading {n}", [], "word " * 100, "") for n in range(1, 400)]
+    outline = review_outline(long)
+    assert len(outline.text) <= SKIM_OUTLINE_CHARS and outline.text_chars < 240
+    assert len(outline.text.splitlines()) == 399  # every section is still listed
+    huge = [Section("R", f"s{n}", "H" * 150, [], "", "") for n in range(1, 2000)]
+    cut = review_outline(huge)
+    assert cut.text_chars == 0 and cut.text.splitlines()[-1].endswith("more sections")
+
+
+def test_the_v3_question_follows_the_whole_outline_and_answers_like_v2():
+    plans = action_plans(TEMPLATES)
+    outline = review_outline(REVIEW)
+    v3 = skim_section_prompt(REVIEW[3], outline, REPORT, plans, GUIDANCE)
+    v2 = section_prompt(REVIEW[3], REPORT, plans, GUIDANCE)
+    # the same labels, options and id, so trial answers line up with the stored ones
+    assert {k: v3[k] for k in ("id", "labels", "meta")} == {
+        k: v2[k] for k in ("id", "labels", "meta")
+    }
+    user = v3["messages"][1]["content"]
+    assert "OUTLINE OF THE REPORT: R" in user and "[5] 4 Lessons learnt" in user
+    assert "QUESTION: which template section is section [4]?" in user
+    assert user.index("TEMPLATE SECTIONS") < user.index("OUTLINE") < user.index("QUESTION")
+    assert "Heading: 3 Analysis" in user and user.endswith("Answer with the letter only.")
+    # every question about one review starts alike, up to the question, for vLLM to reuse
+    other = skim_section_prompt(REVIEW[4], outline, REPORT, plans, GUIDANCE)["messages"][1]
+    shared = user.index("QUESTION")
+    assert other["content"][:shared] == user[:shared]
+
+
+def test_section_prompts_v3_keep_a_reviews_questions_together():
+    inputs = {
+        "templates": {t.template: t for t in TEMPLATES},
+        "sections": [*REVIEW, SECTION],
+        "guidance_title": GUIDANCE,
+    }
+    templates = {"R": "dhr-2016/overview-report", SECTION.doc_id: "dhr-2016/overview-report"}
+    v3 = stage.section_prompts(inputs, templates, "v3")
+    v2 = stage.section_prompts(inputs, templates)
+    assert [p["id"] for p in v3] == [p["id"] for p in v2]
+    assert [p["meta"]["doc_id"] for p in v3] == ["R"] * 5 + [SECTION.doc_id]
+    assert all("OUTLINE OF THE REPORT" in p["messages"][1]["content"] for p in v3)
+    assert not any("OUTLINE OF THE REPORT" in p["messages"][1]["content"] for p in v2)
+    with pytest.raises(ValueError):
+        stage.section_prompts(inputs, templates, "v9")
+
+
+def test_the_request_records_the_prompt_and_allows_v3s_longer_prompts():
+    base = ("DHRC-100", "dhr-2016", "pilot", stage.MODEL, "rev")
+    v2, v3 = stage._request(*base), stage._request(*base, "v3")
+    assert v2["prompt_version"] == PROMPT_VERSION and v2["max_model_len"] == 8192
+    assert v3["prompt_version"] == SKIM_PROMPT_VERSION
+    assert v3["max_model_len"] == SKIM_MAX_MODEL_LEN >= SKIM_OUTLINE_CHARS // 4 + 8192
+    assert stage.prompt_name(SKIM_PROMPT_VERSION) == "v3"
+    assert stage.prompt_name(PROMPT_VERSION) == stage.prompt_name("choose-template-v1") == "v2"
+
+
+def test_a_full_run_passes_the_prompt_to_its_documents_job(monkeypatch):
+    fake = FakeBlythe(monkeypatch)
+    asyncio.run(stage.main(prompt="v3", dataset="both"))
+    assert [args[6] for args in fake.args["submit_documents"]] == ["v3", "v3"]
+    assert {args[3] for args in fake.args["submit_documents"]} == {stage.MODEL}
+    with pytest.raises(ValueError):
+        asyncio.run(stage.main(prompt="v4", dry_run=True))
+    asyncio.run(stage.main(prompt="v3", dataset="both", guidance="both", dry_run=True))
+    assert [args[3] for args in fake.args["preview"]] == ["v3"] * 4
+
+
+def test_retemplate_questions_can_show_the_outline_too():
+    inputs = {
+        "templates": {t.template: t for t in TEMPLATES},
+        "sections": [*REVIEW, SECTION],
+        "guidance_title": GUIDANCE,
+    }
+    unsure = {"R": "dhr-2016/overview-report"}
+    v2 = stage.retemplate_prompts(inputs, unsure)
+    v3 = stage.retemplate_prompts(inputs, unsure, prompt="v3")
+    assert [p["id"] for p in v3] == [p["id"] for p in v2] and v3
+    assert {p["meta"]["doc_id"] for p in v3} == {"R"}  # only the unsure review
+    assert all("OUTLINE OF THE REPORT: R" in p["messages"][1]["content"] for p in v3)
+    assert not any("OUTLINE" in p["messages"][1]["content"] for p in v2)
+
+
+def test_the_run_form_has_no_trial_or_model_boxes():
+    import inspect
+
+    inputs = list(inspect.signature(stage.main).parameters)
+    assert inputs == [
+        "dataset",
+        "guidance",
+        "reviews",
+        "prompt",
+        "stage",
+        "hours",
+        "check_every_minutes",
+        "give_up_after_hours",
+        "dry_run",
+    ]
+    assert "model trial" not in stage.STAGES

@@ -287,7 +287,7 @@ def _section_answer(section: Section, user: str, letters: str, options: list) ->
 
 # ---------------------------------------------------------------- prompt v3: the whole review
 
-# Prompt v3 (Rowan, 22 Nov 2026; for now only in a model trial): the section question again,
+# Prompt v3 (Rowan, 22 Nov 2026; the workflow's `prompt` input): the section question again,
 # but each one first shows the whole review's outline: every section in reading order,
 # numbered and indented, with the start of its text. The model then sees what sits next to
 # what, which tells apart sections a heading alone can't (an analysis vs lessons learnt,

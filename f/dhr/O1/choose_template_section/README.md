@@ -44,13 +44,13 @@ has run for the same dataset and guidance.
 
 | Input                 | Meaning                                                                                                                                                                                                                                             |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dataset`, `guidance` | Whose reviews, against which guidance's templates                                                                                                                                                                                                   |
+| `dataset`, `guidance` | Whose reviews, against which guidance's templates. `both` runs each of the two: `both` and `both` covers all four pairs in one run (see below)                                                                                                     |
 | `reviews`             | `pilot`: the specification's 10 pilot reviews (do this first); `all`: every review                                                                                                                                                                  |
-| `hours`               | SLURM time limit for the section job; 0 works it out from the prompts' size (at most 48)                                                                                                                                                            |
+| `prompt`              | The section question of a `full` run: `v2` (the section alone) or `v3` (the section after its whole review's outline; see below). The later stages use the one stored with the choices |
+| `hours`               | SLURM time limit for each pair's section job (in the other stages, for every job); 0 works it out from the prompts' size (at most 48)                                                                                                             |
 | `check_every_minutes` | How often to check a job that hasn't reported back                                                                                                                                                                                                  |
 | `give_up_after_hours` | When to stop waiting for a job and cancel it                                                                                                                                                                                                        |
-| `stage`               | How much to run: `full` (everything), or for stored choices `retemplate` (section-led template choice, then the extra question and rules: 2 GPU jobs), `refine only` (extra question and rules: 1 GPU job) `rules only` (no GPU, about a minute) or `model trial` (see below) |
-| `trial_model`         | For `model trial` only: the model to compare with the stored answers |
+| `stage`               | How much to run: `full` (everything; replaces the pair's stored choices), or for stored choices `retemplate` (section-led template choice, then the extra question and rules: 2 GPU jobs), `refine only` (extra question and rules: 1 GPU job) or `rules only` (no GPU, about a minute) |
 | `dry_run`             | Shows what would be sent or done, without contacting Blythe or changing the database                                                                                                                                                                |
 
 After submitting each job, the workflow pauses without holding a Windmill worker. The job's
@@ -58,6 +58,17 @@ last step wakes it, with a safety check every `check_every_minutes` in case that
 lost. The workflow then asks SLURM whether the job has ended and downloads the answers.
 Cancelling the Windmill run does not cancel a job already on Blythe: use `scancel <job>`
 there.
+
+### Several datasets and guidances in one run
+
+With `dataset = both` and/or `guidance = both` (Rowan, 22 Nov 2026), one run covers every
+dataset × guidance pair, DHRC-100 first. Each pair goes through the same steps as a run of its
+own, with its own GPU jobs, and the pairs' jobs run side by side on Blythe, so the run takes
+about as long as its slowest pair (DHRC-RAW's section jobs, about 3 hours each). While jobs
+run, the workflow sleeps; any job ending wakes it, and one Blythe login then checks every job
+still running. Tasks run one after another, so the run never logs in twice at once (each 2FA
+code works only once). A pair that fails or is given up on doesn't stop the others: the
+result lists every pair under `runs`, and the failed ones under `failed`.
 
 ## Reviews the model wasn't sure of
 
@@ -116,24 +127,26 @@ template's title page, or Front matter if the template has none (`n_opening_bloc
 `stage = rules only` runs only the rules, with the extra answers already stored, so changes to
 the rules need no GPU.
 
-## Trying another model
+## The section question: v2 or v3
 
-`stage = model trial` asks `trial_model` the same questions the stored choices answered, for the
-chosen reviews (`pilot`: the 10 pilot reviews), and keeps its answers in
-`corpus.trial_answers`. Each section is asked against the template its review has now, so
-every trial answer lines up with a stored one. Nothing stored changes, and the rules aren't
-run on the trial answers.
+`prompt` (Rowan, 22 Nov 2026) chooses how a `full` run asks the second question:
 
-- `corpus.trial_comparison`: each trial answer next to the stored one. For a section, the
-  stored answer is the model's own (before the rules).
-- `corpus.trial_summary`: per trial and question, how often the two agree and how often each
-  is unsure (under 50%).
+- **v2** (`choose-template-v2`) shows the section alone: the headings it sits under, its
+  heading, its subsections' headings and the start of its text.
+- **v3** (`choose-template-v3-outline`) shows the same, after the outline of the whole review:
+  every section in reading order, numbered and indented under the section it sits in, with
+  the start of its text (240 characters, less for a long review so the outline stays under
+  about 15,000 tokens). The question then names the section by its number. The model can see
+  what comes before and after a section, which is what tells apart the pairs most of the
+  remaining doubt is about (an analysis vs lessons learnt, background facts vs the chronology).
 
-Agreement isn't accuracy: where the two differ, the rows have to be checked by hand to say
-which model was right. The trial models, with the GPUs and memory each needs, are in
-`TRIAL_MODELS` in `choose_template_section.py`. A model must be downloaded on Blythe first:
-`sbatch ~/narratrace/jobs/setup_env.sbatch <model>`. Running the current model as the trial
-model is a check: it should agree with the stored answers almost every time.
+Both are answered with one letter, so every answer keeps its probabilities and the rules work
+the same. Every v3 question about one review starts with the same words (options, then
+outline), so vLLM can reuse them instead of reading them again. v3's jobs allow 32,768 tokens
+per prompt rather than 8,192. The version is stored with the choices
+(`choice_versions.prompt_version`), and `retemplate` asks in the same version, so one set of
+choices never mixes the two. To compare, keep the MLflow figures (doubtful sections, mean
+probability) of a v2 run before running v3 over it.
 
 ## What it stores
 
