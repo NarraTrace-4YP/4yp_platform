@@ -6,7 +6,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Collect DHR Library filters and link their results to loaded reviews (O1 stage 2).
+"""O1 stage 2: collect the DHR Library's case details and link them to the reviews.
 
 Read the Home Office search form, query each filter, and collect every results
 page. A review's metadata consists of the filters that returned it; an absent

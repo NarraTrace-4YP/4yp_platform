@@ -6,7 +6,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Build and validate a section hierarchy for each review (O1 stage 3).
+"""O1 stage 3: group each review's blocks by section and check the hierarchy.
 
 Flatten page blocks into reading order and remove page headers and footers.
 DHRC-100 uses manually checked section references; DHRC-RAW uses Datalab's

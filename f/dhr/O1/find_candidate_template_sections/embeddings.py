@@ -1,4 +1,4 @@
-"""Encode text as unit-normalised BGE embeddings using ONNX on the CPU.
+"""O1 stage 4, shared: BGE text embeddings with ONNX on the CPU.
 
 Download model files through Hugging Face and reuse the Windmill worker cache
 when available. Represent each text with the model's first-token (CLS) output,

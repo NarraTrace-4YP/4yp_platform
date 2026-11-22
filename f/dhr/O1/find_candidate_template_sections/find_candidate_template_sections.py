@@ -13,7 +13,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Shortlist possible template sections for each grouped section (O1 stage 4).
+"""O1 stage 4: shortlist candidate template sections for each review section.
 
 Compare normalised headings with fuzzy word scores (0–100), and section text
 with guidance text using CPU embeddings (cosine similarity, -1–1). Retain the
@@ -222,7 +222,7 @@ TEMPLATE_SQL = """
 SELECT ts.template, ts.position, ts.heading, ts.guidance
 FROM corpus.template_sections AS ts
 JOIN corpus.templates AS t USING (template)
-WHERE t.guidance = %s
+WHERE t.guidance = %s AND t.kind <> 'extra sections'  -- step 5's own additions
 ORDER BY t.appendix, ts.position
 """
 # Removes one dataset version's candidates against one guidance (before storing new ones).

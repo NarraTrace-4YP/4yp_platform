@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Read section outlines and nested section blocks for the O1 app.
+"""O1 stage 3, app: each review's outline and its sections' text (Sections tab).
 
 Use the latest loaded dataset revision. Return grouping status and skipped
 reviews, a review's outline, or the requested section's blocks in reading order.

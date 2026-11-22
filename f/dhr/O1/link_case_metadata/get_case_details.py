@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Return linked DHR Library details for one review in display order.
+"""O1 stage 2, app: one review's DHR Library case details, in display order (Cases tab).
 
 Split filter paths into sections, attributes, and values. Keep deeper path
 segments in the value so the case viewer does not lose library detail.

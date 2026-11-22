@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Read template candidates and their scores for the O1 app.
+"""O1 stage 4, app: candidate template sections and their scores (Template candidates tab).
 
 Return the latest matching run for the requested dataset and guidance, attach
 candidate lists to review sections, and report coverage for each template.
@@ -35,7 +35,7 @@ SELECT t.template, t.appendix, t.title, t.kind, t.source_url,
        ts.position, ts.heading, ts.printed, ts.guidance, ts.page
 FROM corpus.templates AS t
 JOIN corpus.template_sections AS ts USING (template)
-WHERE t.guidance = %s
+WHERE t.guidance = %s AND t.kind <> 'extra sections'  -- step 5's own additions
 ORDER BY t.appendix, ts.position
 """
 

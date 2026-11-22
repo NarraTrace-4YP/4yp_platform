@@ -1,5 +1,6 @@
-"""Map every section of every review, with as few doubtful mappings as possible (O1 step 5;
-Rowan, 20 Nov 2026). Only labels change: no section's text is touched.
+"""O1 stage 5, shared: give every section a mapping, with as few doubtful as possible.
+
+Rowan, 20 Nov 2026. Only labels change: no section's text is touched.
 
 The model's own answer to each section (the second question) is kept as it was
 (template_choices.answer, probability, probabilities, model_template). refine() then gives
