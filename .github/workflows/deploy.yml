@@ -72,6 +72,11 @@ jobs:
       - name: Prepare the scripts for Windmill
         run: wmill generate-metadata --yes --workspace dhr --base-url "$WINDMILL_URL" --token "$WINDMILL_TOKEN"
 
+      # The generated metadata has empty summaries, which the push would send to Windmill;
+      # each script's summary is the first line of its docstring instead.
+      - name: Give each script its summary
+        run: python3 .github/script_summaries.py
+
       # Each script's version history in Windmill shows the commit it came from.
       - name: Push to Windmill
         env:

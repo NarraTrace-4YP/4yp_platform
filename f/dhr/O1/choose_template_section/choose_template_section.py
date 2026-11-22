@@ -36,9 +36,12 @@ marked doubtful, like every answer under 50%.
      and place each extra section where reviews most often have it.
 Each section records how it was mapped (template_choices.method). stage chooses how much to
 run: "full" does 1 to 4; for choices already stored, "retemplate" does 3 and 4, "refine only"
-does 4, "rules only" only the rules (no GPU). Choosing again for the same dataset version
-and guidance replaces its choices. reviews="pilot" does only the specification's 10 pilot
-reviews, to check the answers and the speed first.
+does 4, "rules only" only the rules (no GPU). prompt chooses the section question of a full
+run: "v2" (the section alone) or "v3" (the section after its whole review's outline,
+prompts.skim_section_prompt); the later stages use the one stored with the choices.
+Choosing again for the same dataset version and guidance replaces its choices.
+reviews="pilot" does only the specification's 10 pilot reviews, to check the answers and the
+speed first.
 
 Several dataset x guidance pairs in one run (Rowan, 22 Nov 2026): each pair goes through
 the same steps with its own GPU jobs, side by side on Blythe, so the run takes about as
@@ -116,7 +119,8 @@ from .refine import (
     to_ask,
 )
 
-MODELS = {"Qwen/Qwen3.8-27B-FP8"}  # must be downloaded on Blythe by setup_env.sbatch
+MODEL = "Qwen/Qwen3.8-27B-FP8"  # must be downloaded on Blythe by setup_env.sbatch
+MODELS = {MODEL}
 GUIDANCES = {"dhr-2016", "dardr-2026"}
 # The specification's pilot set (section 5.2): the same 10 reviews through every stage.
 PILOT_REVIEWS = [
@@ -143,30 +147,12 @@ DOUBTFUL = 0.5  # answers the model gave less probability than this are counted 
 # A review the model says matches none of the templates, with less probability than this, is
 # given its likeliest template anyway, and it and its sections are marked doubtful.
 FALLBACK_BELOW = 0.8
-STAGES = ("full", "retemplate", "refine only", "rules only", "model trial")  # see main()
-# Models for a side-by-side trial (stage "model trial"): the same questions as the stored
-# choices, on a sample, kept apart in corpus.trial_answers. Each must be downloaded on Blythe
-# first (sbatch ~/narratrace/jobs/setup_env.sbatch <model>). gpus/mem_gb: what the job asks
-# SLURM for (an L40 node has 3 GPUs and 192 GB); engine/env: extra vLLM settings
-# (narratrace-slurm's llm_batch.py lists the ones it takes).
-TRIAL_MODELS = {
-    # The current model: a control. It should agree with the stored answers almost always.
-    "Qwen/Qwen3.8-27B-FP8": {"gpus": 1},
-    # Qwen3.8-Flash-Next (125B, 6B active), community 4-bit build (compressed-tensors, AWQ
-    # INT4 weights). About 66 GB of weights: split over two L40s. Untested on Blythe; its
-    # n-gram (PLE) tables are kept in the node's memory, hence mem_gb.
-    "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16": {
-        "gpus": 2,
-        "mem_gb": 170,
-        "engine": {"tensor_parallel_size": 2, "compilation_config": {"mode": 0}},
-        "env": {"VLLM_PLE_CPU_OFFLOAD": "1"},
-        "max_num_seqs": 64,
-    },
-}
-# The section question a trial asks: "v2" is the stored answers' (the section alone), "v3" the
-# same question after the whole review's outline (prompts.skim_section_prompt; Rowan, 22 Nov
-# 2026). The review question is the same in both.
-TRIAL_PROMPTS = {"v2": PROMPT_VERSION, "v3": SKIM_PROMPT_VERSION}
+STAGES = ("full", "retemplate", "refine only", "rules only")  # see main()
+# The section question: "v2" shows the section alone; "v3" shows it after its whole review's
+# outline (prompts.skim_section_prompt; Rowan, 22 Nov 2026). The review question is the same
+# in both. A full run uses the prompt chosen; later stages use the one the stored choices were
+# made with (choice_versions.prompt_version), so one set of choices never mixes the two.
+PROMPTS = {"v2": PROMPT_VERSION, "v3": SKIM_PROMPT_VERSION}
 NOT_ASKED = "not asked: its review matched none of the templates"
 NO_DOCUMENT = "not asked: there was no answer for its review's template"
 
@@ -224,6 +210,16 @@ WHERE revision = %(revision)s AND section_id IS NULL AND text <> ''
   AND (%(docs)s::text[] IS NULL OR doc_id = ANY(%(docs)s))
 GROUP BY doc_id
 """
+
+
+def check_prompt(prompt: str) -> None:
+    if prompt not in PROMPTS:
+        raise ValueError(f"Unknown prompt {prompt!r}: choose one of {sorted(PROMPTS)}")
+
+
+def prompt_name(prompt_version: str | None) -> str:
+    """ "v2" or "v3" for a stored prompt_version (older stored choices count as v2)."""
+    return {v: k for k, v in PROMPTS.items()}.get(prompt_version, "v2")
 
 
 def check_choices(dataset: str, guidance: str, reviews: str, model: str) -> None:
@@ -303,9 +299,8 @@ def section_prompts(
     """A prompt for every section of each review that was given a template, grouped by
     template so prompts that start alike follow each other (a review's sections stay
     together, in reading order). prompt: "v2" (the section alone, the stored answers' prompt)
-    or "v3" (the section after its whole review's outline; TRIAL_PROMPTS)."""
-    if prompt not in TRIAL_PROMPTS:
-        raise ValueError(f"Unknown prompt {prompt!r}: choose one of {sorted(TRIAL_PROMPTS)}")
+    or "v3" (the section after its whole review's outline; PROMPTS)."""
+    check_prompt(prompt)
     plans = action_plans(list(inputs["templates"].values()))
     outlines = {}
     if prompt == "v3":
@@ -470,8 +465,9 @@ def choice_rows(
 
 
 @task
-async def preview(dataset: str, guidance: str, reviews: str):
-    """dry_run: the document prompts that would be sent, without Blythe or any database change."""
+async def preview(dataset: str, guidance: str, reviews: str, prompt: str = "v2"):
+    """dry_run: the document prompts that would be sent, and a section prompt in the chosen
+    prompt version, without Blythe or any database change."""
     started = time.time()
     with connect() as conn:
         inputs = read_inputs(conn, dataset, guidance, reviews)
@@ -482,7 +478,13 @@ async def preview(dataset: str, guidance: str, reviews: str):
         t for t in templates if t not in plans
     ]
     section = inputs["sections"][min(1, len(inputs["sections"]) - 1)]
-    sample_section = section_prompt(section, reports[0], plans, inputs["guidance_title"])
+    if prompt == "v3":
+        outline = review_outline([s for s in inputs["sections"] if s.doc_id == section.doc_id])
+        sample_section = skim_section_prompt(
+            section, outline, reports[0], plans, inputs["guidance_title"]
+        )
+    else:
+        sample_section = section_prompt(section, reports[0], plans, inputs["guidance_title"])
     n_options = {t.template: len(t.sections) for t in inputs["templates"].values()}
     return {
         "result": "Dry run: nothing was sent to Blythe or stored.",
@@ -490,7 +492,8 @@ async def preview(dataset: str, guidance: str, reviews: str):
         "revision": inputs["revision"],
         "guidance": guidance,
         "reviews": reviews,
-        "prompt_version": PROMPT_VERSION,
+        "prompt": prompt,
+        "prompt_version": PROMPTS[prompt],
         "n_reviews": len(inputs["documents"]),
         "n_sections": len(inputs["sections"]),
         "template_sections": n_options,
@@ -533,23 +536,33 @@ async def _submit(
     }
 
 
-def _request(dataset: str, guidance: str, reviews: str, model: str, revision: str) -> dict:
+def _request(
+    dataset: str, guidance: str, reviews: str, model: str, revision: str, prompt: str = "v2"
+) -> dict:
+    """llm_batch.py's request. v3's prompts are longer, so its jobs allow more tokens."""
     return {
         "model": model,
         **LLM_SETTINGS,
+        **({"max_model_len": SKIM_MAX_MODEL_LEN} if prompt == "v3" else {}),
         "purpose": "O1 stage 5: choose_template_section",
         "dataset": dataset,
         "revision": revision,
         "guidance": guidance,
         "reviews": reviews,
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": PROMPTS[prompt],
         "git_commit": GIT_COMMIT,
     }
 
 
 @task
 async def submit_documents(
-    dataset: str, guidance: str, reviews: str, model: str, run_id: str, callback_url: str
+    dataset: str,
+    guidance: str,
+    reviews: str,
+    model: str,
+    run_id: str,
+    callback_url: str,
+    prompt: str = "v2",
 ):
     with connect() as conn:
         applied = apply_migrations(conn)
@@ -559,13 +572,13 @@ async def submit_documents(
     prompts = document_prompts(inputs)
     submitted = await _submit(
         "documents",
-        _request(dataset, guidance, reviews, model, inputs["revision"]),
+        _request(dataset, guidance, reviews, model, inputs["revision"], prompt),
         prompts,
         run_id,
         callback_url,
         automatic_hours(prompt_chars(prompts)),
     )
-    return {**submitted, "revision": inputs["revision"], "model": model}
+    return {**submitted, "revision": inputs["revision"], "model": model, "prompt": prompt}
 
 
 @task
@@ -634,13 +647,14 @@ async def submit_sections(
         )
         by_kind[kind] = by_kind.get(kind, 0) + 1
     log(f"OK    The {len(documents)} reviews are written to: {by_kind}")
-    prompts = section_prompts(inputs, {row["doc_id"]: row["template"] for row in documents})
+    prompt = documents_job.get("prompt", "v2")
+    prompts = section_prompts(inputs, {row["doc_id"]: row["template"] for row in documents}, prompt)
     base = {"documents": documents, "documents_summary": summary, "reviews_by_kind": by_kind}
     if not prompts:
         return {**base, "sections_job": None}
     submitted = await _submit(
         "sections",
-        _request(dataset, guidance, reviews, documents_job["model"], inputs["revision"]),
+        _request(dataset, guidance, reviews, documents_job["model"], inputs["revision"], prompt),
         prompts,
         run_id,
         callback_url,
@@ -793,7 +807,7 @@ async def load_results(
             "model": documents_job["model"],
             "model_revision": summary.get("model_revision")
             or sections["documents_summary"].get("model_revision"),
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": PROMPTS[documents_job.get("prompt", "v2")],
             "prompts_sha256": json.dumps({j["run_id"]: j["prompts_sha256"] for j in jobs}),
             "run_details": json.dumps(
                 {
@@ -832,7 +846,7 @@ async def load_results(
         "reviews": reviews,
         "model": version["model"],
         "model_revision": version["model_revision"],
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": version["prompt_version"],
         "git_commit": GIT_COMMIT,
         "slurm_job_ids": version["slurm_job_ids"],
         "blythe_runs": version["blythe_runs"],
@@ -979,14 +993,23 @@ def stored_retemplate_answers(conn, revision: str, guidance: str) -> dict:
 
 
 def retemplate_prompts(
-    inputs: dict, unsure: dict[str, str | None], have: set | None = None
+    inputs: dict, unsure: dict[str, str | None], have: set | None = None, prompt: str = "v2"
 ) -> list[dict]:
-    """For each section of each unsure review, a section prompt against every document
-    template other than the one it already has answers for (its current template, and any in
-    have: (doc, template) pairs answered in an earlier run), grouped by template."""
+    """For each section of each unsure review, a section prompt (in the stored choices' prompt
+    version) against every document template other than the one it already has answers for
+    (its current template, and any in have: (doc, template) pairs answered in an earlier run),
+    grouped by template."""
+    check_prompt(prompt)
     templates = list(inputs["templates"].values())
     plans = action_plans(templates)
     candidates = document_templates(templates)
+    outlines = {}
+    if prompt == "v3":
+        by_doc: dict[str, list[Section]] = defaultdict(list)
+        for section in inputs["sections"]:
+            if section.doc_id in unsure:
+                by_doc[section.doc_id].append(section)
+        outlines = {doc: review_outline(sections) for doc, sections in by_doc.items()}
     prompts = []
     for section in inputs["sections"]:
         if section.doc_id not in unsure:
@@ -994,7 +1017,12 @@ def retemplate_prompts(
         for t in candidates:
             if t.template == unsure[section.doc_id] or (section.doc_id, t.template) in (have or ()):
                 continue
-            p = section_prompt(section, t, plans, inputs["guidance_title"])
+            if prompt == "v3":
+                p = skim_section_prompt(
+                    section, outlines[section.doc_id], t, plans, inputs["guidance_title"]
+                )
+            else:
+                p = section_prompt(section, t, plans, inputs["guidance_title"])
             p["id"] = prompt_id(section.doc_id, section.section_id, t.template)
             p["meta"]["template"] = t.template
             prompts.append((t.template, p))
@@ -1229,8 +1257,18 @@ def store_retemplate(
             )
 
 
+def stored_prompt(conn, revision: str, guidance: str) -> str:
+    """The prompt ("v2" or "v3") the stored choices were made with."""
+    row = conn.execute(
+        "SELECT prompt_version FROM corpus.choice_versions WHERE revision = %s AND guidance = %s",
+        (revision, guidance),
+    ).fetchone()
+    return prompt_name(row[0] if row else None)
+
+
 def retemplate_inputs(conn, dataset: str, guidance: str) -> dict:
     revision, reviews, model = stored_version(conn, dataset, guidance)
+    prompt = stored_prompt(conn, revision, guidance)
     inputs = read_inputs(conn, dataset, guidance, reviews)
     if inputs["revision"] != revision:
         raise ValueError(f"{dataset} has been reloaded or regrouped since its choices were made")
@@ -1242,12 +1280,13 @@ def retemplate_inputs(conn, dataset: str, guidance: str) -> dict:
         "revision": revision,
         "reviews": reviews,
         "model": model,
+        "prompt": prompt,
         "inputs": inputs,
         "unsure": unsure,
         "rows": rows,
         "candidates": [t.template for t in document_templates(list(inputs["templates"].values()))],
         "stored": stored,
-        "prompts": retemplate_prompts(inputs, unsure, have),
+        "prompts": retemplate_prompts(inputs, unsure, have, prompt),
     }
 
 
@@ -1264,6 +1303,7 @@ async def preview_retemplate(dataset: str, guidance: str):
         "dataset": dataset,
         "guidance": guidance,
         "revision": x["revision"],
+        "prompt": f"{x['prompt']} (the stored choices' prompt)",
         "n_unsure_reviews": len(x["unsure"]),
         "unsure_reviews_now_written_to": by_kind,
         "templates_asked_against": x["candidates"],
@@ -1292,7 +1332,7 @@ async def submit_retemplate(
         return {**base, "retemplate_job": None}
     submitted = await _submit(
         "retemplate",
-        _request(dataset, guidance, x["reviews"], x["model"], x["revision"]),
+        _request(dataset, guidance, x["reviews"], x["model"], x["revision"], x["prompt"]),
         x["prompts"],
         run_id,
         callback_url,
@@ -1536,241 +1576,18 @@ async def rules_only_task(dataset: str, guidance: str):
         return store_rules(conn, x, guidance, stored_answers(x), details)
 
 
-# ---------------------------------------------------------------- model trial (stage "model trial")
-
-TRIAL_TEMPLATES_SQL = """
-SELECT doc_id, template FROM corpus.document_choices WHERE revision = %s AND guidance = %s
-"""
-START_TRIAL_SQL = """
-INSERT INTO corpus.model_trials (trial_id, revision, guidance, reviews, model, request,
-                                 slurm_job_id)
-VALUES (%s, %s, %s, %s, %s, %s, %s)
-"""
-TRIAL_ANSWER_SQL = """
-INSERT INTO corpus.trial_answers (trial_id, doc_id, section_id, template, template_position,
-                                  answer, probability, probabilities, error)
-VALUES (%(trial_id)s, %(doc_id)s, %(section_id)s, %(template)s, %(template_position)s,
-        %(answer)s, %(probability)s, %(probabilities)s, %(error)s)
-"""
-TRIAL_SUMMARY_SQL = """
-SELECT question, n, n_same, share_same, n_stored_unsure, n_trial_unsure,
-       mean_stored_probability, mean_trial_probability, n_stored_none, n_trial_none
-FROM corpus.trial_summary WHERE trial_id = %s ORDER BY question
-"""
-
-
-def trial_request(base: dict, trial_model: str, trial_prompt: str = "v2") -> dict:
-    """llm_batch.py's request for a trial: the stored run's settings with the trial model's,
-    and the section prompt's version (v3's prompts need a longer token limit)."""
-    spec = TRIAL_MODELS[trial_model]
-    request = {
-        **base,
-        "model": trial_model,
-        "purpose": "O1 stage 5: model trial",
-        "prompt_version": TRIAL_PROMPTS[trial_prompt],
-    }
-    if trial_prompt == "v3":
-        request["max_model_len"] = SKIM_MAX_MODEL_LEN
-    for key in ("engine", "env", "max_num_seqs", "max_model_len", "gpu_memory_utilization"):
-        if key in spec:
-            request[key] = spec[key]
-    return request
-
-
-def trial_inputs(conn, dataset: str, guidance: str, reviews: str, trial_prompt: str = "v2") -> dict:
-    """The sample's prompts: every review's question, and each section asked against the
-    template its review has now (so each answer has a stored one to compare with), with the
-    trial_prompt version of the section question."""
-    revision, _, stored_model = stored_version(conn, dataset, guidance)
-    inputs = read_inputs(conn, dataset, guidance, reviews)
-    if inputs["revision"] != revision:
-        raise ValueError(f"{dataset} has been reloaded since its choices were stored: run full")
-    templates = dict(conn.execute(TRIAL_TEMPLATES_SQL, (revision, guidance)).fetchall())
-    asked = {d.doc_id for d in inputs["documents"]}
-    templates = {doc: t for doc, t in templates.items() if doc in asked}
-    prompts = document_prompts(inputs) + section_prompts(inputs, templates, trial_prompt)
-    return {
-        "revision": revision,
-        "stored_model": stored_model,
-        "prompts": prompts,
-        "n_reviews": len(asked),
-        "n_sections": len(prompts) - len(asked),
-    }
-
-
-def trial_rows(trial_id: str, results: list[dict]) -> list[dict]:
-    """One corpus.trial_answers row per answer (section_id '' for a review question)."""
-    rows = []
-    for result in results:
-        if (result.get("meta") or {}).get("section_id") is None:
-            row = interpret_document(result)
-            row.update(section_id="", template_position=None)
-        else:
-            row = interpret(result)
-        rows.append(
-            {
-                "trial_id": trial_id,
-                "doc_id": row["doc_id"],
-                "section_id": row["section_id"],
-                "template": row["template"],
-                "template_position": row["template_position"],
-                "answer": row["answer"],
-                "probability": row["probability"],
-                "probabilities": json.dumps(row["probabilities"]),
-                "error": row["error"],
-            }
-        )
-    return rows
-
-
-@task
-async def preview_trial(
-    dataset: str, guidance: str, reviews: str, trial_model: str, trial_prompt: str = "v2"
-):
-    """dry_run for a trial: what would be asked and what the job would ask SLURM for."""
-    with connect() as conn:
-        x = trial_inputs(conn, dataset, guidance, reviews, trial_prompt)
-    spec = TRIAL_MODELS[trial_model]
-    sections = [p for p in x["prompts"] if p["meta"].get("section_id") is not None]
-    longest = max(sections, key=lambda p: len(p["messages"][1]["content"]), default=None)
-    return {
-        "result": "Dry run: nothing was sent to Blythe or stored.",
-        "trial_model": trial_model,
-        "trial_prompt": f"{trial_prompt} ({TRIAL_PROMPTS[trial_prompt]})",
-        "section_prompt_chars_max": len(longest["messages"][1]["content"]) if longest else 0,
-        "prompts_file_mb": round(len(gzip_lines(x["prompts"])) / 1e6, 2),
-        "sample_section_prompt": sections[0]["messages"][1]["content"] if sections else None,
-        "stored_model": x["stored_model"],
-        "n_reviews": x["n_reviews"],
-        "n_section_questions": x["n_sections"],
-        "gpus": spec.get("gpus", 1),
-        "mem_gb": spec.get("mem_gb"),
-        "hours": automatic_hours(prompt_chars(x["prompts"])),
-        "request": trial_request(
-            _request(dataset, guidance, reviews, x["stored_model"], x["revision"]),
-            trial_model,
-            trial_prompt,
-        ),
-    }
-
-
-@task
-async def submit_trial(
-    dataset: str,
-    guidance: str,
-    reviews: str,
-    trial_model: str,
-    hours: int,
-    run_id: str,
-    callback_url: str,
-    trial_prompt: str = "v2",
-):
-    with connect() as conn:
-        applied = apply_migrations(conn)
-        if applied:
-            log(f"OK    Database tables updated: {', '.join(applied)}")
-        x = trial_inputs(conn, dataset, guidance, reviews, trial_prompt)
-    spec = TRIAL_MODELS[trial_model]
-    request = trial_request(
-        _request(dataset, guidance, reviews, x["stored_model"], x["revision"]),
-        trial_model,
-        trial_prompt,
-    )
-    request["gpus"], request["mem_gb"] = spec.get("gpus", 1), spec.get("mem_gb")
-    hours = hours or automatic_hours(prompt_chars(x["prompts"]))
-    data = gzip_lines(x["prompts"])
-    log(
-        f"Trial of {trial_model}, prompt {trial_prompt}: {x['n_reviews']} reviews,"
-        f" {x['n_sections']} sections,"
-        f" {request['gpus']} GPU(s), {hours} h limit"
-    )
-    with Blythe() as b:
-        submitted = b.submit(
-            "llm_batch",
-            run_id,
-            {
-                "request.json": json.dumps({**request, "phase": "trial"}, indent=2),
-                "prompts.jsonl.gz": data,
-            },
-            callback_url,
-            hours=hours,
-            gpus=spec.get("gpus"),
-            mem_gb=spec.get("mem_gb"),
-        )
-    with connect() as conn:
-        conn.execute(
-            START_TRIAL_SQL,
-            (
-                run_id,
-                x["revision"],
-                guidance,
-                reviews,
-                trial_model,
-                json.dumps(request),
-                submitted["slurm_job_id"],
-            ),
-        )
-    return {
-        **submitted,
-        "trial_id": run_id,
-        "n_prompts": len(x["prompts"]),
-        "prompts_sha256": hashlib.sha256(data).hexdigest(),
-        "hours": hours,
-    }
-
-
-@task
-async def finish_trial(job: dict, state: dict):
-    """Stores the trial's answers and returns how they compare with the stored ones."""
-    results, summary, log_tail = download(job, state)
-    rows = trial_rows(job["trial_id"], results)
-    with connect() as conn:
-        with conn.transaction():
-            with conn.cursor() as cur:
-                cur.executemany(TRIAL_ANSWER_SQL, rows)
-            conn.execute(
-                "UPDATE corpus.model_trials SET summary = %s, finished = now() WHERE trial_id = %s",
-                (json.dumps(summary), job["trial_id"]),
-            )
-        cur = conn.execute(TRIAL_SUMMARY_SQL, (job["trial_id"],))
-        names = [c.name for c in cur.description]
-        compared = [
-            {
-                k: (float(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, int) else v)
-                for k, v in zip(names, row)
-            }
-            for row in cur.fetchall()
-        ]
-    log(f"OK    Stored {len(rows)} trial answers")
-    return {
-        "trial_id": job["trial_id"],
-        "n_answers": len(rows),
-        "n_errors": sum(1 for r in rows if r["error"]),
-        "compared": compared,
-        "seconds_loading": summary.get("seconds_loading"),
-        "seconds_generating": summary.get("seconds_generating"),
-        "log_tail": log_tail if not rows else None,
-    }
-
-
 # ---------------------------------------------------------------- the workflow
 
 DATASET_ORDER = ("DHRC-100", "DHRC-RAW")  # the order one run takes them in
 GUIDANCE_ORDER = ("dhr-2016", "dardr-2026")
 BOTH = "both"
-FIRST_PHASE = {
-    "full": "documents",
-    "retemplate": "retemplate",
-    "refine only": "extras",
-    "model trial": "trial",
-}
+FIRST_PHASE = {"full": "documents", "retemplate": "retemplate", "refine only": "extras"}
 # What is left in the database when a job is given up on, by the job it was.
 GAVE_UP = {
     "documents": "Nothing stored.",
     "sections": "Nothing stored.",
     "retemplate": "The stored choices are unchanged.",
     "extras": "The choices are stored, not refined.",
-    "trial": "Nothing stored but the trial's start.",
 }
 
 
@@ -1857,7 +1674,7 @@ async def advance(chain: dict, state: dict | None, settings: dict, callback_url:
     if phase == "documents":
         if starting:
             job = await submit_documents(
-                d, g, reviews, settings["model"], f"{rid}-documents", callback_url
+                d, g, reviews, MODEL, f"{rid}-documents", callback_url, settings["prompt"]
             )
             return _wait(chain, "documents", job, documents_job=job)
         out["documents_job"] = state
@@ -1902,22 +1719,6 @@ async def advance(chain: dict, state: dict | None, settings: dict, callback_url:
             state = None
         finished = await finish_refining(d, g, p["extras"], state)
         out["after_refining"] = {**finished, "extras_job": state}
-        return _done(chain)
-    if phase == "trial":
-        if starting:
-            job = await submit_trial(
-                d,
-                g,
-                reviews,
-                settings["trial_model"],
-                hours,
-                f"{rid}-trial",
-                callback_url,
-                settings["trial_prompt"],
-            )
-            return _wait(chain, "trial", job, job=job)
-        out.update(await finish_trial(p["job"], state))
-        out["trial_job"] = state
         return _done(chain)
     raise ValueError(f"Unknown phase {phase!r}")
 
@@ -1999,68 +1800,53 @@ async def main(
     dataset: Literal["DHRC-100", "DHRC-RAW", "both"] = "DHRC-100",
     guidance: Literal["dhr-2016", "dardr-2026", "both"] = "dhr-2016",
     reviews: Literal["pilot", "all"] = "pilot",
-    model: Literal["Qwen/Qwen3.8-27B-FP8"] = "Qwen/Qwen3.8-27B-FP8",
+    prompt: Literal["v2", "v3"] = "v2",
+    stage: Literal["full", "retemplate", "refine only", "rules only"] = "full",
     hours: int = 0,
     check_every_minutes: int = 30,
     give_up_after_hours: int = 96,
-    stage: Literal["full", "retemplate", "refine only", "rules only", "model trial"] = "full",
-    trial_model: Literal[
-        "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16", "Qwen/Qwen3.8-27B-FP8"
-    ] = "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16",
-    trial_prompt: Literal["v2", "v3"] = "v2",
     dry_run: bool = False,
 ):
-    """Windmill runs this; only Rowan's runs can use Blythe. dataset and guidance: whose
-    reviews, against which templates; "both" runs each of the two, so dataset = both and
-    guidance = both covers all four pairs in one run, their GPU jobs side by side on Blythe
-    (stage 4 must have run for each pair, which stores the templates). A pair that fails
-    doesn't stop the others; the result lists each pair's outcome under "runs".
-    reviews: 'pilot' (the 10 pilot reviews, minutes of GPU time) or 'all'. model: the LLM on
-    Blythe. hours: the SLURM time limit of each pair's section job (0 = worked out from the
-    size of its prompts; at most 48). check_every_minutes: how often to check jobs that
-    haven't woken this run. give_up_after_hours: when to stop waiting for a job and cancel it.
-    stage: how much to run. "full": everything (replaces the pair's stored choices). For
-    choices already stored (skipping the first two questions): "retemplate" gives the
-    reviews the model wasn't sure of the template their sections fit best (a GPU job), then
-    the extra-sections question and the rules (another); "refine only" only the
-    extra-sections question (a GPU job) and the rules; "rules only" only the rules, with the
-    extra-section answers already stored (no GPU). hours is then each job's limit. "model
-    trial": asks trial_model the same questions as the stored choices for the chosen reviews
-    and stores its answers beside them (corpus.trial_answers; compare in
-    corpus.trial_summary); nothing stored is changed. trial_prompt (model trial only): the
-    section question to ask, "v2" (the section alone, as stored) or "v3" (the section after
-    its whole review's outline, prompts.skim_section_prompt); to try v3 on its own, keep the
-    current model as trial_model. dry_run: only show what would be sent or done."""
+    """Windmill runs this; only Rowan's runs can use Blythe (with MODEL, Qwen3.8-27B).
+
+    dataset and guidance: whose reviews, against which templates; "both" runs each of the
+    two, so dataset = both and guidance = both covers all four pairs in one run, their GPU
+    jobs side by side on Blythe (stage 4 must have run for each pair, which stores the
+    templates). A pair that fails doesn't stop the others; the result lists each pair's
+    outcome under "runs". reviews: 'pilot' (the 10 pilot reviews, minutes of GPU time) or
+    'all'. prompt: the section question of a full run, "v2" (the section alone) or "v3" (the
+    section after its whole review's outline); stored with the choices, and the later stages
+    use the stored one. stage: how much to run. "full": everything (replaces the pair's
+    stored choices). For choices already stored (skipping the first two questions):
+    "retemplate" gives the reviews the model wasn't sure of the template their sections fit
+    best (a GPU job), then the extra-sections question and the rules (another); "refine only"
+    only the extra-sections question (a GPU job) and the rules; "rules only" only the rules,
+    with the extra-section answers already stored (no GPU). hours: the SLURM time limit of
+    each pair's section job in a full run, and of every job in the other stages (0 = worked
+    out from the size of the prompts; at most 48). check_every_minutes: how often to check
+    jobs that haven't woken this run. give_up_after_hours: when to stop waiting for a job and
+    cancel it. dry_run: only show what would be sent or done."""
     check_owner()  # Rowan's Blythe account: no one else may run this, not even a dry run
     pairs = combinations(dataset, guidance)
     for d, g in pairs:
-        check_choices(d, g, reviews, model)
+        check_choices(d, g, reviews, MODEL)
+    check_prompt(prompt)
     if hours and not 1 <= hours <= MAX_HOURS:
         raise ValueError(f"hours must be 0 (automatic) or 1 to {MAX_HOURS}")
     if check_every_minutes < 1 or give_up_after_hours < 1:
         raise ValueError("check_every_minutes and give_up_after_hours must be 1 or more")
     if stage not in STAGES:
         raise ValueError(f"Unknown stage {stage!r}: choose one of {STAGES}")
-    if stage == "model trial" and trial_model not in TRIAL_MODELS:
-        raise ValueError(
-            f"Unknown trial model {trial_model!r}: choose one of {sorted(TRIAL_MODELS)}"
-        )
-    if trial_prompt not in TRIAL_PROMPTS:
-        raise ValueError(f"Unknown trial prompt {trial_prompt!r}: choose one of {TRIAL_PROMPTS}")
 
     if dry_run:
         previews = {}
         for d, g in pairs:
-            if stage == "model trial":
-                previews[label(d, g)] = await preview_trial(
-                    d, g, reviews, trial_model, trial_prompt
-                )
-            elif stage == "retemplate":
+            if stage == "retemplate":
                 previews[label(d, g)] = await preview_retemplate(d, g)
             elif stage in ("refine only", "rules only"):
                 previews[label(d, g)] = await preview_extras(d, g)
             else:
-                previews[label(d, g)] = await preview(d, g, reviews)
+                previews[label(d, g)] = await preview(d, g, reviews, prompt)
         return {
             "result": "Dry run: nothing was sent to Blythe or stored.",
             "stage": stage,
@@ -2081,9 +1867,7 @@ async def main(
     settings = {
         "stage": stage,
         "reviews": reviews,
-        "model": model,
-        "trial_model": trial_model,
-        "trial_prompt": trial_prompt,
+        "prompt": prompt,
         "hours": hours,
         "check_every_minutes": check_every_minutes,
         "give_up_after_hours": give_up_after_hours,
