@@ -431,6 +431,27 @@ def test_sbatch_command_and_its_answer():
     assert blythe.parse_sbatch("sbatch: error: invalid partition\n") is None
 
 
+def test_sbatch_can_ask_for_more_gpus_and_memory():
+    command = blythe.sbatch_command("/j", "/r", 2, gpus=2, mem_gb=170)
+    assert "--gres=gpu:lovelace_l40:2 --cpus-per-task=16 --mem-per-cpu=10880M" in command
+    assert "--mem" not in blythe.sbatch_command("/j", "/r", gpus=1)
+    for gpus, mem in ((4, None), (0, None), (None, 200), (2, 2.5)):
+        with pytest.raises(blythe.BlytheError):
+            blythe.sbatch_command("/j", "/r", gpus=gpus, mem_gb=mem)
+
+
+def test_trial_request_uses_the_trial_models_settings():
+    base = stage._request("DHRC-100", "dhr-2016", "pilot", "Qwen/Qwen3.8-27B-FP8", "rev")
+    for model, spec in stage.TRIAL_MODELS.items():
+        request = stage.trial_request(base, model)
+        assert request["model"] == model and request["revision"] == "rev"
+        assert request.get("engine") == spec.get("engine")
+        assert 1 <= spec.get("gpus", 1) <= blythe.GPUS_PER_NODE
+        tp = (spec.get("engine") or {}).get("tensor_parallel_size", 1)
+        assert tp == spec.get("gpus", 1)  # every GPU asked for is used
+    assert set(stage.TRIAL_MODELS) >= {"Qwen/Qwen3.8-27B-FP8"}
+
+
 @pytest.mark.parametrize(
     "out, finished, state",
     [
@@ -1096,6 +1117,43 @@ def test_choices_tables_and_views(database):
     # reviews given a template by their sections are scored again on the next run
     assert stage.unsure_reviews(conn, rev, g) == {"D": f"{g}/overview", "E": f"{g}/overview"}
 
+    # a model trial: its answers sit beside the stored ones, which don't change
+    stored_d = conn.execute(
+        "SELECT template FROM corpus.document_choices WHERE revision = %s AND doc_id = 'D'",
+        (rev,),
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO corpus.model_trials (trial_id, revision, guidance, reviews, model, request)"
+        " VALUES ('t1', %s, %s, 'pilot', 'other/model', '{}')",
+        (rev, g),
+    )
+    job = {"trial_id": "t1"}
+    rows = stage.trial_rows(
+        "t1",
+        [
+            {
+                "meta": {"doc_id": "D", "options": {"A": stored_d}},
+                "answer": "A",
+                "probabilities": {"A": 0.9},
+            },
+            {
+                "meta": {"doc_id": "D", "section_id": "s0", "options": {"A": [stored_d, 1]}},
+                "answer": "Z",
+                "probabilities": {"Z": 0.7},
+            },
+        ],
+    )
+    with conn.cursor() as cur:
+        cur.executemany(stage.TRIAL_ANSWER_SQL, rows)
+    compared = conn.execute(
+        "SELECT question, trial_answer, trial_probability FROM corpus.trial_comparison"
+        " WHERE trial_id = %s ORDER BY question",
+        (job["trial_id"],),
+    ).fetchall()
+    assert [(q, a) for q, a, _ in compared] == [("review", stored_d), ("section", "none")]
+    summary = conn.execute(stage.TRIAL_SUMMARY_SQL, ("t1",)).fetchall()
+    assert [(q, n, same) for q, n, same, *_ in summary] == [("review", 1, 1), ("section", 1, 0)]
+
     with pytest.raises(Exception):  # a template without its position isn't allowed
         conn.execute(
             "UPDATE corpus.template_choices SET template_position = NULL WHERE section_id = 's1'"
@@ -1104,7 +1162,7 @@ def test_choices_tables_and_views(database):
         )
     # removing the dataset version removes its choices
     conn.execute("DELETE FROM corpus.dataset_versions WHERE revision = %s", (rev,))
-    for table in ("choice_versions", "document_choices", "template_choices"):
+    for table in ("choice_versions", "document_choices", "template_choices", "model_trials"):
         count = f"SELECT count(*) FROM corpus.{table} WHERE revision = %s"
         assert conn.execute(count, (rev,)).fetchone()[0] == 0
     conn.execute("DELETE FROM corpus.guidance_documents WHERE guidance = %s", (g,))

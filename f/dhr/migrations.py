@@ -1068,4 +1068,87 @@ JOIN corpus.current_versions AS v USING (revision)
 LEFT JOIN corpus.templates AS t ON t.template = d.template;
 """,
     ),
+    (
+        "013_model_trials",
+        """
+-- O1 stage 5: a side-by-side trial of another model (Rowan, 21 Nov 2026). The trial model is
+-- asked the same review and section questions as the stored choices, on a sample of reviews,
+-- with each section asked against the template its review has now, so the answers line up
+-- one for one. Nothing in the stored choices changes.
+CREATE TABLE corpus.model_trials (
+    trial_id      text PRIMARY KEY,
+    revision      text NOT NULL,
+    guidance      text NOT NULL,
+    reviews       text NOT NULL,             -- 'pilot' or 'all'
+    model         text NOT NULL,
+    request       jsonb NOT NULL,            -- what llm_batch.py was sent (settings, GPUs)
+    summary       jsonb,                     -- llm_batch.py's summary.json, once finished
+    slurm_job_id  text,
+    started       timestamptz NOT NULL DEFAULT now(),
+    finished      timestamptz,
+    FOREIGN KEY (revision, guidance) REFERENCES corpus.choice_versions ON DELETE CASCADE
+);
+-- One row per question: section_id '' is the review question (which template), any other
+-- the question for that section (which section of its review's template).
+CREATE TABLE corpus.trial_answers (
+    trial_id           text NOT NULL REFERENCES corpus.model_trials ON DELETE CASCADE,
+    doc_id             text NOT NULL,
+    section_id         text NOT NULL DEFAULT '',
+    template           text,
+    template_position  integer,
+    answer             text,
+    probability        real,
+    probabilities      jsonb NOT NULL DEFAULT '{}',
+    error              text,
+    PRIMARY KEY (trial_id, doc_id, section_id)
+);
+
+-- Each trial answer next to the stored one. For a section, "stored" is the model's own
+-- answer (model_template), before the rules; for a review, the template it has now.
+CREATE VIEW corpus.trial_comparison AS
+SELECT mt.trial_id, mt.model AS trial_model, cv.model AS stored_model, mt.guidance,
+       v.dataset, a.doc_id, a.section_id,
+       CASE WHEN a.section_id = '' THEN 'review' ELSE 'section' END AS question,
+       s.heading,
+       CASE WHEN a.section_id = '' THEN d.template
+            ELSE coalesce(tc.model_template || '#' || tc.model_template_position, 'none')
+       END AS stored_answer,
+       CASE WHEN a.section_id = '' THEN d.probability ELSE tc.probability END
+           AS stored_probability,
+       CASE WHEN a.section_id = '' THEN coalesce(a.template, 'none')
+            ELSE coalesce(a.template || '#' || a.template_position, 'none')
+       END AS trial_answer,
+       a.probability AS trial_probability,
+       a.error AS trial_error,
+       d.method AS review_method
+FROM corpus.trial_answers AS a
+JOIN corpus.model_trials AS mt USING (trial_id)
+JOIN corpus.choice_versions AS cv ON cv.revision = mt.revision AND cv.guidance = mt.guidance
+JOIN corpus.current_versions AS v ON v.revision = mt.revision
+LEFT JOIN corpus.document_choices AS d
+       ON d.revision = mt.revision AND d.guidance = mt.guidance AND d.doc_id = a.doc_id
+LEFT JOIN corpus.template_choices AS tc
+       ON tc.revision = mt.revision AND tc.guidance = mt.guidance
+      AND tc.doc_id = a.doc_id AND tc.section_id = a.section_id
+LEFT JOIN corpus.sections AS s
+       ON s.revision = mt.revision AND s.doc_id = a.doc_id AND s.section_id = a.section_id;
+
+-- Per trial and question: how often the two models agree, and how often each is unsure
+-- (under 50%). Agreement is not accuracy: where they differ, look at those rows by hand.
+CREATE VIEW corpus.trial_summary AS
+SELECT trial_id, trial_model, stored_model, dataset, guidance, question,
+       count(*) AS n,
+       count(*) FILTER (WHERE trial_answer = stored_answer) AS n_same,
+       round(avg((trial_answer = stored_answer)::int)::numeric, 3) AS share_same,
+       count(*) FILTER (WHERE stored_probability < 0.5) AS n_stored_unsure,
+       count(*) FILTER (WHERE trial_probability < 0.5 OR trial_probability IS NULL)
+           AS n_trial_unsure,
+       round(avg(stored_probability)::numeric, 3) AS mean_stored_probability,
+       round(avg(trial_probability)::numeric, 3) AS mean_trial_probability,
+       count(*) FILTER (WHERE trial_answer = 'none') AS n_trial_none,
+       count(*) FILTER (WHERE stored_answer = 'none') AS n_stored_none
+FROM corpus.trial_comparison
+GROUP BY trial_id, trial_model, stored_model, dataset, guidance, question;
+""",
+    ),
 ]

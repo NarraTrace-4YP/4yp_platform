@@ -129,7 +129,26 @@ DOUBTFUL = 0.5  # answers the model gave less probability than this are counted 
 # A review the model says matches none of the templates, with less probability than this, is
 # given its likeliest template anyway, and it and its sections are marked doubtful.
 FALLBACK_BELOW = 0.8
-STAGES = ("full", "retemplate", "refine only", "rules only")  # how much main() runs
+STAGES = ("full", "retemplate", "refine only", "rules only", "model trial")  # see main()
+# Models for a side-by-side trial (stage "model trial"): the same questions as the stored
+# choices, on a sample, kept apart in corpus.trial_answers. Each must be downloaded on Blythe
+# first (sbatch ~/narratrace/jobs/setup_env.sbatch <model>). gpus/mem_gb: what the job asks
+# SLURM for (an L40 node has 3 GPUs and 192 GB); engine/env: extra vLLM settings
+# (narratrace-slurm's llm_batch.py lists the ones it takes).
+TRIAL_MODELS = {
+    # The current model: a control. It should agree with the stored answers almost always.
+    "Qwen/Qwen3.8-27B-FP8": {"gpus": 1},
+    # Qwen3.8-Flash-Next (125B, 6B active), community 4-bit build (compressed-tensors, AWQ
+    # INT4 weights). About 66 GB of weights: split over two L40s. Untested on Blythe; its
+    # n-gram (PLE) tables are kept in the node's memory, hence mem_gb.
+    "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16": {
+        "gpus": 2,
+        "mem_gb": 170,
+        "engine": {"tensor_parallel_size": 2, "compilation_config": {"mode": 0}},
+        "env": {"VLLM_PLE_CPU_OFFLOAD": "1"},
+        "max_num_seqs": 64,
+    },
+}
 NOT_ASKED = "not asked: its review matched none of the templates"
 NO_DOCUMENT = "not asked: there was no answer for its review's template"
 
@@ -1526,6 +1545,224 @@ async def rules_only_task(dataset: str, guidance: str):
 # ---------------------------------------------------------------- the workflow
 
 
+# ---------------------------------------------------------------- model trial (stage "model trial")
+
+TRIAL_TEMPLATES_SQL = """
+SELECT doc_id, template FROM corpus.document_choices WHERE revision = %s AND guidance = %s
+"""
+START_TRIAL_SQL = """
+INSERT INTO corpus.model_trials (trial_id, revision, guidance, reviews, model, request,
+                                 slurm_job_id)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+"""
+TRIAL_ANSWER_SQL = """
+INSERT INTO corpus.trial_answers (trial_id, doc_id, section_id, template, template_position,
+                                  answer, probability, probabilities, error)
+VALUES (%(trial_id)s, %(doc_id)s, %(section_id)s, %(template)s, %(template_position)s,
+        %(answer)s, %(probability)s, %(probabilities)s, %(error)s)
+"""
+TRIAL_SUMMARY_SQL = """
+SELECT question, n, n_same, share_same, n_stored_unsure, n_trial_unsure,
+       mean_stored_probability, mean_trial_probability, n_stored_none, n_trial_none
+FROM corpus.trial_summary WHERE trial_id = %s ORDER BY question
+"""
+
+
+def trial_request(base: dict, trial_model: str) -> dict:
+    """llm_batch.py's request for a trial: the stored run's settings with the trial model's."""
+    spec = TRIAL_MODELS[trial_model]
+    request = {**base, "model": trial_model, "purpose": "O1 stage 5: model trial"}
+    for key in ("engine", "env", "max_num_seqs", "max_model_len", "gpu_memory_utilization"):
+        if key in spec:
+            request[key] = spec[key]
+    return request
+
+
+def trial_inputs(conn, dataset: str, guidance: str, reviews: str) -> dict:
+    """The sample's prompts: every review's question, and each section asked against the
+    template its review has now (so each answer has a stored one to compare with)."""
+    revision, _, stored_model = stored_version(conn, dataset, guidance)
+    inputs = read_inputs(conn, dataset, guidance, reviews)
+    if inputs["revision"] != revision:
+        raise ValueError(f"{dataset} has been reloaded since its choices were stored: run full")
+    templates = dict(conn.execute(TRIAL_TEMPLATES_SQL, (revision, guidance)).fetchall())
+    asked = {d.doc_id for d in inputs["documents"]}
+    templates = {doc: t for doc, t in templates.items() if doc in asked}
+    prompts = document_prompts(inputs) + section_prompts(inputs, templates)
+    return {
+        "revision": revision,
+        "stored_model": stored_model,
+        "prompts": prompts,
+        "n_reviews": len(asked),
+        "n_sections": len(prompts) - len(asked),
+    }
+
+
+def trial_rows(trial_id: str, results: list[dict]) -> list[dict]:
+    """One corpus.trial_answers row per answer (section_id '' for a review question)."""
+    rows = []
+    for result in results:
+        if (result.get("meta") or {}).get("section_id") is None:
+            row = interpret_document(result)
+            row.update(section_id="", template_position=None)
+        else:
+            row = interpret(result)
+        rows.append(
+            {
+                "trial_id": trial_id,
+                "doc_id": row["doc_id"],
+                "section_id": row["section_id"],
+                "template": row["template"],
+                "template_position": row["template_position"],
+                "answer": row["answer"],
+                "probability": row["probability"],
+                "probabilities": json.dumps(row["probabilities"]),
+                "error": row["error"],
+            }
+        )
+    return rows
+
+
+@task
+async def preview_trial(dataset: str, guidance: str, reviews: str, trial_model: str):
+    """dry_run for a trial: what would be asked and what the job would ask SLURM for."""
+    with connect() as conn:
+        x = trial_inputs(conn, dataset, guidance, reviews)
+    spec = TRIAL_MODELS[trial_model]
+    return {
+        "result": "Dry run: nothing was sent to Blythe or stored.",
+        "trial_model": trial_model,
+        "stored_model": x["stored_model"],
+        "n_reviews": x["n_reviews"],
+        "n_section_questions": x["n_sections"],
+        "gpus": spec.get("gpus", 1),
+        "mem_gb": spec.get("mem_gb"),
+        "hours": automatic_hours(prompt_chars(x["prompts"])),
+        "request": trial_request(
+            _request(dataset, guidance, reviews, x["stored_model"], x["revision"]), trial_model
+        ),
+    }
+
+
+@task
+async def submit_trial(
+    dataset: str,
+    guidance: str,
+    reviews: str,
+    trial_model: str,
+    hours: int,
+    run_id: str,
+    callback_url: str,
+):
+    with connect() as conn:
+        applied = apply_migrations(conn)
+        if applied:
+            log(f"OK    Database tables updated: {', '.join(applied)}")
+        x = trial_inputs(conn, dataset, guidance, reviews)
+    spec = TRIAL_MODELS[trial_model]
+    request = trial_request(
+        _request(dataset, guidance, reviews, x["stored_model"], x["revision"]), trial_model
+    )
+    request["gpus"], request["mem_gb"] = spec.get("gpus", 1), spec.get("mem_gb")
+    hours = hours or automatic_hours(prompt_chars(x["prompts"]))
+    data = gzip_lines(x["prompts"])
+    log(
+        f"Trial of {trial_model}: {x['n_reviews']} reviews, {x['n_sections']} sections,"
+        f" {request['gpus']} GPU(s), {hours} h limit"
+    )
+    with Blythe() as b:
+        submitted = b.submit(
+            "llm_batch",
+            run_id,
+            {
+                "request.json": json.dumps({**request, "phase": "trial"}, indent=2),
+                "prompts.jsonl.gz": data,
+            },
+            callback_url,
+            hours=hours,
+            gpus=spec.get("gpus"),
+            mem_gb=spec.get("mem_gb"),
+        )
+    with connect() as conn:
+        conn.execute(
+            START_TRIAL_SQL,
+            (
+                run_id,
+                x["revision"],
+                guidance,
+                reviews,
+                trial_model,
+                json.dumps(request),
+                submitted["slurm_job_id"],
+            ),
+        )
+    return {
+        **submitted,
+        "trial_id": run_id,
+        "n_prompts": len(x["prompts"]),
+        "prompts_sha256": hashlib.sha256(data).hexdigest(),
+        "hours": hours,
+    }
+
+
+@task
+async def finish_trial(job: dict, state: dict):
+    """Stores the trial's answers and returns how they compare with the stored ones."""
+    results, summary, log_tail = download(job, state)
+    rows = trial_rows(job["trial_id"], results)
+    with connect() as conn:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                cur.executemany(TRIAL_ANSWER_SQL, rows)
+            conn.execute(
+                "UPDATE corpus.model_trials SET summary = %s, finished = now() WHERE trial_id = %s",
+                (json.dumps(summary), job["trial_id"]),
+            )
+        cur = conn.execute(TRIAL_SUMMARY_SQL, (job["trial_id"],))
+        names = [c.name for c in cur.description]
+        compared = [
+            {
+                k: (float(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, int) else v)
+                for k, v in zip(names, row)
+            }
+            for row in cur.fetchall()
+        ]
+    log(f"OK    Stored {len(rows)} trial answers")
+    return {
+        "trial_id": job["trial_id"],
+        "n_answers": len(rows),
+        "n_errors": sum(1 for r in rows if r["error"]),
+        "compared": compared,
+        "seconds_loading": summary.get("seconds_loading"),
+        "seconds_generating": summary.get("seconds_generating"),
+        "log_tail": log_tail if not rows else None,
+    }
+
+
+async def model_trial(
+    dataset: str,
+    guidance: str,
+    reviews: str,
+    trial_model: str,
+    hours: int,
+    run_id: str,
+    check_every_minutes: int,
+    give_up_after_hours: int,
+) -> dict:
+    urls = await step("trial_callback_1", lambda: get_approval_urls("trial_finished_1"))
+    job = await submit_trial(
+        dataset, guidance, reviews, trial_model, hours, f"{run_id}-trial", urls["resume"]
+    )
+    state = await wait_for_job("trial", job, check_every_minutes, give_up_after_hours)
+    if state is None:
+        return {
+            "result": f"Gave up waiting for the trial job after {give_up_after_hours} h and"
+            " cancelled it. Nothing stored but the trial's start.",
+            **job,
+        }
+    return {**await finish_trial(job, state), "trial_job": state}
+
+
 def new_run_id(dataset: str, guidance: str, reviews: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     return f"o1-choose-{dataset}-{guidance}-{reviews}-{stamp}-{secrets.token_hex(2)}".lower()
@@ -1586,7 +1823,10 @@ async def main(
     hours: int = 0,
     check_every_minutes: int = 30,
     give_up_after_hours: int = 96,
-    stage: Literal["full", "retemplate", "refine only", "rules only"] = "full",
+    stage: Literal["full", "retemplate", "refine only", "rules only", "model trial"] = "full",
+    trial_model: Literal[
+        "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16", "Qwen/Qwen3.8-27B-FP8"
+    ] = "wtdcode/Qwen3.8-Flash-Next-AWQ-W4A16",
     dry_run: bool = False,
 ):
     """Windmill runs this; only Rowan's runs can use Blythe. dataset and guidance: whose
@@ -1600,15 +1840,23 @@ async def main(
     their sections fit best (a GPU job), then the extra-sections question and the rules
     (another); "refine only" only the extra-sections question (a GPU job) and the rules;
     "rules only" only the rules, with the extra-section answers already stored (no GPU).
-    hours is then each job's limit. dry_run: only show what would be sent or done."""
+    hours is then each job's limit. "model trial": asks trial_model the same questions as the
+    stored choices for the chosen reviews and stores its answers beside them (corpus.trial_answers;
+    compare in corpus.trial_summary); nothing stored is changed. dry_run: only show what would be sent or done."""
     check_owner()  # Rowan's Blythe account: no one else may run this, not even a dry run
     check_choices(dataset, guidance, reviews, model)
     if hours and not 1 <= hours <= MAX_HOURS:
         raise ValueError(f"hours must be 0 (automatic) or 1 to {MAX_HOURS}")
     if stage not in STAGES:
         raise ValueError(f"Unknown stage {stage!r}: choose one of {STAGES}")
-    retemplate, refine_only, rules_only = (stage == s for s in STAGES[1:])
+    retemplate, refine_only, rules_only, trial = (stage == s for s in STAGES[1:])
+    if trial and trial_model not in TRIAL_MODELS:
+        raise ValueError(
+            f"Unknown trial model {trial_model!r}: choose one of {sorted(TRIAL_MODELS)}"
+        )
     if dry_run:
+        if trial:
+            return await preview_trial(dataset, guidance, reviews, trial_model)
         if retemplate:
             return await preview_retemplate(dataset, guidance)
         if refine_only or rules_only:
@@ -1622,6 +1870,22 @@ async def main(
         }
 
     run_id = await step("run_id", lambda: new_run_id(dataset, guidance, reviews))
+    if trial:
+        return {
+            "dataset": dataset,
+            "guidance": guidance,
+            "reviews": reviews,
+            **await model_trial(
+                dataset,
+                guidance,
+                reviews,
+                trial_model,
+                hours,
+                run_id,
+                check_every_minutes,
+                give_up_after_hours,
+            ),
+        }
     if refine_only or retemplate:
         result = {"dataset": dataset, "guidance": guidance}
         if retemplate:
