@@ -28,7 +28,7 @@ O1/
     embeddings.py
     get_candidates.py
   choose_template_section/
-    choose_template_section.py   # a workflow: runs the LLM on Blythe (Rowan only)
+    choose_template_section.py   # a workflow: runs the LLM on your own Blythe account
     prompts.py
     get_choices.py
   app_backend/
@@ -38,16 +38,34 @@ O1/
 ```
 
 `blythe.py` (shared) logs in to Blythe and runs the fixed SLURM jobs from the
-separate `NarraTrace-4YP/narratrace-slurm` repository. It
-uses Rowan's own Blythe account, so only Rowan's Windmill runs may use it (`check_owner()`).
-For that reason stage 5 is not a step of `f/dhr/O1/pipeline`, which anyone in the team can run:
-Rowan runs `choose_template_section` on its own after stage 4. See its README.
+separate `NarraTrace-4YP/narratrace-slurm` repository. Every run logs in as the person who
+started it, with their own Blythe account, read from their own Windmill variables:
 
-`tools/llm_server.py` (Rowan only, for the same reason) starts narratrace-slurm's
+| Variable                        | What it holds                                                |
+| ------------------------------- | ------------------------------------------------------------ |
+| `u/<you>/blythe_username`       | your Blythe login (Rowan's is known, so his can be left out) |
+| `u/<you>/blythe_ssh_key`        | the private key SCRTP allowed on the project server (secret) |
+| `u/<you>/blythe_key_passphrase` | its passphrase (secret)                                      |
+| `u/<you>/blythe_totp_secret`    | your 2FA secret, or the otpauth:// link it came in (secret)  |
+
+Make them in Windmill (Resources > Variables, under your own `u/<you>/` folder, ticking
+"secret"). Only your runs, and workspace admins, can read them. Before your first run: SCRTP
+must agree to your key and 2FA being used from the project server, as they did for Rowan,
+and `~/narratrace` must be set up in your Blythe account (narratrace-slurm's README). A run
+whose person has no account set up stops before contacting Blythe. Because stage 5 needs a
+Blythe account, it is not a step of `f/dhr/O1/pipeline`: run `choose_template_section` on its
+own after stage 4. See its README.
+
+`tools/llm_server.py` (on your own Blythe account, like everything here) starts narratrace-slurm's
 `llm_serve` job on Blythe, which keeps a model loaded and answers prompts added while it
 runs: start it, add prompts, look at its status, collect a request's answers, and stop it.
 The mailbox functions it uses (`start_server`, `add_request`, `mailbox`, `collect`,
-`stop_server`) are in `blythe.py`, for pipelines to use too.
+`stop_server`, `events`) are in `blythe.py`, for pipelines to use too.
+
+For code that just wants to ask the model (O2's wiki agent, say), use the LLM gateway
+instead: `llm.py` gives an `openai` client or a LangChain `ChatOpenAI` that runs on your own
+Blythe account, starting your model job when needed (`gateway/README.md`).
+`tools/llm_chat.py` asks it one question from Windmill, to try it.
 
 The complete flow is `f/dhr/O1/pipeline`; the app is `f/dhr/O1/app`. For example, the
 loading script's Windmill path is `f/dhr/O1/load_reviews/load_reviews`. These replace the

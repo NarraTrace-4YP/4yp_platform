@@ -1,10 +1,15 @@
 """Running fixed SLURM jobs on Blythe, the university's GPU cluster, from Windmill.
 
-Windmill logs in to Blythe over SSH as Rowan (csujxb), with his key and a 2FA code made from
-his 2FA secret. SCRTP allowed this on 19 Nov 2026 until they offer a web interface. It is
-his own university account, so only he may use it: the three secrets are Windmill variables
-under u/rshields2004/, which only his runs (and workspace admins) can read, and check_owner()
-stops any run that isn't his before it reads them, admins' runs included.
+Each run uses the Blythe account of the person who started it. Windmill logs in to Blythe
+over SSH as them, with their key and a 2FA code made from their 2FA secret, which they keep
+as their own Windmill variables (only their runs, and workspace admins, can read them):
+    u/<their Windmill name>/blythe_username         their Blythe login (e.g. csujxb)
+    u/<their Windmill name>/blythe_ssh_key          the private key allowed on the server
+    u/<their Windmill name>/blythe_key_passphrase   its passphrase
+    u/<their Windmill name>/blythe_totp_secret      their 2FA secret (or its otpauth:// link)
+A run whose person hasn't set these up stops before contacting Blythe. SCRTP allowed this
+for Rowan's account on 19 Nov 2026, until they offer a web interface; each person needs the
+same agreement for their own account, and their own ~/narratrace set up on Blythe.
 
 On Blythe everything sits in ~/narratrace (see the README of the separate repository
 NarraTrace-4YP/narratrace-slurm, cloned there as ~/narratrace/slurm):
@@ -27,12 +32,13 @@ request is data only (prompts and their labels); the job refuses anything else.
 Blythe's login node closes SFTP sessions, so files go over the SSH command channel
 (cat / head / find). Every command runs on its own channel of one login, so one task logs
 in, and uses one 2FA code, only once. A code works only once, so a refused code is retried
-once with the next one.
+once with the next one. Each account has its own codes, so two people's runs never clash.
 """
 
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import io
 import json
@@ -45,8 +51,6 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 HOST = "blythe.scrtp.warwick.ac.uk"
-USERNAME = "csujxb"
-OWNER = "rshields2004"  # the Windmill user whose Blythe account it is: no one else may use it
 BASE = "narratrace"  # in the home folder on Blythe
 
 # Blythe's host keys, from Rowan's known_hosts on the project server (19 Nov 2026). A login
@@ -56,9 +60,15 @@ KNOWN_HOST_KEYS = {
     "SHA256:TPNsZGtGuRZsWBZDjjdwyJBb1zEXPfokFNI6MsFckls",  # ECDSA
     "SHA256:e8tZHZ5vktblxUSX+pxLYLPlmX1Pa6qNuXMAxb3BqAo",  # ED25519
 }
-KEY_VARIABLE = "u/rshields2004/blythe_ssh_key"
-PASSPHRASE_VARIABLE = "u/rshields2004/blythe_key_passphrase"
-TOTP_VARIABLE = "u/rshields2004/blythe_totp_secret"
+# Each person's Windmill variables, under u/<their Windmill name>/ (see above).
+USERNAME_VARIABLE = "blythe_username"
+KEY_VARIABLE = "blythe_ssh_key"
+PASSPHRASE_VARIABLE = "blythe_key_passphrase"
+TOTP_VARIABLE = "blythe_totp_secret"
+# Blythe logins known before blythe_username existed; the variable wins when it is set.
+KNOWN_USERNAMES = {"rshields2004": "csujxb"}
+WINDMILL_USER = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+BLYTHE_USER = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
 
 # The job files Windmill may submit: ~/narratrace/jobs/<name>.sbatch on Blythe.
 JOBS = {"test_gpu", "llm_batch", "llm_serve"}
@@ -91,14 +101,21 @@ class BlytheError(RuntimeError):
 # ---------------------------------------------------------------- checks
 
 
-def check_owner() -> None:
-    """Stops the run unless Rowan started it (Windmill names the user in WM_USERNAME)."""
-    user = os.environ.get("WM_USERNAME")
-    if user != OWNER:
+def windmill_user() -> str:
+    """Who started this run (Windmill names them in WM_USERNAME)."""
+    user = os.environ.get("WM_USERNAME") or ""
+    if not WINDMILL_USER.match(user):
         raise BlytheError(
-            f"Only {OWNER} can run this: it uses his own Blythe account. This run belongs to"
-            f" {user or 'no Windmill user'}."
+            "This run has no Windmill user, so it can't use anyone's Blythe account."
+            " Run it from Windmill, logged in as yourself."
         )
+    return user
+
+
+def check_owner() -> str:
+    """Stops a run that has no Windmill user to tie it to a Blythe account; returns the user.
+    Their Blythe secrets are read (and must exist) when the run logs in (load_account)."""
+    return windmill_user()
 
 
 def check_job(job: str) -> None:
@@ -254,6 +271,37 @@ def parse_mailbox(out: str) -> dict:
     }
 
 
+def events_command(run_dir: str, offset: int) -> str:
+    """What an llm_serve job has finished since byte `offset` of its events.log, and its
+    status.json, in one command (see parse_events)."""
+    return (
+        f"cd {q(run_dir)} || exit 1; printf '[events]\\n';"
+        f" tail -c +{int(offset) + 1} events.log 2>/dev/null;"
+        " printf '\\n[end-events]\\n'; cat status.json 2>/dev/null"
+    )
+
+
+def parse_events(out: bytes, offset: int) -> dict:
+    """events_command's output: {"events": the finished or refused requests, "offset": where
+    to read from next time (a line still being written is left for then), "status"}."""
+    start = b"[events]\n"
+    if not out.startswith(start):
+        raise BlytheError("That run folder isn't on Blythe.")
+    body, _, rest = out[len(start) :].partition(b"\n[end-events]\n")
+    whole = body[: body.rfind(b"\n") + 1]
+    events = []
+    for line in whole.decode(errors="replace").splitlines():
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            continue
+    try:
+        status = json.loads(rest) if rest.strip() else None
+    except ValueError:
+        status = None
+    return {"events": events, "offset": offset + len(whole), "status": status}
+
+
 # ---------------------------------------------------------------- secrets
 
 
@@ -289,19 +337,58 @@ def _clean_totp_secret(raw: str) -> str:
     return re.sub(r"[\s-]", "", secret).upper()
 
 
-def load_secrets():
-    """Rowan's key and 2FA generator, from his Windmill variables (only in his own runs)."""
-    import pyotp
-    import wmill
+@dataclasses.dataclass
+class Account:
+    """A person's Blythe login: their Windmill name, Blythe username, key and 2FA generator."""
 
-    check_owner()
+    user: str
+    username: str
+    key: object
+    totp: object
+
+
+def load_account(user: str | None = None, get_variable=None) -> Account:
+    """The Blythe account of the person running this (or of `user`), from their own Windmill
+    variables. get_variable reads one variable by path; inside Windmill it is
+    wmill.get_variable, which only reads what the run's own user may read."""
+    import pyotp
+
+    user = user or windmill_user()
+    if not WINDMILL_USER.match(user):
+        raise BlytheError(f"Not a Windmill user name: {user!r}")
+    if get_variable is None:
+        import wmill
+
+        get_variable = wmill.get_variable
+
+    def variable(name: str, required: bool = True) -> str:
+        path = f"u/{user}/{name}"
+        try:
+            value = get_variable(path)
+        except Exception:  # noqa: BLE001 - Windmill answers "not found" with an error
+            value = None
+        if required and not value:
+            raise BlytheError(
+                f"{user} has no Blythe account set up in Windmill: {path} is missing or empty."
+                f" Add your own u/{user}/{USERNAME_VARIABLE}, {KEY_VARIABLE},"
+                f" {PASSPHRASE_VARIABLE} and {TOTP_VARIABLE} (see f/dhr/README.md)."
+            )
+        return value or ""
+
+    username = variable(USERNAME_VARIABLE, required=user not in KNOWN_USERNAMES).strip()
+    username = username or KNOWN_USERNAMES[user]
+    if not BLYTHE_USER.match(username):
+        raise BlytheError(f"u/{user}/{USERNAME_VARIABLE} isn't a Blythe username: {username!r}")
     key = _load_key(
-        _clean_key_text(wmill.get_variable(KEY_VARIABLE) or ""),
-        wmill.get_variable(PASSPHRASE_VARIABLE) or "",
+        _clean_key_text(variable(KEY_VARIABLE)), variable(PASSPHRASE_VARIABLE, required=False)
     )
-    totp = pyotp.TOTP(_clean_totp_secret(wmill.get_variable(TOTP_VARIABLE) or ""))
-    totp.now()  # fails here if the secret isn't valid
-    return key, totp
+    secret = _clean_totp_secret(variable(TOTP_VARIABLE))
+    try:
+        totp = pyotp.TOTP(secret)
+        totp.now()
+    except Exception as error:  # noqa: BLE001 - say which variable is wrong
+        raise BlytheError(f"u/{user}/{TOTP_VARIABLE} isn't a valid 2FA secret: {error}") from None
+    return Account(user, username, key, totp)
 
 
 # ---------------------------------------------------------------- the login
@@ -316,17 +403,31 @@ def _as_bytes(data) -> bytes:
 
 
 class Blythe:
-    """One SSH login to Blythe. Use as `with Blythe() as b:`."""
+    """One SSH login to Blythe, as the person running this. Use as `with Blythe() as b:`.
+
+    account: whose login to use (default: load_account(), the run's own user). keepalive:
+    seconds between keep-alive messages, for a login held open for a long time (the gateway)."""
+
+    def __init__(self, account: Account | None = None, keepalive: int = 0):
+        self.account, self.keepalive = account, keepalive
 
     def __enter__(self) -> Blythe:
-        key, totp = load_secrets()
+        return self.connect()
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def connect(self) -> Blythe:
+        account = self.account = self.account or load_account()
         try:
-            self.transport = self._login(key, totp)
+            self.transport = self._login(account)
         except TwoFactorRefused:
             wait = 31 - int(time.time()) % 30
             print(f"2FA code refused; trying once more with the next code in {wait} s", flush=True)
             time.sleep(wait)
-            self.transport = self._login(key, totp)
+            self.transport = self._login(account)
+        if self.keepalive:
+            self.transport.set_keepalive(self.keepalive)
         status, out, err = self.sh('echo "$HOME"')
         lines = [line.strip() for line in out.splitlines() if line.strip()]
         if status != 0 or not lines or not lines[-1].startswith("/"):
@@ -335,11 +436,17 @@ class Blythe:
         self.home = lines[-1]
         return self
 
-    def __exit__(self, *exc) -> None:
-        self.transport.close()
+    def close(self) -> None:
+        transport = getattr(self, "transport", None)
+        if transport is not None:
+            transport.close()
+
+    def alive(self) -> bool:
+        transport = getattr(self, "transport", None)
+        return bool(transport is not None and transport.is_active())
 
     @staticmethod
-    def _login(key, totp):
+    def _login(account: Account):
         import paramiko
 
         sock = socket.create_connection((HOST, 22), timeout=15)
@@ -349,7 +456,8 @@ class Blythe:
             seen = fingerprint(transport.get_remote_server_key())
             if seen not in KNOWN_HOST_KEYS:
                 raise BlytheError(f"Blythe's host key {seen} isn't a known one. Nothing was sent.")
-            remaining = transport.auth_publickey(USERNAME, key)
+            key, totp, username = account.key, account.totp, account.username
+            remaining = transport.auth_publickey(username, key)
             if not transport.is_authenticated():
                 if "keyboard-interactive" not in remaining:
                     raise BlytheError(f"Blythe asked for {remaining} after the key. Stopped.")
@@ -363,7 +471,7 @@ class Blythe:
                     ]
 
                 try:
-                    transport.auth_interactive(USERNAME, answer)
+                    transport.auth_interactive(username, answer)
                 except paramiko.AuthenticationException as error:
                     raise TwoFactorRefused(str(error)) from error
             return transport
@@ -573,6 +681,11 @@ class Blythe:
         if self.exists(error_path):
             return {"state": "refused", "error": json.loads(self.read(error_path))}
         return {"state": "waiting"}
+
+    def events(self, run_id: str, offset: int = 0) -> dict:
+        """The requests an llm_serve job has finished since `offset`, and its status."""
+        _, out, _ = self._exec(events_command(self.run_dir(run_id), offset))
+        return parse_events(out, offset)
 
     def stop_server(self, run_id: str) -> None:
         """Asks the llm_serve job to stop once its inbox is empty."""

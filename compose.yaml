@@ -191,6 +191,27 @@ services:
       postgres:
         condition: service_healthy
 
+  # The LLM gateway: an OpenAI-style API to the model on Blythe, for the team's code
+  # (gateway/README.md). Each call runs on the caller's own Blythe account, found from their
+  # Windmill token. Only reachable inside the server: Windmill scripts use
+  # http://llm-gateway:8000/v1, laptops an SSH tunnel to 127.0.0.1:8100. Never public.
+  llm-gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    image: dhr-llm-gateway:local
+    restart: unless-stopped
+    environment:
+      WINDMILL_URL: http://windmill-server:8000
+      WINDMILL_WORKSPACE: dhr
+    ports:
+      - "127.0.0.1:${LLM_GATEWAY_HOST_PORT:-8100}:8000"
+    volumes:
+      - llm-gateway-data:/data
+    mem_limit: 512m
+    depends_on:
+      - windmill-server
+
   # The only thing open to the internet: serves Windmill and MLflow over HTTPS,
   # and gets and renews the certificates automatically.
   caddy:
@@ -225,3 +246,4 @@ volumes:
   mlflow-artifacts:
   caddy-data:
   caddy-config:
+  llm-gateway-data:

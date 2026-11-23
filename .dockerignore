@@ -1,0 +1,6 @@
+# Only the gateway's image is built from the repository root (compose.yaml, llm-gateway).
+# Send Docker just what it copies, so .env files and other secrets never leave the server's
+# checkout, and the build stays small.
+*
+!gateway/
+!f/dhr/blythe.py

@@ -780,13 +780,15 @@ Keeping these outside the repository prevents accidental disclosure and avoids s
 
 ## 11. Blythe integration
 
-LLM inference runs on Blythe, coordinated from Windmill on the shared server. SCRTP allowed an interim set-up on 19 Nov 2026, while they build a permanent web interface: Windmill logs in over SSH with Rowan's key and 2FA secret, which are kept as his private Windmill variables.
+LLM inference runs on Blythe, coordinated from Windmill on the shared server. SCRTP allowed an interim set-up on 19 Nov 2026, while they build a permanent web interface: Windmill logs in over SSH with a person's key and 2FA secret, which they keep as their own private Windmill variables.
 
 Windmill only uploads a run's inputs, submits one of the fixed job files from the separate [narratrace-slurm](https://github.com/NarraTrace-4YP/narratrace-slurm) repository by name, checks the job with SLURM and downloads its output. It never sends commands of its own. Each job calls Windmill back when it ends, so the waiting workflow uses no worker in the meantime.
 
-Because it is Rowan's own university account, only his Windmill runs can use it (`f/dhr/blythe.py`). Setting up Blythe is described in that repository's README. The first user is O1 stage 5 (`f/dhr/O1/choose_template_section`).
+Every run uses the Blythe account of the person who started it (`f/dhr/blythe.py`), so each person's GPU jobs run under their own university account. To use it, put your own Blythe login, key, passphrase and 2FA secret in your Windmill variables (`f/dhr/README.md` lists them), get SCRTP's agreement for your account as Rowan did, and set up `~/narratrace` in your Blythe account (that repository's README). The first user is O1 stage 5 (`f/dhr/O1/choose_template_section`).
 
-Most jobs are given all their prompts at the start. The `llm_serve` job instead keeps a model loaded and answers prompts added while it runs, so more work doesn't wait in the SLURM queue or load the model again. Its run folder works as a mailbox: Windmill puts each request's prompts in its `inbox/` and collects the answers from its `outbox/`. A request is data only (prompts and their labels), and the job refuses anything else. Rowan drives it with `f/dhr/tools/llm_server` (start, add prompts, status, collect, stop). Each Windmill login to Blythe needs a new 2FA code, so this suits batches of prompts, not one question at a time.
+Most jobs are given all their prompts at the start. The `llm_serve` job instead keeps a model loaded and answers prompts added while it runs, so more work doesn't wait in the SLURM queue or load the model again. Its run folder works as a mailbox: Windmill puts each request's prompts in its `inbox/` and collects the answers from its `outbox/`. A request is data only (prompts and their labels), and the job refuses anything else. Anyone with their Blythe account set up drives it with `f/dhr/tools/llm_server` (start, add prompts, status, collect, stop).
+
+For code that just wants to ask the model, the **LLM gateway** (`gateway/`, the `llm-gateway` service) offers an OpenAI-style API inside the server: Windmill scripts call `http://llm-gateway:8000/v1` with their own token (`f/dhr/llm.py` sets this up), and the gateway runs each call on the caller's own Blythe account, in their own `llm_serve` job. It is never public. See `gateway/README.md`. Each Windmill login to Blythe needs a new 2FA code, so this suits batches of prompts, not one question at a time.
 
 ---
 
