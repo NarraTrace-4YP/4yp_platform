@@ -27,6 +27,12 @@ psql -v ON_ERROR_STOP=1 -d weknora <<-'SQL'
 	CREATE EXTENSION IF NOT EXISTS vector;
 	CREATE EXTENSION IF NOT EXISTS pg_trgm;
 	CREATE EXTENSION IF NOT EXISTS pg_search;
+	-- WeKnora's set-up steps run "ALTER EXTENSION pg_search UPDATE", which only the
+	-- extension's owner may run, so its login owns the extensions in its own database.
+	-- PostgreSQL has no command for this, hence the direct change. The update changes
+	-- nothing here: the extensions are created at the version this image ships.
+	UPDATE pg_extension SET extowner = 'weknora'::regrole
+	WHERE extname IN ('uuid-ossp', 'vector', 'pg_trgm', 'pg_search');
 	SQL
 
 echo "WeKnora database ready."
