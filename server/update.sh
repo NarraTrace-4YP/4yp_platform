@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 git pull --ff-only
+# Fills in any settings added since .env was made (WeKnora's secrets).
+bash server/weknora.sh env
 docker compose up -d --build
 
 echo "Waiting for services to report healthy..."

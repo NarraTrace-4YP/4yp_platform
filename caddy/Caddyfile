@@ -1,5 +1,5 @@
 # PUBLIC_SCHEME is https on the server and http for local development. Caddy gets and
-# renews certificates automatically for the server addresses. All three server names
+# renews certificates automatically for the server addresses. All four server names
 # must point at the server in DNS (an A record each) before it can.
 {
 	email {$ACME_EMAIL}
@@ -62,4 +62,14 @@
 {$PUBLIC_SCHEME}://mlflow.{$DOMAIN} {
 	encode zstd gzip
 	reverse_proxy mlflow:5000
+}
+
+# WeKnora (docs/weknora.md). Accounts are made only by server/team.sh, from inside the
+# server, so the sign-up API is closed to the internet: anyone could otherwise make an
+# account and spend the team's GPU time.
+{$PUBLIC_SCHEME}://weknora.{$DOMAIN} {
+	encode zstd gzip
+	@signup path /api/v1/auth/register*
+	respond @signup "New accounts are made by the server admins. See ~/ACCOUNTS.txt on the server." 403
+	reverse_proxy weknora-frontend:80
 }

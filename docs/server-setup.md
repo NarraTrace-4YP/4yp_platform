@@ -89,13 +89,14 @@ The server exposes three web interfaces:
 
 Each interface needs a domain name pointing to the server.
 
-In your DNS provider's control panel, create three **A records**, all pointing to the server's public IPv4 address:
+In your DNS provider's control panel, create four **A records**, all pointing to the server's public IPv4 address:
 
 | Host | Purpose | Points to |
 |---|---|---|
 | `@` | Main landing page (`<domain>`) | Server IP |
 | `windmill` | `windmill.<domain>` | Server IP |
 | `mlflow` | `mlflow.<domain>` | Server IP |
+| `weknora` | `weknora.<domain>` | Server IP |
 
 Most DNS providers, including Namecheap, use `@` to represent the root domain.
 
