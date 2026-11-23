@@ -43,6 +43,12 @@ uses Rowan's own Blythe account, so only Rowan's Windmill runs may use it (`chec
 For that reason stage 5 is not a step of `f/dhr/O1/pipeline`, which anyone in the team can run:
 Rowan runs `choose_template_section` on its own after stage 4. See its README.
 
+`tools/llm_server.py` (Rowan only, for the same reason) starts narratrace-slurm's
+`llm_serve` job on Blythe, which keeps a model loaded and answers prompts added while it
+runs: start it, add prompts, look at its status, collect a request's answers, and stop it.
+The mailbox functions it uses (`start_server`, `add_request`, `mailbox`, `collect`,
+`stop_server`) are in `blythe.py`, for pipelines to use too.
+
 The complete flow is `f/dhr/O1/pipeline`; the app is `f/dhr/O1/app`. For example, the
 loading script's Windmill path is `f/dhr/O1/load_reviews/load_reviews`. These replace the
 previous flat paths. Deployment, bootstrap, app bindings, and source links use the new

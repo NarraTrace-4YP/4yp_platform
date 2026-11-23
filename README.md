@@ -786,6 +786,8 @@ Windmill only uploads a run's inputs, submits one of the fixed job files from th
 
 Because it is Rowan's own university account, only his Windmill runs can use it (`f/dhr/blythe.py`). Setting up Blythe is described in that repository's README. The first user is O1 stage 5 (`f/dhr/O1/choose_template_section`).
 
+Most jobs are given all their prompts at the start. The `llm_serve` job instead keeps a model loaded and answers prompts added while it runs, so more work doesn't wait in the SLURM queue or load the model again. Its run folder works as a mailbox: Windmill puts each request's prompts in its `inbox/` and collects the answers from its `outbox/`. A request is data only (prompts and their labels), and the job refuses anything else. Rowan drives it with `f/dhr/tools/llm_server` (start, add prompts, status, collect, stop). Each Windmill login to Blythe needs a new 2FA code, so this suits batches of prompts, not one question at a time.
+
 ---
 
 ## Where to start
