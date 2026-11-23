@@ -282,7 +282,8 @@ def test_errors_from_the_job_become_openai_errors(setup):
 
 
 def test_calls_arriving_together_go_to_the_gpu_together(setup):
-    client, accounts, _ = setup
+    client, accounts, gateway = setup
+    gateway.settings.batch_seconds = 0.5  # wide enough for six threads, however busy the machine
     replies = {}
 
     def call(n):
@@ -297,7 +298,7 @@ def test_calls_arriving_together_go_to_the_gpu_together(setup):
         n: f"echo: question {n}" for n in range(6)
     }
     (run,) = accounts["ks0610"].runs.values()
-    assert len(run["requests"]) <= 2  # six calls, sent as one or two requests
+    assert len(run["requests"]) == 1  # six calls, sent as one request
 
 
 def test_a_job_that_stopped_is_replaced(setup):
