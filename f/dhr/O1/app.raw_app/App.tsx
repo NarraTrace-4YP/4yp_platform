@@ -8,6 +8,7 @@ import AttributesTab from './AttributesTab'
 import SectionsTab from './SectionsTab'
 import CandidatesTab from './CandidatesTab'
 import ChoicesTab from './ChoicesTab'
+import NotesTab from './Notes'
 
 // The views, grouped by what you come to do. Each says in a line what it shows.
 const GROUPS = [
@@ -16,6 +17,7 @@ const GROUPS = [
     tabs: [
       { id: 'overview', label: 'Overview', hint: 'How the reviews are prepared' },
       { id: 'data', label: 'Data', hint: 'Datasets, sources and coverage' },
+      { id: 'notes', label: 'Notes', hint: 'Project notes' },
     ],
   },
   {
@@ -124,6 +126,7 @@ export default function App() {
         )}
         {tab === 'overview' && <Overview status={status} goTo={goTo} />}
         {tab === 'data' && <DataTab status={status} error={statusError} />}
+        {tab === 'notes' && <NotesTab />}
         {tab === 'cases' && <CasesTab />}
         {tab === 'attributes' && <AttributesTab />}
         {tab === 'sections' && <SectionsTab />}
