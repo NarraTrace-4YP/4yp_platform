@@ -140,8 +140,14 @@ class Session:
                 if self.stopped:
                     return
                 if self.queue and not self.sent:
-                    # gather calls arriving together into one request
-                    self.cond.wait(timeout=self.settings.batch_seconds)
+                    # gather calls arriving together into one request: wait out the whole
+                    # window (each new call wakes this wait, so keep waiting until it ends)
+                    deadline = time.monotonic() + self.settings.batch_seconds
+                    while len(self.queue) < self.settings.max_batch and not self.stopped:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        self.cond.wait(timeout=remaining)
                 batch = [c for c in self.queue if not c.future.cancelled()]
                 batch = batch[: self.settings.max_batch]
                 self.queue = [c for c in self.queue if c not in batch and not c.future.cancelled()]

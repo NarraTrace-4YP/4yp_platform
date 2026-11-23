@@ -52,7 +52,9 @@ Make them in Windmill (Resources > Variables, under your own `u/<you>/` folder, 
 "secret"). Only your runs, and workspace admins, can read them. Before your first run: SCRTP
 must agree to your key and 2FA being used from the project server, as they did for Rowan,
 and `~/narratrace` must be set up in your Blythe account (narratrace-slurm's README). A run
-whose person has no account set up stops before contacting Blythe. Because stage 5 needs a
+whose person has no account set up stops before contacting Blythe. To check your set-up,
+run `tools/blythe_check` in Windmill: it tests your variables, the login and your
+`~/narratrace`, and says how to fix whatever isn't ready (it changes nothing on Blythe). Because stage 5 needs a
 Blythe account, it is not a step of `f/dhr/O1/pipeline`: run `choose_template_section` on its
 own after stage 4. See its README.
 
