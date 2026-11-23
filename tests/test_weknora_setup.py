@@ -84,6 +84,8 @@ def test_the_database_script_changes_nothing_once_it_has_run():
     for extension in ('"uuid-ossp"', "vector", "pg_trgm", "pg_search"):
         assert f"CREATE EXTENSION IF NOT EXISTS {extension};" in script
     assert "REVOKE ALL ON DATABASE weknora FROM PUBLIC" in script
+    # WeKnora's migrations run ALTER EXTENSION pg_search UPDATE, which needs the owner.
+    assert "SET extowner = 'weknora'::regrole" in script
 
 
 def test_team_sync_gives_everyone_a_weknora_login():
