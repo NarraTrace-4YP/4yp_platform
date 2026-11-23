@@ -212,7 +212,127 @@ services:
     depends_on:
       - windmill-server
 
-  # The only thing open to the internet: serves Windmill and MLflow over HTTPS,
+  # WeKnora (github.com/Tencent/WeKnora): a knowledge-base website whose wiki mode turns
+  # uploaded reviews into linked entity, concept and summary pages with a graph view.
+  # Public at weknora.<DOMAIN> through Caddy, with the logins server/team.sh makes (new
+  # sign-ups are blocked in the Caddyfile). Its models are added by each person on its
+  # website, pointing at the LLM gateway with their own Windmill token. See docs/weknora.md.
+  # To upgrade, change v0.9.0 on all three images together.
+  #
+  # Creates WeKnora's own database and login inside the shared Postgres, then exits. It
+  # runs on every start and changes nothing once they exist, so it also sets up servers
+  # whose database was created before WeKnora was added.
+  weknora-db-init:
+    image: paradedb/paradedb:0.26.6-pg17
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      WEKNORA_DB_PASSWORD: ${WEKNORA_DB_PASSWORD}
+    volumes:
+      - ./postgres/weknora-init.sh:/weknora-init.sh:ro
+    entrypoint: ["bash", "/weknora-init.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  weknora-redis:
+    image: redis:7.0-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${WEKNORA_REDIS_PASSWORD}
+    volumes:
+      - weknora-redis-data:/data
+    mem_limit: 256m
+
+  # Reads uploaded files (PDF, Word, Markdown and so on) into text for weknora-app.
+  weknora-docreader:
+    image: wechatopenai/weknora-docreader:v0.9.0
+    restart: unless-stopped
+    environment:
+      TZ: Europe/London
+      DOCREADER_IMAGE_OUTPUT_DIR: /tmp/docreader
+      DOCREADER_GRPC_MAX_WORKERS: "2"
+      DOCREADER_PREPROCESS_MEMORY_MB: "1024"
+    volumes:
+      - weknora-docreader-tmp:/tmp/docreader
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  weknora-app:
+    image: wechatopenai/weknora-app:v0.9.0
+    restart: unless-stopped
+    environment:
+      GIN_MODE: release
+      LOG_LEVEL: info
+      TZ: Europe/London
+      # Wiki pages, summaries and questions are written in English.
+      WEKNORA_LANGUAGE: en-US
+      AUTO_MIGRATE: "true"
+      DB_DRIVER: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: weknora
+      DB_PASSWORD: ${WEKNORA_DB_PASSWORD}
+      DB_NAME: weknora
+      RETRIEVE_DRIVER: postgres
+      STORAGE_TYPE: local
+      LOCAL_STORAGE_BASE_DIR: /data/files
+      DOCREADER_ADDR: weknora-docreader:50051
+      DOCREADER_TRANSPORT: grpc
+      REDIS_ADDR: weknora-redis:6379
+      REDIS_PASSWORD: ${WEKNORA_REDIS_PASSWORD}
+      JWT_SECRET: ${WEKNORA_JWT_SECRET}
+      SYSTEM_AES_KEY: ${WEKNORA_AES_KEY}
+      SYSTEM_SIGNING_KEY: ${WEKNORA_SIGNING_KEY}
+      # This person becomes WeKnora's system admin when server/team.sh creates their login.
+      WEKNORA_BOOTSTRAP_SYSTEM_ADMIN_EMAIL: ${WEKNORA_ADMIN_EMAIL:-}
+      WEKNORA_AUTH_DEFAULT_TENANT_MODE: create_personal
+      # WeKnora refuses to call addresses inside the server unless they are listed. The
+      # LLM gateway is the only one it needs.
+      SSRF_WHITELIST_EXTRA: llm-gateway
+      MAX_FILE_SIZE_MB: "50"
+      OLLAMA_OPTIONAL: "true"
+      WEKNORA_SANDBOX_DOCKER_ENABLED: "false"
+    volumes:
+      - weknora-files:/data/files
+      - weknora-docreader-tmp:/tmp/docreader:ro
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      weknora-db-init:
+        condition: service_completed_successfully
+      weknora-redis:
+        condition: service_started
+      weknora-docreader:
+        condition: service_healthy
+
+  # WeKnora's website. Caddy serves it at weknora.<DOMAIN>; it passes /api to weknora-app.
+  weknora-frontend:
+    image: wechatopenai/weknora-ui:v0.9.0
+    restart: unless-stopped
+    environment:
+      APP_HOST: weknora-app
+      APP_PORT: "8080"
+      APP_SCHEME: http
+      MAX_FILE_SIZE_MB: "50"
+      DEFAULT_LOCALE: en-US
+    mem_limit: 128m
+    depends_on:
+      weknora-app:
+        condition: service_healthy
+
+  # The only thing open to the internet: serves Windmill, MLflow and WeKnora over HTTPS,
   # and gets and renews the certificates automatically.
   caddy:
     image: caddy:2
@@ -247,3 +367,6 @@ volumes:
   caddy-data:
   caddy-config:
   llm-gateway-data:
+  weknora-files:
+  weknora-docreader-tmp:
+  weknora-redis-data:

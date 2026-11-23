@@ -9,6 +9,7 @@ def test_linux_shell_scripts_have_lf_line_endings():
     scripts = sorted(ROOT.glob("server/*.sh"))
     scripts += [
         ROOT / "postgres/20-project.sh",
+        ROOT / "postgres/weknora-init.sh",
         ROOT / "mlflow/start.sh",
         ROOT / "local/windmill-bootstrap.sh",
     ]

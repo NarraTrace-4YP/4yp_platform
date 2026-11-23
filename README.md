@@ -111,7 +111,7 @@ The [full local setup guide](docs/local-setup.md) explains Linux and macOS comma
 
 ## 3. Accessing the shared server
 
-The shared server hosts the team's deployed environment. Each member receives an SSH account and credentials for Windmill, MLflow and PostgreSQL.
+The shared server hosts the team's deployed environment. Each member receives an SSH account and credentials for Windmill, MLflow, PostgreSQL and WeKnora.
 
 These steps apply to the shared server, not your local deployment.
 
@@ -139,7 +139,7 @@ If you have multiple SSH keys, specify the one registered with GitHub:
 ssh -i ~/.ssh/<key-file> <your-username>@<server-address>
 ```
 
-The account file contains the login details for the project services. One password is used for Windmill, MLflow and PostgreSQL.
+The account file contains the login details for the project services. One password is used for Windmill, MLflow, PostgreSQL and WeKnora.
 
 ### Accessing the web interfaces
 
@@ -147,6 +147,7 @@ Once your account is ready, open:
 
 - **Windmill:** `https://windmill.<domain>`
 - **MLflow:** `https://mlflow.<domain>`
+- **WeKnora:** `https://weknora.<domain>` (the LLM wiki; see [docs/weknora.md](docs/weknora.md))
 
 For Windmill, sign in using the email address listed in `ACCOUNTS.txt`.
 

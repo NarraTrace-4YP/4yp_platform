@@ -6,14 +6,18 @@
 #   sudo server/team.sh remove <github>   lock someone out of everything
 #
 # Each person gets a Linux login (SSH keys pulled from github.com/<username>.keys) and,
-# once the services are running, a Windmill, MLflow and database login sharing one
+# once the services are running, a Windmill, MLflow, database and WeKnora login sharing one
 # password. The password is written to ~/ACCOUNTS.txt in their home folder on the server.
+# People whose ACCOUNTS.txt was made before WeKnora was added get a WeKnora login with their
+# existing password, and a WeKnora line added to the file.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEAM_FILE="$REPO_DIR/server/team.txt"
 # shellcheck source=server/windmill.sh
 . "$REPO_DIR/server/windmill.sh"
+# shellcheck source=server/weknora.sh
+. "$REPO_DIR/server/weknora.sh"
 
 if [[ $EUID -ne 0 ]]; then
 	echo "Run this with sudo." >&2
@@ -93,7 +97,7 @@ create_app_logins() { # user github-name is-admin
 	set_mlflow_login "$user" "$password" "$admin"
 
 	cat >"$home/ACCOUNTS.txt" <<-EOF
-		Your logins for the DHR project server (one password for all three):
+		Your logins for the DHR project server (one password for all of them):
 
 		  Password:  $password
 
@@ -114,8 +118,45 @@ create_app_logins() { # user github-name is-admin
 	echo "  $user: Windmill, MLflow and database logins created (password in /home/$user/ACCOUNTS.txt)"
 }
 
+# Gives someone a WeKnora login with the password already in their ACCOUNTS.txt, and adds
+# it to the file. Does nothing if the file already lists WeKnora.
+add_weknora_login() { # user
+	local user=$1 file="/home/$1/ACCOUNTS.txt" shared password result
+	grep -q '^  WeKnora:' "$file" && return 0
+	shared=$(awk '$1 == "Password:" {print $2; exit}' "$file")
+	if [[ -z "$shared" ]]; then
+		echo "  $user: no password found in $file, so no WeKnora login." >&2
+		return 0
+	fi
+	password=$(wk_password "$shared")
+	result=$(wk_create_login "$user" "$password")
+	case "$result" in
+	created) ;;
+	exists)
+		echo "  $user: already has a WeKnora login (made by hand?), so $file is left alone." >&2
+		return 0
+		;;
+	*)
+		echo "  $user: couldn't make a WeKnora login: $result" >&2
+		return 0
+		;;
+	esac
+	{
+		printf '  WeKnora:   https://weknora.%s\n' "$DOMAIN"
+		printf '             log in with the same email as Windmill\n'
+		if [[ "$password" != "$shared" ]]; then
+			printf '             password: %s (WeKnora needs a number and a letter in it)\n' "$password"
+		fi
+	} >>"$file"
+	echo "  $user: WeKnora login created (in /home/$user/ACCOUNTS.txt)"
+}
+
 sync_team() {
-	local gh role user keys admin app_logins=yes admins_with_keys=0
+	local gh role user keys admin app_logins=yes weknora_logins=yes admins_with_keys=0
+	if ! wk_running; then
+		weknora_logins=no
+		echo "WeKnora isn't running yet, so no WeKnora logins this time."
+	fi
 	if ! services_running; then
 		app_logins=no
 		echo "Services aren't running yet, so only SSH logins will be set up this time."
@@ -168,6 +209,9 @@ sync_team() {
 		if [[ $app_logins == yes && ! -f "/home/$user/ACCOUNTS.txt" ]]; then
 			create_app_logins "$user" "$gh" "$admin"
 		fi
+		if [[ $weknora_logins == yes && -f "/home/$user/ACCOUNTS.txt" ]]; then
+			add_weknora_login "$user"
+		fi
 	done 3<"$TEAM_FILE"
 
 	if [[ $admins_with_keys -eq 0 ]]; then
@@ -193,6 +237,7 @@ remove_member() {
 			SQL
 		WM_TOKEN="${WINDMILL_ADMIN_TOKEN:-}"
 		[[ -n "$WM_TOKEN" ]] && wm_disable_user "$(windmill_name "$user")"
+		wk_disable_login "$user"
 		compose exec -T -e MLFLOW_TRACKING_USERNAME=admin -e MLFLOW_TRACKING_PASSWORD="$MLFLOW_ADMIN_PASSWORD" mlflow \
 			python -c "import sys; from mlflow.server.auth.client import AuthServiceClient as C; C('http://localhost:5000').delete_user(sys.argv[1])" "$user" &>/dev/null || true
 	fi

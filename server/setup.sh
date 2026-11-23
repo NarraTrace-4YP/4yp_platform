@@ -90,6 +90,8 @@ prepare_settings() {
 		fi
 	done
 
+	bash "$REPO_DIR/server/weknora.sh" env
+
 	# Load the settings only now, once every value is final, so Docker gets the real ones.
 	set -a
 	# shellcheck source=/dev/null
@@ -101,7 +103,7 @@ prepare_settings() {
 
 fix_file_modes() {
 	# Uploading files through the GitHub website drops the "executable" mark; put it back.
-	chmod +x "$REPO_DIR"/server/*.sh "$REPO_DIR/postgres/20-project.sh" "$REPO_DIR/mlflow/start.sh"
+	chmod +x "$REPO_DIR"/server/*.sh "$REPO_DIR"/postgres/*.sh "$REPO_DIR/mlflow/start.sh"
 	if [[ -d "$REPO_DIR/.git" ]]; then
 		git -C "$REPO_DIR" config core.fileMode false
 	fi
