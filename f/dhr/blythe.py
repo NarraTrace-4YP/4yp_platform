@@ -18,6 +18,12 @@ callback_url holds a one-time Windmill address that wakes the waiting run when t
 ends (each job file calls it on exit). Whether the job has really finished is always
 decided by asking SLURM (job_state), never by the call.
 
+The llm_serve job keeps a model loaded and answers prompts added while it runs. Its run
+folder is a mailbox (narratrace-slurm's llm_serve.py describes the files): start_server
+submits it, add_request puts a request's prompts in inbox/, mailbox says what is waiting
+and answered, collect downloads a request's answers, and stop_server asks it to stop. A
+request is data only (prompts and their labels); the job refuses anything else.
+
 Blythe's login node closes SFTP sessions, so files go over the SSH command channel
 (cat / head / find). Every command runs on its own channel of one login, so one task logs
 in, and uses one 2FA code, only once. A code works only once, so a refused code is retried
@@ -29,6 +35,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import json
 import os
 import posixpath
 import re
@@ -54,10 +61,12 @@ PASSPHRASE_VARIABLE = "u/rshields2004/blythe_key_passphrase"
 TOTP_VARIABLE = "u/rshields2004/blythe_totp_secret"
 
 # The job files Windmill may submit: ~/narratrace/jobs/<name>.sbatch on Blythe.
-JOBS = {"test_gpu", "llm_batch"}
+JOBS = {"test_gpu", "llm_batch", "llm_serve"}
 MAX_HOURS = 48  # the gpu partition's limit
 
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+# An llm_serve request's name; the job takes only inbox/<request>.jsonl.gz files named so.
+REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 ACTIVE_STATES = {
     "PENDING",
     "RUNNING",
@@ -102,6 +111,13 @@ def check_name(name: str) -> None:
     and commands."""
     if not SAFE_NAME.match(name):
         raise BlytheError(f"Unsafe name {name!r}: use letters, digits, '.', '_' and '-'.")
+
+
+def check_request_id(request_id: str) -> None:
+    if not isinstance(request_id, str) or not REQUEST_ID.match(request_id):
+        raise BlytheError(
+            f"Unsafe request name {request_id!r}: 1 to 64 letters, digits, '_' and '-'."
+        )
 
 
 def check_job_id(job_id: str) -> None:
@@ -192,6 +208,50 @@ def parse_state(out: str) -> dict:
             "node": node,
         }
     return {"finished": False, "state": "UNKNOWN (not listed by SLURM yet)"}
+
+
+def mailbox_command(run_dir: str) -> str:
+    """Lists an llm_serve run folder's mailbox in one command (see parse_mailbox)."""
+    return (
+        f"cd {q(run_dir)} || exit 1; echo '[inbox]'; ls -1 inbox 2>/dev/null; echo '[outbox]';"
+        " ls -1 outbox 2>/dev/null; echo '[job]'; cat slurm_job_id 2>/dev/null; echo;"
+        " echo '[stop]'; test -e stop && echo yes; echo '[status]'; cat status.json 2>/dev/null"
+    )
+
+
+def parse_mailbox(out: str) -> dict:
+    """What mailbox_command printed: the requests waiting in inbox/, those answered or
+    refused in outbox/, the SLURM job, whether it was asked to stop, and its status.json."""
+    sections: dict[str, list[str]] = {}
+    current = None
+    for line in out.splitlines():
+        if line in ("[inbox]", "[outbox]", "[job]", "[stop]", "[status]"):
+            current = sections.setdefault(line[1:-1], [])
+        elif current is not None:
+            current.append(line)
+    if "inbox" not in sections:
+        raise BlytheError("That run folder isn't on Blythe.")
+
+    def named(lines: list[str], suffix: str) -> list[str]:
+        ids = [line[: -len(suffix)] for line in lines if line.endswith(suffix)]
+        return sorted(i for i in ids if REQUEST_ID.match(i))
+
+    outbox = sections.get("outbox", [])
+    status_text = "\n".join(sections.get("status", [])).strip()
+    try:
+        status = json.loads(status_text) if status_text else None
+    except ValueError:
+        status = None  # the job renames it into place whole, so this is only a safety net
+    job = "".join(sections.get("job", [])).strip()
+    return {
+        "waiting": named(sections["inbox"], ".jsonl.gz"),
+        "answered": named(outbox, ".json"),
+        "refused": named(outbox, ".error.json"),
+        "part_answered": named(outbox, ".partial.jsonl.gz"),
+        "slurm_job_id": job if re.fullmatch(r"\d{1,12}", job) else None,
+        "stop_asked": "yes" in sections.get("stop", []),
+        "status": status,
+    }
 
 
 # ---------------------------------------------------------------- secrets
@@ -361,6 +421,18 @@ class Blythe:
         prefix = "umask 077 && " if private else ""
         self.must(f"{prefix}cat > {q(path)}", f"write {path}", stdin=_as_bytes(data))
 
+    def write_new(self, path: str, data: bytes | str, private: bool = False) -> None:
+        """Writes a file that mustn't exist yet under a hidden name, then renames it into
+        place, so a job looking at the folder never reads half of it."""
+        folder, name = posixpath.split(path)
+        temporary = posixpath.join(folder, f".{name}.tmp")
+        prefix = "umask 077 && " if private else ""
+        self.must(
+            f"{prefix}test ! -e {q(path)} && cat > {q(temporary)} && mv {q(temporary)} {q(path)}",
+            f"write {path} (it mustn't exist yet)",
+            stdin=_as_bytes(data),
+        )
+
     def read(self, path: str, max_bytes: int | None = None) -> bytes:
         command = f"head -c {int(max_bytes)} {q(path)}" if max_bytes else f"cat {q(path)}"
         status, out, err = self._exec(command)
@@ -381,7 +453,7 @@ class Blythe:
         job: str,
         run_id: str,
         files: dict[str, bytes | str],
-        callback_url: str,
+        callback_url: str | None,
         hours: int | None = None,
         gpus: int | None = None,
         mem_gb: int | None = None,
@@ -427,3 +499,84 @@ class Blythe:
         check_job_id(job_id)
         status, _, err = self.slurm(f"scancel {job_id}")
         return {"exit_status": status, "stderr": err.strip()}
+
+    # --- llm_serve: a model kept loaded, answering prompts added while it runs
+
+    def start_server(
+        self, run_id: str, request: dict, hours: int, callback_url: str | None = None
+    ) -> dict:
+        """Submits llm_serve with request.json (the model and its settings), and notes the
+        SLURM job in the run folder, so mailbox() can name it."""
+        submitted = self.submit(
+            "llm_serve",
+            run_id,
+            {"request.json": json.dumps(request, indent=2)},
+            callback_url,
+            hours=hours,
+        )
+        self.write(posixpath.join(submitted["run_dir"], "slurm_job_id"), submitted["slurm_job_id"])
+        return submitted
+
+    def mailbox(self, run_id: str) -> dict:
+        _, out, _ = self.sh(mailbox_command(self.run_dir(run_id)))
+        return parse_mailbox(out)
+
+    def add_request(
+        self, run_id: str, request_id: str, prompts_gz: bytes, callback_url: str | None = None
+    ) -> dict:
+        """Puts a request's prompts (llm_batch's format, gzipped JSON lines) in a running
+        llm_serve job's inbox. Its callback address, if any, goes in first, so the job
+        finds it when it takes the request. A request name is used once per run."""
+        check_request_id(request_id)
+        run_dir = self.run_dir(run_id)
+        box = self.mailbox(run_id)
+        if not box["slurm_job_id"]:
+            raise BlytheError(
+                f"{run_id} wasn't started by start_server, so nothing reads its inbox."
+            )
+        state = (box["status"] or {}).get("state")
+        if state in ("stopped", "failed") or box["stop_asked"]:
+            raise BlytheError(
+                f"The server in {run_id} has stopped or been asked to stop ({state}):"
+                " start a new one."
+            )
+        used = box["waiting"] + box["answered"] + box["refused"] + box["part_answered"]
+        if request_id in used:
+            raise BlytheError(f"Request {request_id} was already sent to {run_id}.")
+        inbox = posixpath.join(run_dir, "inbox")
+        self.must(f"mkdir -p {q(inbox)}", "make the inbox")
+        if callback_url:
+            self.write_new(posixpath.join(inbox, f"{request_id}.callback"), callback_url, True)
+        self.write_new(posixpath.join(inbox, f"{request_id}.jsonl.gz"), prompts_gz)
+        print(f"Added request {request_id} to {run_dir}/inbox", flush=True)
+        return {
+            "run_dir": run_dir,
+            "request_id": request_id,
+            "bytes": len(prompts_gz),
+            "prompts_sha256": hashlib.sha256(prompts_gz).hexdigest(),
+        }
+
+    def collect(self, run_id: str, request_id: str) -> dict:
+        """A request's answers if it is done: {"state": "answered", "summary", "results"
+        (the gzipped results file's bytes)}; {"state": "refused", "error"}; or, while it
+        waits, {"state": "waiting"}."""
+        check_request_id(request_id)
+        outbox = posixpath.join(self.run_dir(run_id), "outbox")
+        summary_path = posixpath.join(outbox, f"{request_id}.json")
+        if self.exists(summary_path):
+            return {
+                "state": "answered",
+                "summary": json.loads(self.read(summary_path)),
+                "results": self.read(posixpath.join(outbox, f"{request_id}.jsonl.gz")),
+            }
+        error_path = posixpath.join(outbox, f"{request_id}.error.json")
+        if self.exists(error_path):
+            return {"state": "refused", "error": json.loads(self.read(error_path))}
+        return {"state": "waiting"}
+
+    def stop_server(self, run_id: str) -> None:
+        """Asks the llm_serve job to stop once its inbox is empty."""
+        run_dir = self.run_dir(run_id)
+        if not self.exists(run_dir):
+            raise BlytheError(f"{run_id} isn't on Blythe.")
+        self.write(posixpath.join(run_dir, "stop"), "")
