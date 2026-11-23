@@ -207,9 +207,9 @@ def test_prompts_in_either_form(rowan):
             tool.normalise(bad)
 
 
-def test_only_rowan_can_use_it_even_for_a_dry_run(monkeypatch):
-    monkeypatch.setenv("WM_USERNAME", "ks0610")
-    with pytest.raises(BlytheError, match="Only rshields2004"):
+def test_it_needs_a_windmill_user_even_for_a_dry_run(monkeypatch):
+    monkeypatch.delenv("WM_USERNAME", raising=False)
+    with pytest.raises(BlytheError, match="no Windmill user"):
         tool.main("status", run_id="serve-1", dry_run=True)
 
 
@@ -272,3 +272,21 @@ def test_the_tool_end_to_end(rowan, monkeypatch, home):
     assert got["state"] == "answered" and [a["answer"] for a in got["answers"]] == ["B", "A"]
     assert tool.main("stop", run_id="serve-9")["run_id"] == "serve-9"
     assert (run / "stop").exists()
+
+
+def test_events_are_read_a_whole_line_at_a_time(b, home):
+    b.start_server("serve-ev", {"model": "m"}, hours=1)
+    run = home / "narratrace" / "runs" / "serve-ev"
+    first = json.dumps({"request": "r1", "status": "answered"}) + "\n"
+    (run / "events.log").write_text(first + '{"request": "r2", "sta')  # r2 still being written
+    (run / "status.json").write_text(json.dumps({"state": "answering"}))
+    seen = b.events("serve-ev", 0)
+    assert [e["request"] for e in seen["events"]] == ["r1"] and seen["offset"] == len(first)
+    assert seen["status"] == {"state": "answering"}
+    with open(run / "events.log", "a") as f:
+        f.write('tus": "refused"}\n')
+    again = b.events("serve-ev", seen["offset"])
+    assert [(e["request"], e["status"]) for e in again["events"]] == [("r2", "refused")]
+    assert b.events("serve-ev", again["offset"])["events"] == []
+    with pytest.raises(BlytheError, match="isn't on Blythe"):
+        b.events("nowhere", 0)

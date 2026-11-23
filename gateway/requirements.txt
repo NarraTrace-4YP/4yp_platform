@@ -1,0 +1,6 @@
+# The gateway's packages, pinned to the versions in uv.lock (tests/test_gateway_setup.py checks).
+fastapi==0.163.1
+uvicorn==0.54.0
+httpx==0.28.1
+paramiko==5.1.0
+pyotp==2.12.1

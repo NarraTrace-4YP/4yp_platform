@@ -10,7 +10,8 @@
 
 Starts narratrace-slurm's llm_serve job, which loads the model once and answers prompts as
 they are added, so more work doesn't wait in the SLURM queue or load the model again. It logs
-in with Rowan's own Blythe account (f/dhr/blythe.py), so only Rowan can run it.
+in with the Blythe account of whoever runs it (f/dhr/blythe.py), from their own Windmill
+variables, so the job runs under their own university account.
 
 action:
     start        submits the job in a new run folder and returns its run_id. Prompts given
@@ -289,7 +290,7 @@ def main(
     empty). hours, idle_minutes, max_model_len: for 'start' only: its SLURM time limit, how
     long it waits with nothing to do before stopping, and the longest prompt in tokens.
     dry_run: only check the inputs and show what would be sent."""
-    check_owner()  # Rowan's Blythe account: no one else may run this, not even a dry run
+    check_owner()  # every run is tied to its own user's Blythe account
     run_id, request_id = (run_id or "").strip(), (request_id or "").strip()
     if action == "start":
         return start(run_id, prompts, request_id, hours, idle_minutes, max_model_len, dry_run)

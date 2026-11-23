@@ -37,10 +37,11 @@ are not used to limit the options. They are kept only to compare against.
 
 ## Running it
 
-Only Rowan (`rshields2004`) can run the workflow: it uses his own Blythe account, and any
-other user's run stops on its first line, dry runs included. That is also why it is not a
-step of `f/dhr/O1/pipeline`, which anyone in the team can run. Run it on its own, after stage 4
-has run for the same dataset and guidance.
+The workflow runs its GPU jobs on the Blythe account of whoever starts it, so they need
+their own account set up first (their `u/<name>/blythe_*` variables, see `f/dhr/README.md`,
+and `~/narratrace` on Blythe); without it the run stops before contacting Blythe. That is also
+why it is not a step of `f/dhr/O1/pipeline`, which needs no Blythe account. Run it on its own,
+after stage 4 has run for the same dataset and guidance.
 
 | Input                 | Meaning                                                                                                                                                                                                                                             |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

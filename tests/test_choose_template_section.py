@@ -386,21 +386,22 @@ def test_run_ids_are_safe_folder_names():
 # ---------------------------------------------------------------- the Blythe client
 
 
-def test_only_rowan_can_use_blythe(monkeypatch):
-    monkeypatch.setenv("WM_USERNAME", "rshields2004")
-    blythe.check_owner()
-    for other in ("ks0610", "admin2", "deploy", ""):
-        monkeypatch.setenv("WM_USERNAME", other)
-        with pytest.raises(blythe.BlytheError, match="Only rshields2004"):
+def test_each_run_is_tied_to_the_person_who_started_it(monkeypatch):
+    for user in ("rshields2004", "ks0610", "markcoding05"):
+        monkeypatch.setenv("WM_USERNAME", user)
+        assert blythe.check_owner() == user  # their own Blythe account (load_account)
+    for bad in ("", "a b", "../x", "x;y"):
+        monkeypatch.setenv("WM_USERNAME", bad)
+        with pytest.raises(blythe.BlytheError, match="no Windmill user"):
             blythe.check_owner()
     monkeypatch.delenv("WM_USERNAME")
     with pytest.raises(blythe.BlytheError):
         blythe.check_owner()
 
 
-def test_the_workflow_refuses_other_users_before_anything_else(monkeypatch):
-    monkeypatch.setenv("WM_USERNAME", "ks0610")
-    with pytest.raises(blythe.BlytheError, match="Only rshields2004"):
+def test_the_workflow_needs_a_windmill_user_before_anything_else(monkeypatch):
+    monkeypatch.delenv("WM_USERNAME", raising=False)
+    with pytest.raises(blythe.BlytheError, match="no Windmill user"):
         asyncio.run(stage.main(dry_run=True))
 
 

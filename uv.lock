@@ -256,6 +256,8 @@ name = "dhr"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "langchain-openai" },
     { name = "langgraph" },
@@ -271,6 +273,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "rapidfuzz" },
     { name = "tokenizers" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -281,6 +284,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "huggingface-hub", specifier = ">=0.30" },
     { name = "langchain-openai", specifier = ">=1.0" },
     { name = "langgraph", specifier = ">=1.0" },
@@ -296,6 +301,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6.1" },
     { name = "rapidfuzz", specifier = ">=3.10" },
     { name = "tokenizers", specifier = ">=0.21" },
+    { name = "uvicorn", specifier = ">=0.34" },
 ]
 
 [package.metadata.requires-dev]

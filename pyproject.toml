@@ -21,6 +21,9 @@ dependencies = [
     "pypdf>=6.1",
     "paramiko>=5.1",
     "pyotp>=2.9",
+    "fastapi>=0.115",          # the LLM gateway (gateway/): an OpenAI-style API to Blythe
+    "uvicorn>=0.34",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
