@@ -766,9 +766,25 @@ def test_a_wiki_is_deleted_everywhere(monkeypatch):
     with pytest.raises(ValueError, match="both"):
         delete_wiki.main("del1", "del2")  # the confirmation must match
     monkeypatch.setenv("WM_USERNAME", "someone-else")
+    monkeypatch.setattr(delete_wiki, "is_admin", lambda: False)
     with pytest.raises(ValueError, match="only they"):
         delete_wiki.main("del1", "del1")
     assert deleted == []
+    # A workspace admin may delete someone else's build, but leaves their model job alone.
+    monkeypatch.setattr(delete_wiki, "is_admin", lambda: True)
+    result = delete_wiki.main("keep1", "keep1")
+    assert "left me's model job alone" in result["model_job"] and asked == []
+    with connect(url) as conn:
+        conn.execute(
+            "INSERT INTO wiki.instances (instance_id, name, created_by, dataset, reviews, model,"
+            " settings) VALUES ('keep1', 'n', 'me', 'DHRC-100', 'pilot', 'm', '{}')"
+        )
+        conn.execute(
+            "INSERT INTO wiki.documents (instance_id, doc_id, dataset, revision, file_name,"
+            " sha256, n_chars, knowledge_id) VALUES ('keep1', 'R1', 'DHRC-100', 'r', 'R1.md',"
+            " 'h', 5, 'k1')"
+        )
+    deleted.clear()
 
     monkeypatch.setenv("WM_USERNAME", "me")
     result = delete_wiki.main("del1", "del1")
