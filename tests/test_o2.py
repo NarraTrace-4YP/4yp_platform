@@ -1331,7 +1331,14 @@ def test_networkx_gives_every_measure():
     c, a = out["R1\u241fc"], out["R1\u241fa"]
     assert c["degree"] == 3 and c["betweenness"] > a["betweenness"]
     assert out["R1\u241fe"]["component"] != a["component"]
-    assert a["similar"][0][0] == "R1\u241fb"  # A and B share C
+    # Similarity is the share of linked entities two have in common (Jaccard): A links to
+    # {B, C}, D to {C} (1 of 2), B to {A, C} (1 of 3), C to {A, B, D} (1 of 4).
+    # (Fix 25 Nov 2026: this test expected B first; it never ran locally, without networkx.)
+    assert [(k, round(s, 2)) for k, s in a["similar"]] == [
+        ("R1\u241fd", 0.5),
+        ("R1\u241fb", 0.33),
+        ("R1\u241fc", 0.25),
+    ]
 
 
 def test_roles_and_documents_are_not_joined_as_organisations():
