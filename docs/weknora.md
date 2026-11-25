@@ -48,6 +48,9 @@ longer.
 
 ## Making a wiki
 
+The O2 pipeline in Windmill (`f/dhr/O2/pipeline`) does all of this for you, with the
+settings in `f/dhr/O2/kb_settings.py`. By hand:
+
 1. Create a knowledge base and pick the model above as its chat model.
 2. In its indexing settings, turn **Wiki** on and the vector and keyword indexes off. The
    gateway has no embedding model, and the wiki doesn't need one.
@@ -56,6 +59,36 @@ longer.
 
 A knowledge base belongs to the space it was made in. Everyone starts with a personal
 space. To share one with the team, invite them to your space from its members page.
+
+## Knowledge graph
+
+Besides the wiki, WeKnora can build a knowledge graph: for every chunk of every review, the
+model lists the people, agencies, places and events in it, and the relationships between
+them. This is different from the wiki's page-link graph (the Graph tab in the O2 app shows
+the links between wiki pages). The O2 pipeline turns it on for every build (input
+`knowledge_graph`, default on). The relationship types and the worked example the model
+learns from are in `f/dhr/O2/graph.py`.
+
+It needs a graph database: the **weknora-neo4j** service. Without it, WeKnora's knowledge
+base settings say "Knowledge graph database is not enabled" and the pipeline's first step
+stops. To turn it on (once, on the server):
+
+```bash
+cd ~/4yp_platform            # wherever the repository is on the server
+git pull
+server/update.sh             # adds WEKNORA_GRAPH_PASSWORD to .env and starts weknora-neo4j
+docker compose ps weknora-neo4j weknora-app     # both should say "healthy"
+```
+
+Then, in WeKnora, open any knowledge base's settings: the knowledge graph section should no
+longer show the warning, and Settings → System Info should list the graph database as Neo4j.
+Graphs made in WeKnora's own website also need their relationship types and example filled
+in there; the pipeline fills them in itself.
+
+The graph costs a model call per chunk, on top of the wiki's. At WeKnora's default
+`chunk_size` of 512 characters that is about 250 calls for a typical review, so a larger
+`chunk_size` (2,000, say) makes it about four times cheaper. The pipeline's first step
+(`check_setup`) estimates the calls before anything starts.
 
 ## Watching it work
 
@@ -68,24 +101,25 @@ docker compose logs -f llm-gateway       # requests going to the model and repli
 
 ## How it runs
 
-Four services in `compose.yaml`, all reached only through Caddy:
+Five services in `compose.yaml`, all reached only through Caddy:
 
 - **weknora-frontend**: the website.
 - **weknora-app**: the API and the background jobs that build wikis.
 - **weknora-docreader**: turns uploaded files into text.
 - **weknora-redis**: WeKnora's job queue.
+- **weknora-neo4j**: the knowledge graph's database (no port opened on the server).
 
 There is also **weknora-db-init**, which runs once at each start. It creates the
 `weknora` database and login in the shared Postgres if they are missing, then exits.
 
 WeKnora's data is the `weknora` database plus the uploaded files in the `weknora-files`
-volume. Its secrets are the `WEKNORA_*` settings in `.env`. `server/weknora.sh env` fills
+volume and the graph in the `weknora-neo4j-data` volume. Its secrets are the `WEKNORA_*` settings in `.env`. `server/weknora.sh env` fills
 them in; `setup.sh` and `update.sh` run it.
 
 Never change `WEKNORA_AES_KEY`. It encrypts the API keys saved in WeKnora, including
 everyone's Windmill token, and those can't be read without it.
 
-Together these services are limited to about 3 GB of memory. Check `docker stats` after the
+Together these services are limited to about 4 GB of memory (Neo4j's 1 GB included). Check `docker stats` after the
 first big upload.
 
 ## Upgrading

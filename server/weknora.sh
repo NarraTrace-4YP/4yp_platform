@@ -50,7 +50,7 @@ wk_env() {
 	# name and the number of random bytes. WeKnora needs the AES key to be exactly
 	# 32 characters, which is 16 bytes written as hex.
 	for name in WEKNORA_DB_PASSWORD:24 WEKNORA_REDIS_PASSWORD:24 WEKNORA_JWT_SECRET:32 \
-		WEKNORA_AES_KEY:16 WEKNORA_SIGNING_KEY:32; do
+		WEKNORA_AES_KEY:16 WEKNORA_SIGNING_KEY:32 WEKNORA_GRAPH_PASSWORD:24; do
 		bytes=${name#*:}
 		name=${name%%:*}
 		if [[ -z "$(wk_env_value "$name")" ]]; then

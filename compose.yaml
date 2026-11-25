@@ -299,6 +299,12 @@ services:
       MAX_FILE_SIZE_MB: "50"
       OLLAMA_OPTIONAL: "true"
       WEKNORA_SANDBOX_DOCKER_ENABLED: "false"
+      # The knowledge graph (entity-relationship extraction) lives in weknora-neo4j
+      # (Rowan, 25 Nov 2026). Without these, WeKnora says the graph database is not enabled.
+      NEO4J_ENABLE: "true"
+      NEO4J_URI: bolt://weknora-neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: ${WEKNORA_GRAPH_PASSWORD}
     volumes:
       - weknora-files:/data/files
       - weknora-docreader-tmp:/tmp/docreader:ro
@@ -316,6 +322,31 @@ services:
         condition: service_started
       weknora-docreader:
         condition: service_healthy
+      weknora-neo4j:
+        condition: service_healthy
+
+  # The graph database for WeKnora's knowledge graph: the entities and relationships an LLM
+  # pulls out of each chunk of a review (not the wiki's page-link graph, which lives in
+  # WeKnora's Postgres). Only weknora-app reaches it, on the Docker network; no port is
+  # opened on the server. WeKnora's queries need the APOC plugin, which the image includes.
+  weknora-neo4j:
+    image: neo4j:2025.10.1
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${WEKNORA_GRAPH_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - weknora-neo4j-data:/data
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/7687'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
   # WeKnora's website. Caddy serves it at weknora.<DOMAIN>; it passes /api to weknora-app.
   weknora-frontend:
@@ -370,3 +401,4 @@ volumes:
   weknora-files:
   weknora-docreader-tmp:
   weknora-redis-data:
+  weknora-neo4j-data:

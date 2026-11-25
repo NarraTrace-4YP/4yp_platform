@@ -57,3 +57,34 @@ def chat_model(**options):
 
     url, token = connection()
     return ChatOpenAI(model=MODEL, base_url=url, api_key=token, timeout=TIMEOUT_SECONDS, **options)
+
+
+def gateway_status() -> dict:
+    """What the gateway knows of your model right now, without contacting Blythe: your job's
+    state (SLURM job id, run folder), calls queued and with the job, and your calls and tokens
+    so far. {"error": ...} if the gateway can't be asked."""
+    import httpx
+
+    url, token = connection()
+    base = url.removesuffix("/v1").rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        status = httpx.get(f"{base}/status", headers=headers, timeout=10).json()
+        usage = httpx.get(f"{base}/usage", headers=headers, timeout=10).json()
+    except (httpx.HTTPError, ValueError) as error:
+        return {"error": f"can't ask the gateway: {error}"}
+    return {**status, "usage": usage}
+
+
+def describe_gateway(status: dict) -> str:
+    """One line about the model job, for a progress log."""
+    if "error" in status:
+        return f"model: {status['error']}"
+    if not status.get("run_id"):
+        return "model: no job running yet"
+    usage = status.get("usage") or {}
+    return (
+        f"model: {status.get('job_state') or '?'} (SLURM {status.get('slurm_job_id') or '-'}),"
+        f" {status.get('calls_with_the_job', 0)} answering, {status.get('calls_waiting_to_send', 0)} queued,"
+        f" {usage.get('calls', 0):,} calls / {usage.get('completion_tokens', 0):,} tokens written so far"
+    )
