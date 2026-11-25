@@ -273,6 +273,27 @@ services:
       TZ: Europe/London
       # Wiki pages, summaries and questions are written in English.
       WEKNORA_LANGUAGE: en-US
+      # Fix (25 Nov 2026, problem review "O2 builds slow each other down"):
+      # Problem: with several wikis building at once, every build slowed to a crawl, even
+      # though each person's build calls their own model on their own Blythe job.
+      # Why: WeKnora does its background work (knowledge-graph chunks, summaries, wiki
+      # batches) with a fixed number of workers shared by every knowledge base, taking jobs
+      # in arrival order: 12 enrichment workers (+6 it can borrow) and 8 for the wiki. A
+      # worker that picks up a job for a model with no free slot (its "Background
+      # concurrency limit", or a model still waiting for a Blythe GPU) keeps hold of the job
+      # and waits, so one big or stalled build ties up every worker and the others' models
+      # sit idle.
+      # Solution: far more workers, so a waiting model can only tie up its own share. A
+      # worker that is waiting costs almost nothing; the real limits stay where they belong,
+      # on each person's model entry (raise it to 32 with the async llm_serve) and on
+      # WEKNORA_MODEL_MAX_CONCURRENCY (32 per model). Rule of thumb: enrichment workers at
+      # least (people building at once) x (their model limit), plus room for a stalled one.
+      # Read when WeKnora starts. WeKnora's system settings (asynq.enrichment_concurrency and
+      # so on) can override them, also only from the next restart.
+      WEKNORA_ASYNQ_ENRICHMENT_CONCURRENCY: "128"
+      WEKNORA_ASYNQ_SHARED_CONCURRENCY: "32"
+      WEKNORA_WIKI_ASYNQ_CONCURRENCY: "32"
+      WEKNORA_MODEL_MAX_CONCURRENCY: "32"
       AUTO_MIGRATE: "true"
       DB_DRIVER: postgres
       DB_HOST: postgres
@@ -305,6 +326,11 @@ services:
       NEO4J_URI: bolt://weknora-neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: ${WEKNORA_GRAPH_PASSWORD}
+      # Every model call WeKnora makes, in full: the prompt, the answer (or the error) and
+      # how long it took, one file per request, kept 7 days (Rowan, 25 Nov 2026). Only
+      # readable on the server: docs/weknora.md, "Watching the model calls". It sits in the
+      # files volume because WeKnora's start-up only gives its own user that folder.
+      LLM_DEBUG_LOG: /data/files/llm_debug
     volumes:
       - weknora-files:/data/files
       - weknora-docreader-tmp:/tmp/docreader:ro
