@@ -1151,4 +1151,116 @@ FROM corpus.trial_comparison
 GROUP BY trial_id, trial_model, stored_model, dataset, guidance, question;
 """,
     ),
+    (
+        "014_wiki",
+        """
+-- O2: LLM wikis built by WeKnora from the reviews (f/dhr/O2/pipeline). Each build is one
+-- "wiki instance": a fresh WeKnora knowledge base holding the chosen reviews. WeKnora keeps
+-- the live wiki; these tables keep what each build was given and a copy of what it wrote,
+-- so builds can be compared, evaluated and shown (the O2 app) after WeKnora has changed.
+-- Nothing here comes from the evaluation schema: the wiki never sees the case metadata.
+CREATE SCHEMA IF NOT EXISTS wiki;
+
+-- One row per build.
+CREATE TABLE wiki.instances (
+    instance_id      text PRIMARY KEY,            -- e.g. wiki-20261124-221500-ab12
+    name             text NOT NULL,
+    created_by       text NOT NULL,                -- the Windmill user (their WeKnora space)
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    flow_job_id      text,                         -- the Windmill run that built it
+    git_commit       text,
+    dataset          text NOT NULL,                -- DHRC-100, DHRC-RAW or both
+    reviews          text NOT NULL,                -- pilot, all or chosen
+    model            text NOT NULL,
+    weknora_kb_id    text,                         -- NULL until the knowledge base is made
+    settings         jsonb NOT NULL,               -- granularity and the instructions given
+    status           text NOT NULL DEFAULT 'created'
+        CHECK (status IN ('created', 'uploading', 'building', 'built', 'failed')),
+    status_note      text,
+    finished_at      timestamptz,
+    saved_at         timestamptz,                  -- when the pages below were last copied
+    stats            jsonb                         -- WeKnora's wiki stats at the last copy
+);
+
+-- The reviews each build was given, exactly as uploaded.
+CREATE TABLE wiki.documents (
+    instance_id    text NOT NULL REFERENCES wiki.instances ON DELETE CASCADE,
+    doc_id         text NOT NULL,
+    dataset        text NOT NULL,                  -- which dataset this copy came from
+    revision       text NOT NULL,
+    file_name      text NOT NULL,
+    sha256         text NOT NULL,                  -- of the Markdown uploaded
+    n_chars        integer NOT NULL,
+    n_joined       integer NOT NULL DEFAULT 0,     -- paragraphs rejoined across a page break
+    knowledge_id   text,                           -- WeKnora's id, once uploaded
+    parse_status   text,                           -- WeKnora's, at the last check
+    error_message  text,
+    uploaded_at    timestamptz,
+    PRIMARY KEY (instance_id, doc_id),
+    UNIQUE (instance_id, file_name)
+);
+CREATE INDEX ON wiki.documents (instance_id, knowledge_id);
+
+-- A copy of every wiki page, replaced each time the build is saved.
+CREATE TABLE wiki.pages (
+    instance_id    text NOT NULL REFERENCES wiki.instances ON DELETE CASCADE,
+    slug           text NOT NULL,
+    title          text NOT NULL,
+    page_type      text NOT NULL,                  -- summary, entity, concept, index, ...
+    status         text,
+    summary        text,
+    content        text NOT NULL,
+    aliases        jsonb NOT NULL DEFAULT '[]',
+    category_path  jsonb NOT NULL DEFAULT '[]',
+    chunk_refs     jsonb NOT NULL DEFAULT '[]',    -- WeKnora's cited chunks
+    version        integer,
+    created_at     timestamptz,
+    updated_at     timestamptz,
+    PRIMARY KEY (instance_id, slug)
+);
+CREATE INDEX ON wiki.pages (instance_id, page_type);
+
+-- Page-to-page links (the graph): one row per [[link]] from source to target.
+CREATE TABLE wiki.links (
+    instance_id  text NOT NULL,
+    source_slug  text NOT NULL,
+    target_slug  text NOT NULL,
+    PRIMARY KEY (instance_id, source_slug, target_slug),
+    FOREIGN KEY (instance_id, source_slug) REFERENCES wiki.pages ON DELETE CASCADE
+);
+
+-- Which reviews each page was built from (WeKnora's source_refs, mapped to our doc_ids).
+CREATE TABLE wiki.page_sources (
+    instance_id  text NOT NULL,
+    slug         text NOT NULL,
+    doc_id       text NOT NULL,
+    PRIMARY KEY (instance_id, slug, doc_id),
+    FOREIGN KEY (instance_id, slug) REFERENCES wiki.pages ON DELETE CASCADE
+);
+CREATE INDEX ON wiki.page_sources (instance_id, doc_id);
+
+-- Like the corpus, the wikis are readable by the wiki agent's login (it never sees evaluation).
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'wiki_agent') THEN
+        GRANT USAGE ON SCHEMA wiki TO wiki_agent;
+        GRANT SELECT ON ALL TABLES IN SCHEMA wiki TO wiki_agent;
+    END IF;
+END $$;
+""",
+    ),
+    (
+        "015_wiki_parts",
+        """
+-- O2: a review may be uploaded as several files ("parts"), because WeKnora's wiki reads only
+-- the first 32,768 characters of each file (f/dhr/O2/kb_settings.py). One row per file now:
+-- part is 1..n_parts, and a review uploaded whole is part 1 of 1 (every earlier row).
+ALTER TABLE wiki.documents
+    ADD COLUMN part     integer NOT NULL DEFAULT 1,
+    ADD COLUMN n_parts  integer NOT NULL DEFAULT 1;
+ALTER TABLE wiki.documents DROP CONSTRAINT documents_pkey;
+ALTER TABLE wiki.documents ADD PRIMARY KEY (instance_id, doc_id, part);
+ALTER TABLE wiki.documents ADD CHECK (part BETWEEN 1 AND n_parts);
+""",
+    ),
 ]
