@@ -389,6 +389,24 @@ def test_progress_moves_from_reading_to_writing():
     assert "0 tasks queued, idle" in nearly["line"]
 
 
+def test_files_waiting_for_follow_up_jobs_count_as_read():
+    """WeKnora keeps a file "finalizing" until its summary, graph and wiki jobs have run;
+    progress follows those jobs instead of sitting at 5%."""
+    from f.dhr.O2 import progress
+
+    start = progress.build_progress({"finalizing": 10}, {"pending_tasks": 10}, 1, 0, None, 10, 2500)
+    assert "files read 10/10" in start["line"] and "finished 0/10" in start["line"]
+    assert "jobs left 2,500 of 2,500" in start["line"] and start["percent"] == 15
+    half = progress.build_progress(
+        {"finalizing": 6, "completed": 4}, {"pending_tasks": 6}, 80, 100, None, 10, 1250, 2500
+    )
+    assert half["max_jobs"] == 2500 and 50 < half["percent"] < 60
+    end = progress.build_progress(
+        {"completed": 10}, {"pending_tasks": 0}, 200, 300, None, 10, 0, 2500
+    )
+    assert end["percent"] == 99
+
+
 def test_the_gateway_line_reads_its_status():
     from f.dhr.llm import describe_gateway
 

@@ -2,13 +2,21 @@
 
 Each check works out how far a build has got and reports it three ways:
 - a line in the run's log (Windmill shows logs as they are written),
-- the run's progress bar (wmill.set_progress),
+- the run's progress bar (wmill.set_progress), on the check step and on the whole flow run,
 - the flow run's state ("progress"), and wiki.instances.stats["progress"] for the O2 app.
 
-Counts are of files: a review uploaded in parts (f/dhr/O2/kb_settings.py) is several files.
-The percentage is rough by nature: WeKnora reads each file first (the first 55%), then
-writes and links pages from a queue whose length it reports (the rest, measured against the
-longest that queue has been in this build).
+Fix (25 Nov 2026, problem review "O2 progress stuck at 5%"): Problem: every build sat at
+"5% · files read 0/N" for hours while its wiki was visibly growing. Why: a file only counted
+as read once WeKnora called it "completed", but WeKnora keeps a file "finalizing" (shown in
+its pages as "generating summary") until every follow-up job for it has run: its summary,
+one knowledge-graph job per chunk, and its wiki step. With the graph on that is thousands of
+jobs, so nothing was ever "read". Solution: a file counts as read once WeKnora has read it
+(finalizing or later), and the main measure is WeKnora's own count of follow-up jobs still to
+run for the build's files (pending_subtasks_count), against the most there have been. The
+line now says: files read, files finished, jobs left, the wiki queue, pages, and the model.
+
+The percentage is rough by nature: 5% to start, 10% for reading the files, 75% for working
+through the follow-up jobs, and the last 9% as files finish.
 """
 
 from __future__ import annotations
@@ -16,15 +24,28 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 FINISHED = {"completed", "failed", "cancelled"}
+READ = FINISHED | {"finalizing"}
 
 
-def percent(reviews_done: int, reviews_total: int, pending: int | None, max_pending: int) -> int:
-    read = reviews_done / reviews_total if reviews_total else 0.0
-    if max_pending > 0 and pending is not None:
-        written = 1 - min(pending, max_pending) / max_pending
+def percent(
+    read: int,
+    done: int,
+    total: int,
+    pending: int | None,
+    max_pending: int,
+    jobs_left: int | None = None,
+    max_jobs: int = 0,
+) -> int:
+    if not total:
+        return 1
+    read_part, done_part = read / total, done / total
+    if jobs_left is not None and max_jobs > 0:
+        worked = 1 - min(jobs_left, max_jobs) / max_jobs
+    elif pending is not None and max_pending > 0:
+        worked = 1 - min(pending, max_pending) / max_pending
     else:
-        written = 1.0 if read == 1 else 0.0
-    return max(1, min(99, round(5 + 50 * read + 44 * written * read)))
+        worked = done_part
+    return max(1, min(99, round(5 + 10 * read_part + 75 * worked * read_part + 9 * done_part)))
 
 
 def build_progress(
@@ -34,32 +55,43 @@ def build_progress(
     links: int,
     model_line: str | None,
     max_pending_before: int = 0,
+    jobs_left: int | None = None,
+    max_jobs_before: int = 0,
 ) -> dict:
+    """counts: files by WeKnora parse_status; stats: WeKnora's wiki stats; jobs_left: the
+    follow-up jobs WeKnora still has to run for the build's files (None if unknown)."""
     total = sum(counts.values())
+    read = sum(n for status, n in counts.items() if status in READ)
     done = sum(n for status, n in counts.items() if status in FINISHED)
     failed = counts.get("failed", 0)
     pending = stats.get("pending_tasks")
     max_pending = max(max_pending_before, pending or 0)
+    max_jobs = max(max_jobs_before, jobs_left or 0)
     active = stats.get("is_active")
-    wiki = (
+    parts = [
+        f"files read {read}/{total}" + (f" ({failed} failed)" if failed else ""),
+        f"finished {done}/{total}",
+    ]
+    if jobs_left is not None:
+        parts.append(f"jobs left {jobs_left:,}" + (f" of {max_jobs:,}" if max_jobs else ""))
+    parts.append(
         f"wiki: {pending} task{'s' if pending != 1 else ''} queued, {'writing' if active else 'idle'}"
         if pending is not None
         else "wiki: no stats yet"
     )
-    parts = [
-        f"files read {done}/{total}" + (f" ({failed} failed)" if failed else ""),
-        wiki,
-        f"{pages:,} pages, {links:,} links",
-    ]
+    parts.append(f"{pages:,} pages, {links:,} links")
     if model_line:
         parts.append(model_line)
     return {
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "line": " · ".join(parts),
-        "percent": percent(done, total, pending, max_pending),
+        "percent": percent(read, done, total, pending, max_pending, jobs_left, max_jobs),
+        "reviews_read": read,
         "reviews_done": done,
         "reviews_total": total,
         "reviews_failed": failed,
+        "jobs_left": jobs_left,
+        "max_jobs": max_jobs,
         "wiki_pending_tasks": pending,
         "wiki_active": active,
         "max_pending": max_pending,
@@ -85,6 +117,17 @@ def report(progress: dict, percent_override: int | None = None) -> None:
             wmill.set_flow_user_state("progress", {**progress, "percent": value})
     except Exception as error:  # noqa: BLE001 (progress must never stop the build)
         print(f"(couldn't update the progress bar: {error})", flush=True)
+    # The check step lasts a second; the whole run's bar is the one people watch.
+    try:
+        import os
+
+        import wmill
+
+        root = os.environ.get("WM_ROOT_FLOW_JOB_ID")
+        if root and root != os.environ.get("WM_JOB_ID"):
+            wmill.set_progress(max(0, min(99, value)), root)
+    except Exception:  # noqa: BLE001 - Windmill may not show a flow's own bar
+        pass
 
 
 def report_upload(done: int, total: int, doc_id: str) -> None:
