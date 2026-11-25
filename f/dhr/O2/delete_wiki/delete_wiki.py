@@ -33,8 +33,9 @@ removes everything a build made, in this order, and can be run again if a step f
 The database copy goes last, so if WeKnora can't be reached nothing is lost track of: run
 it again later.
 
-Only the person who made a build can delete it (its knowledge base is made with their
-model entry, and it is their work). To make sure the right build goes, give its
+Only the person who made a build, or a Windmill workspace admin, can delete it (it is their
+work). An admin deleting someone else's build leaves that person's model job alone: it can
+only be reached with their own Blythe login, and it stops by itself after 30 idle minutes. To make sure the right build goes, give its
 instance_id twice: as instance_id and as confirm. This is a Windmill script only; the
 public O2 app can't delete anything.
 
@@ -71,6 +72,17 @@ def stop_flow(job_id: str | None) -> str:
         return f"cancelled the pipeline run {job_id}"
     except Exception as error:  # noqa: BLE001 - the run may be gone; carry on regardless
         return f"couldn't check the pipeline run {job_id} ({str(error)[:200]})"
+
+
+def is_admin() -> bool:
+    """Whether the person running this is an admin of the Windmill workspace."""
+    try:
+        import wmill
+
+        client = wmill.Windmill()
+        return bool(client.get(f"/w/{client.workspace}/users/whoami").json().get("is_admin"))
+    except Exception:  # noqa: BLE001 - not known: not an admin
+        return False
 
 
 def stop_model(other_builds: list[str]) -> str:
@@ -113,10 +125,11 @@ def main(instance_id: str, confirm: str = "", stop_model_job: bool = True):
     with connect() as conn:
         apply_migrations(conn)
         build = get_instance(conn, instance_id)
-        if build["created_by"] != runner():
+        own = build["created_by"] == runner()
+        if not own and not is_admin():
             raise ValueError(
-                f"{instance_id} was made by {build['created_by']}: only they can delete it."
-                " Nothing was deleted."
+                f"{instance_id} was made by {build['created_by']}: only they (or a workspace"
+                " admin) can delete it. Nothing was deleted."
             )
         flow_job = conn.execute(
             "SELECT flow_job_id FROM wiki.instances WHERE instance_id = %s", (instance_id,)
@@ -148,7 +161,15 @@ def main(instance_id: str, confirm: str = "", stop_model_job: bool = True):
     else:
         weknora = "no knowledge base had been made"
         graph = "nothing to remove"
-    model = stop_model(other_builds) if stop_model_job else "left your model job running"
+    if not own:
+        model = (
+            f"left {build['created_by']}'s model job alone (only their own login reaches it;"
+            " it stops by itself after 30 idle minutes)"
+        )
+    elif stop_model_job:
+        model = stop_model(other_builds)
+    else:
+        model = "left your model job running"
 
     with connect() as conn:
         conn.execute("DELETE FROM wiki.instances WHERE instance_id = %s", (instance_id,))

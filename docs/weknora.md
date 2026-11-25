@@ -71,7 +71,8 @@ Run `f/dhr/O2/delete_wiki` in Windmill with the build's `instance_id` (from the 
 Wikis tab) as both `instance_id` and `confirm`. It stops the build's pipeline run if it is
 still going, deletes the knowledge base in WeKnora (files, chunks, wiki pages and graph),
 removes its entities from the graph database, and deletes the build's copy from the
-database, so it disappears from the O2 app. Only the person who made a build can delete it,
+database, so it disappears from the O2 app. Only the person who made a build (or a
+Windmill workspace admin) can delete it,
 and the public O2 app can't delete anything. Deleting a knowledge base in WeKnora's own
 pages instead leaves the build in the O2 app.
 
