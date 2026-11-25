@@ -25,6 +25,7 @@ dependencies = [
     "uvicorn>=0.34",
     "httpx>=0.28",
     "neo4j>=5.28,<6",        # reading the knowledge graph from WeKnora's Neo4j (f/dhr/O2/kgraph.py)
+    "networkx>=3.7",         # graph analytics without Neo4j's GDS plugin (f/dhr/O2/analysis.py)
 ]
 
 [dependency-groups]

@@ -678,11 +678,17 @@ def test_the_knowledge_graph_is_saved_and_served(monkeypatch):
         assert kgraph.save_graph(conn, "kg1", nodes, relations) == {"nodes": 3, "relations": 1}
         assert kgraph.save_graph(conn, "kg1", nodes, relations)["nodes"] == 3  # replaces
     graph = get_kgraph.main("kg1")
-    assert graph["total_nodes"] == 3 and not graph["truncated"]
-    assert graph["nodes"][0]["degree"] == 1  # best-connected first
-    assert graph["links"] == [{"source": "R1␟Police", "target": "R1␟GP", "type": "Referred to"}]
-    assert graph["relation_types"] == {"Referred to": 1}
+    # An unnamed police force stays with its review and links to its type; the GP is a person.
+    assert graph["total_nodes"] == 4 and not graph["truncated"]
+    assert graph["nodes"][0]["id"] == "R1␟police"  # best-connected first
+    assert graph["links"] == [
+        {"source": "R1␟police", "target": "R1␟gp", "type": "Referred to"},
+        {"source": "R1␟police", "target": "type␟police force", "type": "Is a"},
+    ]
+    assert graph["relation_types"] == {"Referred to": 1, "Is a": 1}
     assert get_kgraph.main("kg1", max_nodes=1)["truncated"]
+    plain = get_kgraph.main("kg1", join_reviews=False)
+    assert plain["total_nodes"] == 3 and plain["relation_types"] == {"Referred to": 1}
 
 
 def test_the_server_gives_windmill_the_graph_password():
@@ -975,3 +981,376 @@ def test_english_folders_ignores_bad_answers():
         wk, "kb", ask=lambda p: '{"translations": [{"id": "f1", "english": "案例"}]}'
     )
     assert result["renamed"] == 0 and result["left"] == 1
+
+
+# --- joining entities across reviews (f/dhr/O2/entities.py) ------------------------------
+
+
+def test_names_are_tidied_before_matching():
+    from f.dhr.O2.entities import spell_out, tidy_name
+
+    assert tidy_name("  The  Metropolitan Police. ") == "metropolitan police"
+    assert tidy_name("Children\u2019s Services") == "children's services"
+    assert tidy_name("Theo") == "theo"  # only a whole leading "the"
+    assert spell_out("wiltshire csp") == "wiltshire community safety partnership"
+
+
+def test_named_organisations_join_and_similar_ones_share_a_type():
+    from f.dhr.O2.entities import describe, joined_key
+
+    def key(name, attributes=None, doc="R1"):
+        return describe(doc, name, attributes)
+
+    # One national body, one node, whatever the review or spelling.
+    assert key("Crown Prosecution Service") == key("CPS", doc="R2")
+    assert key("Crown Prosecution Service (CPS)", doc="R3") == key("CPS", doc="R2")
+    assert key("Crown Prosecution Service")[0] == "*\u241fcrown prosecution service"
+    # Two local bodies of one type: two nodes, one type.
+    wilts, bromley = key("Wiltshire CSP"), key("Bromley Community Safety Partnership", doc="R2")
+    assert wilts[0] != bromley[0]
+    assert wilts[1] == bromley[1] == "Community Safety Partnership"
+    assert key("Wiltshire Community Safety Partnership", doc="R9")[0] == wilts[0]
+    # An agency named only by its type stays with its review, under its type.
+    assert key("the police") == ("R1\u241fpolice", "Police force")
+    assert key("Police", doc="R2")[0] == "R2\u241fpolice"
+    for unnamed in ("GP practice", "MARAC", "Adult Social Care", "Children's Services",
+                    "Police station", "Crown Court", "Local authority",
+                    "Community mental health team", "MARAC meeting", "CCG"):  # fmt: skip
+        assert joined_key(unnamed) is None, unnamed
+        assert key(unnamed)[1], unnamed
+    assert key("Agency") == ("R1\u241fagency", None)  # an agency, but of no known type
+    for named in ("Metropolitan Police Service", "Hertfordshire County Council", "Victim Support",
+                  "Home Office", "Wiltshire MARAC", "Swindon Crown Court", "NHS England",
+                  "Somerset CCG", "Hammersmith & Fulham CSP"):  # fmt: skip
+        assert joined_key(named), named
+    # People, homes, events and dates are never joined and have no type.
+    for person in ("Adult A", "Child 2", "the victim", "Mary", "Mary's GP", "the victim's son",
+                   "Mother", "GP", "GP at Riverside Surgery", "PC Smith", "Police officers",
+                   "Home in Northtown", "Disclosure to GP", "March 2017"):  # fmt: skip
+        assert key(person) == (f"R1\u241f{person.lower().removeprefix('the ')}", None), person
+    # What the model says decides.
+    assert key("Safe Steps", ["Kind: agency", "Type: Domestic abuse service"]) == (
+        "*\u241fsafe steps",
+        "Domestic abuse or victim support service",
+    )
+    assert key("Safe Steps", ["Kind: agency", "Type: Peer mentoring scheme"])[1] == (
+        "Peer mentoring scheme"
+    )
+    assert key("Wiltshire Police", ["Kind: person"]) == ("R1\u241fwiltshire police", None)
+    assert describe("R1", "Wiltshire Police", join_reviews=False) == (
+        "R1\u241fwiltshire police",
+        None,
+    )
+
+
+def test_the_graph_prompt_asks_for_kinds_types_and_consistent_agency_names():
+    from f.dhr.O2.entities import KINDS, details, kind_of
+    from f.dhr.O2.graph import EXAMPLE_NODES, INSTRUCTIONS
+
+    for kind in KINDS:
+        assert f'"Kind: {kind}"' in INSTRUCTIONS
+    assert '"Type: Community Safety' in INSTRUCTIONS and "full official name" in INSTRUCTIONS
+    assert all(kind_of(n["attributes"]) in KINDS for n in EXAMPLE_NODES)
+    agencies = [n for n in EXAMPLE_NODES if kind_of(n["attributes"]) == "agency"]
+    assert agencies and all("type" in details(n["attributes"]) for n in agencies)
+
+
+def seed_two_reviews(url, iid):
+    """R1: Adult A contacted Wiltshire Police and the Wiltshire CSP. R2: another Adult A
+    contacted "the Wiltshire police" and Bromley Community Safety Partnership."""
+    from f.dhr.db import apply_migrations, connect
+    from f.dhr.O2 import kgraph
+
+    with connect(url) as conn:
+        for schema in ("corpus", "evaluation", "scratch"):
+            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        apply_migrations(conn)
+        conn.execute("DELETE FROM wiki.instances WHERE instance_id = %s", (iid,))
+        conn.execute(
+            "INSERT INTO wiki.instances (instance_id, name, created_by, dataset, reviews,"
+            " model, settings) VALUES (%s, 'n', 'me', 'DHRC-100', 'pilot', 'm', '{}')",
+            (iid,),
+        )
+        for doc, k in (("R1", "k1"), ("R2", "k2")):
+            conn.execute(
+                "INSERT INTO wiki.documents (instance_id, doc_id, part, n_parts, dataset, revision,"
+                " file_name, sha256, n_chars, knowledge_id) VALUES (%s, %s, 1, 1, 'DHRC-100',"
+                " 'r', %s, 'h', 5, %s)",
+                (iid, doc, f"{doc}.md", k),
+            )
+        kgraph.save_graph(
+            conn,
+            iid,
+            [
+                {"name": "Adult A", "kg": "k1"},
+                {"name": "Wiltshire Police", "kg": "k1"},
+                {"name": "Wiltshire CSP", "kg": "k1"},
+                {"name": "Adult A", "kg": "k2"},
+                {"name": "the Wiltshire police", "kg": "k2"},
+                {"name": "Bromley Community Safety Partnership", "kg": "k2"},
+            ],
+            [
+                {
+                    "source": "Adult A",
+                    "target": "Wiltshire Police",
+                    "kg": "k1",
+                    "type": "Contacted",
+                },
+                {"source": "Adult A", "target": "Wiltshire CSP", "kg": "k1", "type": "Contacted"},
+                {
+                    "source": "Adult A",
+                    "target": "the Wiltshire police",
+                    "kg": "k2",
+                    "type": "Contacted",
+                },
+                {
+                    "source": "Adult A",
+                    "target": "Bromley Community Safety Partnership",
+                    "kg": "k2",
+                    "type": "Contacted",
+                },
+            ],
+        )
+
+
+def test_the_knowledge_graph_tab_joins_reviews_and_groups_by_type(monkeypatch):
+    import os
+
+    url = os.environ.get("DHR_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("set DHR_TEST_DATABASE_URL to an empty test database to run this")
+    os.environ["DHR_DATABASE_URL"] = url
+    from f.dhr.O2.app_backend import get_kgraph
+
+    seed_two_reviews(url, "kj1")
+    g = get_kgraph.main("kj1")
+    by_id = {n["id"]: n for n in g["nodes"]}
+    police = by_id["*\u241fwiltshire police"]
+    assert police["docs"] == ["R1", "R2"] and police["doc_id"] == "Shared by 2 reviews"
+    assert "R1\u241fadult a" in by_id and "R2\u241fadult a" in by_id  # two people
+    csp = by_id["type\u241fcommunity safety partnership"]
+    assert csp["is_type"] and csp["doc_id"] == "Type of organisation"
+    is_a = {(x["source"], x["target"]) for x in g["links"] if x["type"] == "Is a"}
+    assert ("*\u241fwiltshire community safety partnership", csp["id"]) in is_a
+    assert ("*\u241fbromley community safety partnership", csp["id"]) in is_a
+    assert g["shared_entities"] == 1 and g["organisation_types"] == 2
+    apart = get_kgraph.main("kj1", join_reviews=False)
+    assert len(apart["nodes"]) == 6 and "Is a" not in apart["relation_types"]
+    one = get_kgraph.main("kj1", doc_id="R1")  # one review alone: nothing to join
+    assert {n["doc_id"] for n in one["nodes"]} == {"R1"}
+
+
+# --- graph analytics (f/dhr/O2/analysis.py) ----------------------------------------------
+
+
+def test_the_analysis_graph_is_joined_like_the_tab():
+    from f.dhr.O2.analysis import build_graph
+
+    nodes = [
+        ("R1", "Adult A", []),
+        ("R1", "Wiltshire Police", []),
+        ("R2", "the Wiltshire police", []),
+        ("R2", "Adult A", []),
+        ("R2", "Mary", []),
+    ]
+    relations = [
+        ("R1", "Adult A", "Wiltshire Police", "Disclosed abuse to"),
+        ("R1", "Wiltshire Police", "Adult A", "Referred to"),  # same pair, other way: weight 2
+        ("R2", "Adult A", "the Wiltshire police", "Disclosed abuse to"),
+        ("R2", "Mary", "Mary", "Contacted"),  # a loop: dropped
+    ]
+    joined = build_graph(nodes, relations, True)
+    police = "*\u241fwiltshire police"
+    assert joined["nodes"][police] == {
+        "name": "Wiltshire Police",
+        "docs": ["R1", "R2"],
+        "is_type": False,
+    }
+    assert joined["nodes"]["type\u241fpolice force"]["is_type"]
+    assert joined["edges"][(police, "R1\u241fadult a")]["weight"] == 2
+    assert joined["edges"][(police, "type\u241fpolice force")]["types"] == {"Is a": 1}
+    assert len(joined["nodes"]) == 5 and len(joined["edges"]) == 3
+    apart = build_graph(nodes, relations, False)
+    assert len(apart["nodes"]) == 5 and len(apart["edges"]) == 2
+
+
+def fake_results(graph):
+    """Stand-in engine output: community by first letter of the name, one component."""
+    return {
+        k: {
+            "degree": sum(1 for e in graph["edges"] if k in e),
+            "pagerank": float(len(k)),
+            "betweenness": 0.0,
+            "community": ord(graph["nodes"][k]["name"][0]),
+            "component": 7,
+            "similar": [],
+        }
+        for k in graph["nodes"]
+    }
+
+
+def test_the_summary_lists_communities_and_similar_reviews():
+    from f.dhr.O2.analysis import build_graph, renumber, summarise
+
+    everywhere = ("Wiltshire Police", "Wiltshire Council")
+    nodes = [(d, n, []) for d in ("R1", "R2", "R3") for n in everywhere]
+    nodes += [("R1", "Wiltshire Probation Service", []), ("R2", "Wiltshire Probation Service", [])]
+    nodes += [
+        ("R1", "Avon Hospital", []),
+        ("R3", "Swindon Hospital", []),
+        ("R4", "Kent Police", []),
+    ]
+    relations = [
+        ("R1", "Wiltshire Police", "Wiltshire Council", "Referred to"),
+        ("R1", "Wiltshire Probation Service", "Avon Hospital", "Contacted"),
+    ]
+    graph = build_graph(nodes, relations, True)
+    results = fake_results(graph)
+    renumber(results, "community")
+    renumber(results, "component")
+    assert {r["component"] for r in results.values()} == {1}
+    summary = summarise(graph, results, True)
+    assert summary["reviews"] == 4 and summary["organisation_types"] == 4
+    assert summary["shared_entities"] == 3  # Wiltshire Police, Council and Probation Service
+    # The police and council are in most reviews, and types never count, so R1 and R2 are
+    # alike through the probation service alone.
+    pairs = summary["similar_reviews"]
+    assert (pairs[0]["a"], pairs[0]["b"], pairs[0]["examples"]) == (
+        "R1",
+        "R2",
+        ["Wiltshire Probation Service"],
+    )
+    assert all("Police force" not in p["examples"] for p in pairs)
+    top = summary["top_communities"][0]
+    assert top["size"] >= 2 and all(name not in ("Police force",) for name in top["top"])
+
+
+def test_an_analysis_run_is_guarded_saved_and_served(monkeypatch):
+    import os
+
+    url = os.environ.get("DHR_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("set DHR_TEST_DATABASE_URL to an empty test database to run this")
+    os.environ["DHR_DATABASE_URL"] = url
+    from f.dhr.db import connect
+    from f.dhr.O2 import analysis
+    from f.dhr.O2.app_backend import get_analysis
+    from f.dhr.O2.run_analysis import run_analysis
+
+    seed_two_reviews(url, "an1")
+    with connect(url) as conn:
+        conn.execute("DELETE FROM wiki.kg_analysis_runs")
+        conn.execute("DELETE FROM wiki.instances WHERE instance_id = 'an2'")
+        conn.execute(
+            "INSERT INTO wiki.instances (instance_id, name, created_by, dataset, reviews,"
+            " model, settings) VALUES ('an2', 'n', 'me', 'DHRC-100', 'pilot', 'm', '{}')"
+        )
+
+    monkeypatch.setattr(analysis, "run_networkx", fake_results)
+    with pytest.raises(ValueError, match="no knowledge graph"):
+        run_analysis.main("an2")
+    with pytest.raises(ValueError, match="engine"):
+        run_analysis.main("an1", engine="spark")
+    result = run_analysis.main("an1", engine="networkx")
+    # 2 people, Wiltshire Police (joined), 2 CSPs, and 2 types; 4 contacts and 3 "Is a".
+    assert result["engine"] == "networkx" and result["nodes"] == 7 and result["links"] == 7
+    with pytest.raises(run_analysis.Busy, match="less than a minute"):
+        run_analysis.main("an1", engine="networkx")
+
+    served = get_analysis.main("an1")
+    assert served["has_graph"] and served["busy_with"] is None
+    assert served["runs"][0]["status"] == "done" and served["runs"][0]["nodes"] == 7
+    names = {n["name"]: n for n in served["result"]["nodes"]}
+    assert names["Wiltshire Police"]["docs"] == ["R1", "R2"]
+    assert names["Community Safety Partnership"]["is_type"]
+    assert not names["Wiltshire Police"]["is_type"]
+
+    with connect(url) as conn:
+        # Another run in progress blocks every build; a stuck one is cleared.
+        conn.execute(
+            "INSERT INTO wiki.kg_analysis_runs (instance_id, status, started_at)"
+            " VALUES ('an2', 'running', now())"
+        )
+        with pytest.raises(run_analysis.Busy, match="Another analysis"):
+            run_analysis.start_run(conn, "an1", {})
+        conn.execute(
+            "UPDATE wiki.kg_analysis_runs SET started_at = now() - interval '20 minutes'"
+            " WHERE status = 'running'"
+        )
+        conn.execute(
+            "UPDATE wiki.kg_analysis_runs SET started_at = now() - interval '5 minutes'"
+            " WHERE instance_id = 'an1'"
+        )
+        new_id = run_analysis.start_run(conn, "an1", {})
+        assert (
+            conn.execute(
+                "SELECT status FROM wiki.kg_analysis_runs WHERE instance_id = 'an2'"
+            ).fetchone()[0]
+            == "failed"
+        )
+
+        # A failed engine marks the run failed; only the last few runs are kept.
+        def broken(graph):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(analysis, "run_networkx", broken)
+        with pytest.raises(RuntimeError, match="boom"):
+            analysis.analyse(conn, new_id, "an1", "networkx", True)
+        assert conn.execute(
+            "SELECT status, error FROM wiki.kg_analysis_runs WHERE run_id = %s", (new_id,)
+        ).fetchone() == ("failed", "boom")
+        monkeypatch.setattr(analysis, "run_networkx", fake_results)
+        for _ in range(7):
+            rid = conn.execute(
+                "INSERT INTO wiki.kg_analysis_runs (instance_id) VALUES ('an1') RETURNING run_id"
+            ).fetchone()[0]
+            analysis.analyse(conn, rid, "an1", "networkx", True)
+        kept = conn.execute(
+            "SELECT count(*) FROM wiki.kg_analysis_runs WHERE instance_id = 'an1'"
+        ).fetchone()[0]
+        assert kept == analysis.KEEP_RUNS
+        # Deleting the build removes its analyses.
+        conn.execute("DELETE FROM wiki.instances WHERE instance_id = 'an1'")
+        assert not conn.execute(
+            "SELECT count(*) FROM wiki.kg_analysis_runs WHERE instance_id = 'an1'"
+        ).fetchone()[0]
+
+
+def test_networkx_gives_every_measure():
+    pytest.importorskip("networkx")
+    from f.dhr.O2.analysis import build_graph, run_networkx
+
+    nodes = [("R1", n, []) for n in ("A", "B", "C", "D", "E")]
+    relations = [
+        ("R1", "A", "B", "x"),
+        ("R1", "B", "C", "x"),
+        ("R1", "C", "A", "x"),
+        ("R1", "C", "D", "x"),
+    ]
+    out = run_networkx(build_graph(nodes, relations, True))
+    c, a = out["R1\u241fc"], out["R1\u241fa"]
+    assert c["degree"] == 3 and c["betweenness"] > a["betweenness"]
+    assert out["R1\u241fe"]["component"] != a["component"]
+    # Similarity is the share of linked entities two have in common (Jaccard): A links to
+    # {B, C}, D to {C} (1 of 2), B to {A, C} (1 of 3), C to {A, B, D} (1 of 4).
+    # (Fix 25 Nov 2026: this test expected B first; it never ran locally, without networkx.)
+    assert [(k, round(s, 2)) for k, s in a["similar"]] == [
+        ("R1\u241fd", 0.5),
+        ("R1\u241fb", 0.33),
+        ("R1\u241fc", 0.25),
+    ]
+
+
+def test_roles_and_documents_are_not_joined_as_organisations():
+    from f.dhr.O2.entities import joined_key
+
+    for name in (
+        "Chair of the Community Safety Partnership",
+        "NPS IMR",
+        "Manager at Refuge",
+        "Multi-agency Statutory Guidance for the Conduct of Domestic Homicide Reviews",
+    ):
+        assert joined_key(name) is None, name
+    assert joined_key("Ministry of Justice") == "ministry of justice"
+    assert joined_key("Magistrates' Court") is None
+    assert joined_key("Mental health professionals") is None
