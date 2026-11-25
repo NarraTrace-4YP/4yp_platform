@@ -360,13 +360,18 @@ services:
     restart: unless-stopped
     environment:
       NEO4J_AUTH: neo4j/${WEKNORA_GRAPH_PASSWORD}
-      NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_server_memory_heap_initial__size: 256m
-      NEO4J_server_memory_heap_max__size: 512m
+      # Graph Data Science (Rowan, 25 Nov 2026): Neo4j's free library of graph algorithms
+      # (Community edition, no licence), for f/dhr/O2/analysis.py: centrality, communities,
+      # similarity. It works on in-memory copies of a graph, so the heap is larger than
+      # WeKnora alone needs. It downloads the plugin version that matches this Neo4j image.
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*"
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1536m
       NEO4J_server_memory_pagecache_size: 256m
     volumes:
       - weknora-neo4j-data:/data
-    mem_limit: 1g
+    mem_limit: 2560m
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/7687'"]
       interval: 15s

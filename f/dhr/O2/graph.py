@@ -12,6 +12,19 @@ style of a DHR, and names nobody real. To change which relationships are kept, c
 RELATION_TYPES and the example together: the prompt tells the model to use only the listed
 types, so an example using others would contradict it.
 
+Fix (25 Nov 2026, problem review "O2 knowledge graph split by review"): Problem: the graph
+was one island per review, because WeKnora keeps each file's entities apart, and agencies
+were named differently from review to review ("the police", "the Met", "Police"). Why: WeKnora
+saves an entity under its name and its file (apoc.merge.node on name and kg), which no prompt
+can change, and the prompt didn't say how to name agencies. Solution: the model now starts
+each entity's details with its kind ("Kind: person", "Kind: agency", ...) and each agency's
+with its type ("Type: Community Safety Partnership"), so the O2 app and the analysis can join
+a named organisation across reviews, group organisations of one type under a node for that
+type (Wiltshire and Bromley CSPs stay two), and never join people (f/dhr/O2/entities.py). It
+names each agency in full, with its area, or by its type alone when the review gives no name,
+so the same agency matches and different ones don't. Builds made before this have no kinds
+or types; for those, f/dhr/O2/entities.py goes by the name.
+
 It costs a model call per chunk (one per chunk_size characters, about 250 for a median
 review at WeKnora's default 512), on top of the wiki's own calls, so bigger chunks make the
 graph much cheaper (f/dhr/O2/kb_settings.py).
@@ -48,27 +61,52 @@ DASH checklist. Adult B was later convicted of her murder in 2018.
 EXAMPLE_NODES = [
     {
         "name": "Adult A",
-        "attributes": ["The victim", "Disclosed being pushed down the stairs in March 2017"],
+        "attributes": [
+            "Kind: person",
+            "The victim",
+            "Disclosed being pushed down the stairs in March 2017",
+        ],
     },
     {
         "name": "Adult B",
-        "attributes": ["Partner of Adult A", "Convicted of Adult A's murder in 2018"],
+        "attributes": [
+            "Kind: person",
+            "Partner of Adult A",
+            "Convicted of Adult A's murder in 2018",
+        ],
     },
     {
         "name": "GP at Riverside Surgery",
-        "attributes": ["Adult A's GP", "Referred her to Safe Steps"],
+        "attributes": ["Kind: professional", "Adult A's GP", "Referred her to Safe Steps"],
     },
-    {"name": "Safe Steps", "attributes": ["Local domestic abuse service"]},
+    {
+        "name": "Safe Steps",
+        "attributes": [
+            "Kind: agency",
+            "Type: Domestic abuse service",
+            "Local domestic abuse service",
+        ],
+    },
     {
         "name": "IDVA at Safe Steps",
-        "attributes": ["Assessed Adult A as high risk using the DASH checklist"],
+        "attributes": [
+            "Kind: professional",
+            "Assessed Adult A as high risk using the DASH checklist",
+        ],
     },
     {
         "name": "Home in Northtown",
-        "attributes": ["Where Adult A and Adult B lived", "Where the assault happened"],
+        "attributes": [
+            "Kind: place",
+            "Where Adult A and Adult B lived",
+            "Where the assault happened",
+        ],
     },
-    {"name": "Disclosure to GP", "attributes": ["Adult A told her GP about the assault"]},
-    {"name": "March 2017", "attributes": ["When Adult A told her GP"]},
+    {
+        "name": "Disclosure to GP",
+        "attributes": ["Kind: event", "Adult A told her GP about the assault"],
+    },
+    {"name": "March 2017", "attributes": ["Kind: date", "When Adult A told her GP"]},
 ]
 
 EXAMPLE_RELATIONS = [
@@ -89,7 +127,18 @@ These are Domestic Homicide Reviews (DHRs) from England and Wales. Keep the peop
 (by the pseudonym or role the review uses, e.g. "Adult A", "the victim's son"), the \
 agencies and professionals (e.g. "GP", "Police", "IDVA", "MARAC"), the places, and the \
 dated events: contacts, disclosures, referrals, risk assessments, incidents and the \
-homicide. Give each person one name: use the review's pseudonym rather than a role \
+homicide. Start each entity's details with its kind, exactly one of "Kind: person", \
+"Kind: agency", "Kind: professional", "Kind: place", "Kind: event" or "Kind: date" (an \
+agency is an organisation or service; a professional is a person in a role). For an \
+agency, add its general type next, e.g. "Type: Police force", "Type: Community Safety \
+Partnership", "Type: GP practice", "Type: Local authority", "Type: Domestic abuse \
+service". Name each agency by its full official name, in full rather than abbreviated, \
+with its area where the review gives it (e.g. "Wiltshire Police", "Bromley Community \
+Safety Partnership", "Crown Prosecution Service"; not "the police" or "the CSP"), and an \
+agency the review doesn't name by its type alone (e.g. "Police force", "GP practice"), so \
+the same agency has the same name in every review and different ones never share a name. \
+Never add a review's pseudonyms to an agency's name. Give each \
+person one name: use the review's pseudonym rather than a role \
 wherever the text links them. Record only what the text states; do not infer abuse, \
 relationships or risk that it does not describe. Ignore the review's own procedure \
 (panel members, terms of reference, report writing) unless it describes the case.

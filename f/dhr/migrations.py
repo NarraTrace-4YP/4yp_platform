@@ -1299,4 +1299,51 @@ BEGIN
 END $$;
 """,
     ),
+    (
+        "017_kg_analysis",
+        """
+-- O2: graph analyses of a build's knowledge graph (f/dhr/O2/analysis.py), run from Windmill or
+-- the O2 app's Analysis tab. Each run reads the build's copy of the graph (wiki.kg_nodes,
+-- wiki.kg_relations) and keeps its results here; a build keeps its last few runs.
+CREATE TABLE wiki.kg_analysis_runs (
+    run_id        bigserial PRIMARY KEY,
+    instance_id   text NOT NULL REFERENCES wiki.instances ON DELETE CASCADE,
+    status        text NOT NULL DEFAULT 'running',   -- running, done, failed
+    engine        text,                              -- gds (Neo4j) or networkx
+    settings      jsonb NOT NULL DEFAULT '{}',
+    summary       jsonb,                             -- counts, communities, similar reviews
+    error         text,
+    requested_by  text,
+    started_at    timestamptz NOT NULL DEFAULT now(),
+    finished_at   timestamptz,
+    CHECK (status IN ('running', 'done', 'failed'))
+);
+CREATE INDEX ON wiki.kg_analysis_runs (instance_id, started_at DESC);
+
+-- One row per entity analysed. With join_reviews, a named organisation is one row across the
+-- reviews that name it (docs lists them) and each organisation type has a row (is_type);
+-- people, events and dates are always one row per review (f/dhr/O2/entities.py).
+CREATE TABLE wiki.kg_analysis_nodes (
+    run_id       bigint NOT NULL REFERENCES wiki.kg_analysis_runs ON DELETE CASCADE,
+    key          text NOT NULL,
+    name         text NOT NULL,
+    docs         jsonb NOT NULL DEFAULT '[]',
+    is_type      boolean NOT NULL DEFAULT false,      -- a node for a type of organisation
+    degree       integer NOT NULL DEFAULT 0,          -- entities it is linked to
+    pagerank     double precision,                    -- importance, from its links
+    betweenness  double precision,                    -- how often it lies between others
+    community    bigint,                              -- Louvain community
+    component    bigint,                              -- connected piece of the graph
+    similar_entities jsonb NOT NULL DEFAULT '[]',     -- [{key, name, score}]: shared neighbours
+    PRIMARY KEY (run_id, key)
+);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'wiki_agent') THEN
+        GRANT SELECT ON wiki.kg_analysis_runs, wiki.kg_analysis_nodes TO wiki_agent;
+    END IF;
+END $$;
+""",
+    ),
 ]
