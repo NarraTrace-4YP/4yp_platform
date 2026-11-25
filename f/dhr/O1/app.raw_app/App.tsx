@@ -17,7 +17,7 @@ const GROUPS = [
     tabs: [
       { id: 'overview', label: 'Overview', hint: 'How the reviews are prepared' },
       { id: 'data', label: 'Data', hint: 'Datasets, sources and coverage' },
-      { id: 'notes', label: 'Notes', hint: 'Project notes' },
+      { id: 'notes', label: 'Design notes', hint: 'Each choice and why it was made' },
     ],
   },
   {

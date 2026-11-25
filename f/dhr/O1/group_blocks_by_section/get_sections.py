@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 3, app: each review's outline and its sections' text (Sections tab).
+"""O1 stage 3, app: sections (Sections tab).
 
 Use the latest loaded dataset revision. Return grouping status and skipped
 reviews, a review's outline, or the requested section's blocks in reading order.

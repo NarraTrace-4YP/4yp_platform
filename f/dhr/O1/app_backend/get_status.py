@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stages 1-5, app: corpus coverage and each stage's latest outputs (Overview, Data tabs).
+"""O1 stages 1-5, app: status (Overview, Data tabs).
 
 Read dataset versions, metadata coverage, grouped sections, and template-matching
 summaries for the overview app. The pipeline also runs this script as its final

@@ -4,7 +4,7 @@
 #     "openai==3.51.0",
 # ]
 # ///
-"""LLM chat: ask the team's model one question through the LLM gateway, on your own Blythe account.
+"""Tool: ask the LLM a question.
 
 A quick way to try the gateway from Windmill: it sends the question as you (with this run's
 own Windmill token), the gateway starts your model job on Blythe if it isn't running, and

@@ -7,7 +7,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 1: load checksum-verified reviews (DHRC-100 or DHRC-RAW) into the database.
+"""O1 stage 1: load reviews.
 
 Download DHRC-100 or DHRC-RAW from Hugging Face, or read a local dataset folder.
 Verify all listed checksums before writing. DHRC-100 rejects malformed reviews;

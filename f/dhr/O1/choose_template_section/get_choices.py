@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 5, app: the template choices and the standardised reviews (Standardised tab).
+"""O1 stage 5, app: template choices (Standardised tab).
 
 Read-only.
 With only a dataset and guidance: how the choices were made, the guidance's templates (each

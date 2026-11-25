@@ -6,7 +6,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Blythe LLM server: keep a model loaded on a Blythe GPU and send it prompts while it runs.
+"""Tool: start, use and stop an LLM server on Blythe.
 
 Starts narratrace-slurm's llm_serve job, which loads the model once and answers prompts as
 they are added, so more work doesn't wait in the SLURM queue or load the model again. It logs

@@ -8,7 +8,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 5: map each review onto a statutory template with an LLM on Blythe.
+"""O1 stage 5: choose templates with the LLM.
 
 For the newest grouped version of a dataset, against one guidance, in up to four GPU jobs
 (dataset and guidance can each be "both": one run then covers every pair, see below):
@@ -50,8 +50,8 @@ long as its slowest pair. A pair that fails doesn't stop the others.
 This is a workflow: after submitting each job it pauses without holding a Windmill worker
 until the job's last step wakes it (or a safety check every check_every_minutes), checks
 with SLURM that the job has ended, and downloads the answers. Each step that talks to Blythe
-logs in with Rowan's own Blythe account (f/dhr/blythe.py), so only Rowan can run this:
-anyone else's run stops at its first line. Cancelling this run does not cancel a SLURM job on
+logs in with the Blythe account of whoever runs it (f/dhr/blythe.py), from their own
+Windmill variables. Cancelling this run does not cancel a SLURM job on
 Blythe: use `scancel <job>` there.
 
 dry_run=True shows what would be sent or done (for the chosen stage), without contacting
@@ -1807,7 +1807,7 @@ async def main(
     give_up_after_hours: int = 96,
     dry_run: bool = False,
 ):
-    """Windmill runs this; only Rowan's runs can use Blythe (with MODEL, Qwen3.8-27B).
+    """Windmill runs this, on the runner's own Blythe account (with MODEL, Qwen3.8-27B).
 
     dataset and guidance: whose reviews, against which templates; "both" runs each of the
     two, so dataset = both and guidance = both covers all four pairs in one run, their GPU
@@ -1826,7 +1826,7 @@ async def main(
     out from the size of the prompts; at most 48). check_every_minutes: how often to check
     jobs that haven't woken this run. give_up_after_hours: when to stop waiting for a job and
     cancel it. dry_run: only show what would be sent or done."""
-    check_owner()  # Rowan's Blythe account: no one else may run this, not even a dry run
+    check_owner()  # every run uses its own user's Blythe account
     pairs = combinations(dataset, guidance)
     for d, g in pairs:
         check_choices(d, g, reviews, MODEL)

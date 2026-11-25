@@ -13,7 +13,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 4: shortlist candidate template sections for each review section.
+"""O1 stage 4: find template candidates.
 
 Compare normalised headings with fuzzy word scores (0–100), and section text
 with guidance text using CPU embeddings (cosine similarity, -1–1). Retain the
