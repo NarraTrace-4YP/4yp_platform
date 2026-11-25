@@ -90,6 +90,19 @@ The graph costs a model call per chunk, on top of the wiki's. At WeKnora's defau
 `chunk_size` (2,000, say) makes it about four times cheaper. The pipeline's first step
 (`check_setup`) estimates the calls before anything starts.
 
+## "An error occurred" (nginx) in WeKnora
+
+If WeKnora's pages show nginx's "An error occurred. Sorry, the page you are looking for is
+currently unavailable", the website can't reach `weknora-app`. Usually `weknora-app` was
+recreated and got a new address on the Docker network, and the website's web server still
+has the old one (it looks it up only when it starts). Restart the website:
+
+```bash
+docker compose restart weknora-frontend
+```
+
+`compose.yaml` now restarts it by itself whenever `docker compose up` restarts `weknora-app`.
+
 ## Watching it work
 
 On the server:
