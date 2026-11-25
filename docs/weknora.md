@@ -60,6 +60,21 @@ settings in `f/dhr/O2/kb_settings.py`. By hand:
 A knowledge base belongs to the space it was made in. Everyone starts with a personal
 space. To share one with the team, invite them to your space from its members page.
 
+Each review is uploaded whole, as one Markdown file. WeKnora's wiki builder reads only the
+first 32,768 characters of each file, so for most DHRs the wiki is built from the start of
+the review; `check_setup` reports how many reviews that affects
+(`n_longer_than_wiki_reads`).
+
+## Deleting a wiki
+
+Run `f/dhr/O2/delete_wiki` in Windmill with the build's `instance_id` (from the O2 app's
+Wikis tab) as both `instance_id` and `confirm`. It stops the build's pipeline run if it is
+still going, deletes the knowledge base in WeKnora (files, chunks, wiki pages and graph),
+removes its entities from the graph database, and deletes the build's copy from the
+database, so it disappears from the O2 app. Only the person who made a build can delete it,
+and the public O2 app can't delete anything. Deleting a knowledge base in WeKnora's own
+pages instead leaves the build in the O2 app.
+
 ## Knowledge graph
 
 Besides the wiki, WeKnora can build a knowledge graph: for every chunk of every review, the

@@ -97,6 +97,39 @@ def fetch_graph(kb_id: str, driver=None) -> tuple[list[dict], list[dict]]:
     return nodes, relations
 
 
+def delete_graph(kb_id: str, driver=None) -> int:
+    """Removes every entity (and so every relationship) WeKnora stored for this knowledge base,
+    a thousand at a time. WeKnora also does this when the knowledge base is deleted; this
+    makes sure, for f/dhr/O2/delete_wiki. Returns how many entities were removed."""
+    lab = label(kb_id)
+    own = driver is None
+    if own:
+        try:
+            from neo4j import GraphDatabase
+
+            driver = GraphDatabase.driver(URI, auth=(USER, password()), connection_timeout=10)
+            driver.verify_connectivity()
+        except GraphUnavailable:
+            raise
+        except Exception as error:  # noqa: BLE001
+            raise GraphUnavailable(f"can't reach the graph database at {URI}: {error}") from error
+    removed = 0
+    try:
+        with driver.session() as session:
+            while True:
+                record = session.run(
+                    f"MATCH (n:`{lab}`) WITH n LIMIT 1000 DETACH DELETE n RETURN count(n) AS n"
+                ).single()
+                count = int(record["n"]) if record else 0
+                removed += count
+                if count == 0:
+                    break
+    finally:
+        if own:
+            driver.close()
+    return removed
+
+
 def merge_graph(
     nodes: list[dict], relations: list[dict], doc_by_knowledge: dict[str, str]
 ) -> tuple[list[tuple], list[tuple]]:

@@ -242,6 +242,18 @@ class WeKnora:
     def knowledge_base(self, kb_id: str) -> dict:
         return _data(self.request("GET", f"/knowledge-bases/{kb_id}"))
 
+    def delete_knowledge_base(self, kb_id: str) -> bool:
+        """Deletes a knowledge base and everything in it: its files, chunks, wiki pages and
+        knowledge graph (WeKnora stops its queued work at once and clears the rest in the
+        background). False if it was already gone."""
+        try:
+            self.request("DELETE", f"/knowledge-bases/{kb_id}", retries=1)
+        except WeKnoraError as error:
+            if "answered 404" in str(error):
+                return False
+            raise
+        return True
+
     def upload_markdown(self, kb_id: str, file_name: str, text: str) -> dict:
         """Uploads one document as a Markdown file. (The manual-text route caps documents at
         200,000 characters, and the longest reviews are nearly twice that.)"""

@@ -8,12 +8,12 @@ different settings can be compared.
 
 What can change (flow inputs, all optional; the defaults are WeKnora's own unless noted):
 
-Parts (ours, part_chars, default 30,000). WeKnora v0.9.0's wiki builder reads only the first
-32,768 characters of each file (maxContentForWiki, internal/application/service/
-wiki_ingest.go) and drops the rest. 97 of the 100 DHRC-100 reviews are longer (median about
-120,000 characters), so about 75% of their text never reached the wiki. Each review is
-uploaded as parts instead, cut at headings where possible (f/dhr/O2/reviews.py,
-split_into_parts). 0 uploads each review whole, the old way, for comparison.
+Each review is uploaded whole, as one file. Splitting reviews into parts (part_chars, 25 Nov
+2026) was taken out again the same day (Rowan: not a good idea; see f/dhr/O2/reviews.py).
+WeKnora v0.9.0's wiki builder reads only the first 32,768 characters of each file
+(maxContentForWiki, internal/application/service/wiki_ingest.go) and drops the rest, so for
+most DHRs the wiki is built from the opening part of the review; check_setup says how many
+reviews that affects.
 
 Chunking (chunk_strategy, chunk_size, chunk_overlap, chunk_separators). WeKnora splits every
 file into chunks. The wiki's extraction step reads a file's chunks joined back together, so
@@ -54,9 +54,6 @@ from .graph import extract_config
 
 # WeKnora's wiki builder reads this many characters of each file and drops the rest.
 WEKNORA_WIKI_READ_LIMIT = 32_768
-# Leaves room under that limit for a part's own header lines.
-DEFAULT_PART_CHARS = 30_000
-PART_CHARS_RANGE = (2_000, 32_000)
 
 STRATEGIES = ("auto", "heading", "heuristic", "recursive", "legacy")
 CHUNK_SIZE_RANGE = (100, 10_000)  # WeKnora's own limits
@@ -71,7 +68,6 @@ THROUGHPUT = {
 }
 
 DEFAULTS = {
-    "part_chars": DEFAULT_PART_CHARS,
     "chunk_strategy": "auto",
     "chunk_size": 512,
     "chunk_overlap": 80,
@@ -89,7 +85,6 @@ def _whole(label: str, value) -> int:
 
 
 def check_settings(
-    part_chars: int = DEFAULT_PART_CHARS,
     chunk_strategy: str = "auto",
     chunk_size: int = 512,
     chunk_overlap: int = 80,
@@ -103,13 +98,6 @@ def check_settings(
 ) -> dict:
     """Checks every value and returns them as saved in wiki.instances.settings["knowledge_base"].
     Raises ValueError naming the first bad one."""
-    low, high = PART_CHARS_RANGE
-    if _whole("part_chars", part_chars) and not low <= part_chars <= high:
-        raise ValueError(
-            f"part_chars must be 0 (upload each review whole) or from {low:,} to {high:,}"
-            f" characters: WeKnora's wiki reads only the first {WEKNORA_WIKI_READ_LIMIT:,}"
-            " characters of each file"
-        )
     if chunk_strategy not in STRATEGIES:
         raise ValueError(
             f"chunk_strategy must be one of {', '.join(STRATEGIES)}, not {chunk_strategy!r}"
@@ -151,7 +139,6 @@ def check_settings(
         extract_config(graph_instructions)  # checks the length
         graph_text = graph_instructions.strip() or GRAPH_INSTRUCTIONS
     return {
-        "part_chars": part_chars,
         "chunk_strategy": chunk_strategy,
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,

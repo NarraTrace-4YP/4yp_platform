@@ -48,27 +48,21 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
         kb_id = build["kb_id"]
         documents = wk.documents(kb_id)
         by_id = {d.get("id"): d for d in documents}
-        # One row per uploaded file: a review in parts has several (f/dhr/O2/kb_settings.py).
+        # One row per uploaded file (one per review).
         # A file is "completed" only once WeKnora has also finished its knowledge-graph
         # calls, so the quiet checks below wait for the graph too.
         expected = conn.execute(
-            "SELECT doc_id, part, n_parts, knowledge_id FROM wiki.documents WHERE instance_id = %s",
+            "SELECT doc_id, part, knowledge_id FROM wiki.documents WHERE instance_id = %s",
             (instance_id,),
         ).fetchall()
         counts: dict[str, int] = {}
         failed = []
-        for doc_id, part, n_parts, knowledge_id in expected:
+        for doc_id, part, knowledge_id in expected:
             d = by_id.get(knowledge_id)
             status = d.get("parse_status") if d else ("missing" if knowledge_id else "not uploaded")
             counts[status] = counts.get(status, 0) + 1
             if status == "failed":
-                failed.append(
-                    {
-                        "doc_id": doc_id,
-                        "part": f"{part} of {n_parts}",
-                        "error": (d or {}).get("error_message"),
-                    }
-                )
+                failed.append({"doc_id": doc_id, "error": (d or {}).get("error_message")})
             conn.execute(
                 "UPDATE wiki.documents SET parse_status = %s,"
                 " error_message = COALESCE(%s, error_message)"

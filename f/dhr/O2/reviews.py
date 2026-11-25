@@ -15,11 +15,10 @@ With a guidance chosen (template_guidance, default dhr-2016), O1 stage 5's mappi
 too: the review's template at the top, and under each heading the template section it was
 mapped to (when it differs from the one before), so the wiki sees O1's standardised structure as well as the original headings.
 
-A review longer than WeKnora's wiki reads (32,768 characters) is cut into parts at its
-headings (split_into_parts, review_parts). Fix, 25 Nov 2026, problem review "O2 wiki reads
-only the start of each review": 97 of the 100 DHRC-100 reviews were cut off by WeKnora,
-which reads only the start of each file; each part now says which review, part and section
-it continues, so it reads on its own (f/dhr/O2/kb_settings.py has the details).
+Each review is one file. Fix (25 Nov 2026, problem review "O2 review parts taken out"):
+reviews longer than WeKnora's wiki reads (32,768 characters) were briefly cut into parts at
+their headings; Rowan judged that a bad idea, so the splitting (split_into_parts,
+review_parts) is gone and each review is uploaded whole again (f/dhr/O2/kb_settings.py).
 
 Nothing here reads the evaluation schema: the wiki never sees the case metadata.
 """
@@ -206,7 +205,7 @@ def render_pieces(
 
     Each body piece is {"text", "depth" (a heading's level, 0 for anything else),
     "heading" (the heading's own text, for headings), "label" (the template section in force
-    after it)}. render_markdown joins them; split_into_parts packs them into parts."""
+    after it)}. render_markdown joins them."""
     blocks, joins = join_split_paragraphs(blocks)
     labels = labels or {"document": None, "sections": {}}
     name = GUIDANCE_NAMES.get(guidance, guidance)
@@ -255,130 +254,20 @@ def render_markdown(
     return "\n\n".join(parts) + "\n", joins
 
 
-def _hard_split(text: str, limit: int) -> list[str]:
-    """A piece longer than a whole part (a huge table, say): cut at line ends, else anywhere."""
-    out = []
-    while len(text) > limit:
-        cut = text.rfind("\n", limit // 2, limit)
-        cut = cut if cut > 0 else limit
-        out.append(text[:cut])
-        text = text[cut:].lstrip("\n")
-    if text:
-        out.append(text)
-    return out
-
-
-def split_into_parts(
-    doc_id: str, header: list[str], pieces: list[dict], part_chars: int, guidance: str = "none"
-) -> list[str]:
-    """Packs the pieces into parts of at most part_chars characters each, for WeKnora's wiki,
-    which reads only the first 32,768 characters of a file (f/dhr/O2/kb_settings.py).
-
-    A part ends before a heading wherever it can: a new part starts at the first heading
-    past half the limit that would not fit, otherwise at the piece that would not fit. Every
-    part starts with the review's name, "part i of n", the report template, and, when it
-    starts inside a section, the headings it sits under and the template section in force,
-    so each part can be read on its own."""
-    name = GUIDANCE_NAMES.get(guidance, guidance)
-    # Room for the part's own header lines; the longest a heading trail is likely to be.
-    budget = part_chars - 600 - sum(len(h) + 2 for h in header) - len(doc_id)
-    budget = max(budget, part_chars // 2)
-
-    units: list[dict] = []
-    for p in pieces:
-        if len(p["text"]) > budget:
-            units += [
-                {**p, "text": t, "depth": p["depth"] if i == 0 else 0}
-                for i, t in enumerate(_hard_split(p["text"], budget))
-            ]
-        else:
-            units.append(p)
-
-    groups: list[list[dict]] = []
-    current: list[dict] = []
-    size = 0
-    for u in units:
-        n = len(u["text"]) + 2
-        if current and size + n > budget:
-            # Prefer to end the part before the last heading that is past half the budget.
-            cut = None
-            running = 0
-            for i, c in enumerate(current):
-                if c["depth"] and i > 0 and running >= budget // 2:
-                    cut = i
-                running += len(c["text"]) + 2
-            if cut is not None:
-                groups.append(current[:cut])
-                current = current[cut:]
-                size = sum(len(c["text"]) + 2 for c in current)
-            if current and size + n > budget:
-                groups.append(current)
-                current, size = [], 0
-        current.append(u)
-        size += n
-    if current:
-        groups.append(current)
-
-    total = len(groups)
-    out = []
-    trail: dict[int, str] = {}  # depth -> heading text, for the headings above a part's start
-    label = None
-    for i, group in enumerate(groups, start=1):
-        lines = [f"# {doc_id} (part {i} of {total})" if total > 1 else f"# {doc_id}", *header]
-        if i > 1 and not group[0]["depth"]:
-            above = [trail[d] for d in sorted(trail)]
-            if above:
-                lines.append("Continues the section: " + " > ".join(above))
-            if label:
-                lines.append(f"Template section ({name}): {label}")
-        elif i > 1 and group[0]["depth"]:
-            above = [trail[d] for d in sorted(trail) if d < group[0]["depth"]]
-            if above:
-                lines.append("Under: " + " > ".join(above))
-        for u in group:
-            if u["depth"] and u["heading"]:
-                trail = {d: h for d, h in trail.items() if d < u["depth"]}
-                trail[u["depth"]] = u["heading"]
-            label = u["label"]
-        out.append("\n\n".join([*lines, *(u["text"] for u in group)]) + "\n")
-    return out
-
-
-def review_parts(
-    conn, review: dict, template_guidance: str = "none", part_chars: int = 0
-) -> list[dict]:
-    """The review ready to upload, as one file (part_chars 0) or as parts under part_chars
-    characters each. Each: {doc_id, dataset, revision, part, n_parts, file_name, text,
-    sha256, n_chars, n_joined, n_template_labels}."""
+def review_file(conn, review: dict, template_guidance: str = "none") -> dict:
+    """The review ready to upload, as one Markdown file: {doc_id, dataset, revision, part (1),
+    n_parts (1), file_name, text, sha256, n_chars, n_joined, n_template_labels}."""
     blocks, levels = load_review(conn, review["revision"], review["doc_id"])
     labels = load_template_labels(conn, review["revision"], review["doc_id"], template_guidance)
-    if part_chars:
-        header, pieces, joins = render_pieces(
-            review["doc_id"], blocks, levels, labels, template_guidance
-        )
-        texts = split_into_parts(review["doc_id"], header, pieces, part_chars, template_guidance)
-    else:
-        text, joins = render_markdown(review["doc_id"], blocks, levels, labels, template_guidance)
-        texts = [text]
-    n = len(texts)
-    return [
-        {
-            **review,
-            "part": i,
-            "n_parts": n,
-            "file_name": f"{review['doc_id']}.md"
-            if n == 1
-            else f"{review['doc_id']} (part {i} of {n}).md",
-            "text": text,
-            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
-            "n_chars": len(text),
-            "n_joined": joins,
-            "n_template_labels": len(labels["sections"]),
-        }
-        for i, text in enumerate(texts, start=1)
-    ]
-
-
-def review_file(conn, review: dict, template_guidance: str = "none") -> dict:
-    """One review as a single file (no parts)."""
-    return review_parts(conn, review, template_guidance, 0)[0]
+    text, joins = render_markdown(review["doc_id"], blocks, levels, labels, template_guidance)
+    return {
+        **review,
+        "part": 1,
+        "n_parts": 1,
+        "file_name": f"{review['doc_id']}.md",
+        "text": text,
+        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "n_chars": len(text),
+        "n_joined": joins,
+        "n_template_labels": len(labels["sections"]),
+    }

@@ -361,7 +361,7 @@ def test_the_app_backends_read_a_saved_wiki():
     assert build["n_pages"] == 2 and build["pages_by_type"] == {"entity": 1, "concept": 1}
     assert build["n_reviews"] == 1 and build["n_files"] == 2
     review = build["documents"][0]
-    assert review["n_pages"] == 1 and review["n_parts"] == 2 and review["parts_read"] == 1
+    assert review["n_pages"] == 1  # a review uploaded in parts (25 Nov builds) is one row
     assert review["n_chars"] == 10 and review["parse_status"] == "processing"
     graph = get_graph.main("app1")
     assert graph["links"] == [{"source": "a", "target": "b"}] and graph["broken_links"] == 1
@@ -428,64 +428,26 @@ def long_review(n_sections=12, paragraphs=6, words=60):
     return blocks, levels
 
 
-def test_a_long_review_is_cut_into_parts_at_headings_and_nothing_is_lost():
+def test_a_long_review_is_uploaded_whole():
     from f.dhr.O2.kb_settings import WEKNORA_WIKI_READ_LIMIT
 
     blocks, levels = long_review()
-    labels = {"document": "DHR", "sections": {"/s/0": "Introduction", "/s/5": "Chronology"}}
-    header, pieces, _ = reviews.render_pieces("R", blocks, levels, labels, "dhr-2016")
-    whole, _ = reviews.render_markdown("R", blocks, levels, labels, "dhr-2016")
-    parts = reviews.split_into_parts("R", header, pieces, 6_000, "dhr-2016")
-    assert len(parts) > 3
-    assert all(len(p) <= 6_000 < WEKNORA_WIKI_READ_LIMIT for p in parts)
-    for i, p in enumerate(parts, start=1):
-        assert p.startswith(
-            f"# R (part {i} of {len(parts)})\n\nReport template (2016 guidance): DHR"
-        )
-    # Every paragraph is in exactly one part, in order.
-    body = [x.strip() for x in whole.split("\n\n") if x.startswith("s")]
-    seen = [x.strip() for p in parts for x in p.split("\n\n") if x.startswith("s")]
-    assert seen == body
-    # Parts start at a heading wherever one fits.
-    assert sum(p.split("\n\n")[2].startswith("## Section") for p in parts[1:]) >= len(parts) - 2
-
-
-def test_a_part_starting_mid_section_says_where_it_is():
-    blocks, levels = long_review(n_sections=1, paragraphs=40)
-    labels = {"document": None, "sections": {"/s/0": "Chronology"}}
-    header, pieces, _ = reviews.render_pieces("R", blocks, levels, labels, "dhr-2016")
-    parts = reviews.split_into_parts("R", header, pieces, 4_000, "dhr-2016")
-    assert len(parts) > 2
-    assert "Continues the section: Section 0" in parts[1]
-    assert "Template section (2016 guidance): Chronology" in parts[1]
-
-
-def test_a_short_review_is_one_file_with_its_usual_name():
-    blocks, levels = long_review(n_sections=1, paragraphs=1, words=5)
-    header, pieces, _ = reviews.render_pieces("R", blocks, levels)
-    assert reviews.split_into_parts("R", header, pieces, 30_000) == [
-        reviews.render_markdown("R", blocks, levels)[0]
-    ]
-
-
-def test_a_piece_bigger_than_a_part_is_cut_at_line_ends():
-    table = "<table>" + "\n".join(f"<tr><td>{'x' * 80}</td></tr>" for _ in range(200)) + "</table>"
-    pieces = [{"text": table, "depth": 0, "heading": None, "label": None}]
-    parts = reviews.split_into_parts("R", [], pieces, 5_000)
-    assert len(parts) > 3 and all(len(p) <= 5_000 for p in parts)
+    text, _ = reviews.render_markdown("R", blocks, levels)
+    assert len(text) > WEKNORA_WIKI_READ_LIMIT // 8 and text.startswith("# R\n")
+    assert not hasattr(reviews, "split_into_parts")
 
 
 def test_knowledge_base_settings_are_checked():
     from f.dhr.O2 import kb_settings as ks
 
     s = ks.check_settings()
-    assert s["part_chars"] == 30_000 and ks.chunking_config(s) == {
+    assert "part_chars" not in s and ks.chunking_config(s) == {
         "strategy": "auto",
         "chunk_size": 512,
         "chunk_overlap": 80,
     }
     assert ks.wiki_tuning(s) == {}
-    s = ks.check_settings(0, "heading", 2000, 200, ["\n## ", "\n\n"], 10, 4, 4, 2)
+    s = ks.check_settings("heading", 2000, 200, ["\n## ", "\n\n"], 10, 4, 4, 2)
     assert ks.chunking_config(s)["separators"] == ["\n## ", "\n\n"]
     assert ks.wiki_tuning(s) == {
         "ingest_batch_size": 10,
@@ -494,8 +456,6 @@ def test_knowledge_base_settings_are_checked():
         "ingest_max_inflight": 2,
     }
     for bad, match in [
-        ({"part_chars": 40_000}, "part_chars"),
-        ({"part_chars": 500}, "part_chars"),
         ({"chunk_strategy": "semantic"}, "chunk_strategy"),
         ({"chunk_size": 50}, "chunk_size"),
         ({"chunk_overlap": 300}, "half"),
@@ -711,3 +671,147 @@ def test_the_server_gives_windmill_the_graph_password():
 
     server = (Path(__file__).parent.parent / "server/windmill.sh").read_text(encoding="utf-8")
     assert "f/dhr/weknora_graph_password" in server and "WEKNORA_GRAPH_PASSWORD" in server
+
+
+def test_the_client_deletes_a_knowledge_base_once():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if len(calls) == 1:
+            return httpx.Response(200, json={"success": True})
+        return httpx.Response(404, json={"success": False, "error": "not found"})
+
+    wk = fake_weknora(handler)
+    assert wk.delete_knowledge_base("kb1") is True
+    assert wk.delete_knowledge_base("kb1") is False  # already gone
+    assert calls[0] == ("DELETE", "/api/v1/knowledge-bases/kb1")
+
+
+def test_delete_graph_removes_this_knowledge_base_in_batches():
+    from f.dhr.O2 import kgraph
+
+    seen = []
+    left = [2500]
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def run(self, query):
+            seen.append(query)
+            n = min(1000, left[0])
+            left[0] -= n
+            return type("R", (), {"single": lambda self: {"n": n}})()
+
+    class Driver:
+        def session(self):
+            return Session()
+
+    assert kgraph.delete_graph("0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0", driver=Driver()) == 2500
+    assert len(seen) == 4 and all(
+        "`ENTITY0b1c2d3e_4f50_6172_8394_a5b6c7d8e9f0`" in q and "DETACH DELETE" in q for q in seen
+    )
+
+
+def test_a_wiki_is_deleted_everywhere(monkeypatch):
+    import os
+
+    url = os.environ.get("DHR_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("set DHR_TEST_DATABASE_URL to an empty test database to run this")
+    os.environ["DHR_DATABASE_URL"] = url
+    from f.dhr.db import apply_migrations, connect
+    from f.dhr.O2 import kgraph
+    from f.dhr.O2.delete_wiki import delete_wiki
+
+    with connect(url) as conn:
+        for schema in ("corpus", "evaluation", "scratch"):
+            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        apply_migrations(conn)
+        conn.execute("DELETE FROM wiki.instances WHERE instance_id IN ('del1', 'keep1')")
+        for instance_id, owner in (("del1", "me"), ("keep1", "me")):
+            conn.execute(
+                "INSERT INTO wiki.instances (instance_id, name, created_by, dataset, reviews, model,"
+                " settings, weknora_kb_id, flow_job_id) VALUES (%s, 'n', %s, 'DHRC-100', 'pilot',"
+                " 'm', '{}', %s, 'job1')",
+                (instance_id, owner, "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"),
+            )
+            conn.execute(
+                "INSERT INTO wiki.documents (instance_id, doc_id, dataset, revision, file_name,"
+                " sha256, n_chars, knowledge_id) VALUES (%s, 'R1', 'DHRC-100', 'r', 'R1.md', 'h',"
+                " 5, 'k1')",
+                (instance_id,),
+            )
+            kgraph.save_graph(conn, instance_id, [{"name": "A", "kg": "k1"}], [])
+    monkeypatch.setenv("WM_USERNAME", "me")
+    deleted = []
+
+    class FakeWeKnora:
+        def delete_knowledge_base(self, kb_id):
+            deleted.append(kb_id)
+            return True
+
+    monkeypatch.setattr(delete_wiki, "WeKnora", FakeWeKnora)
+    monkeypatch.setattr(delete_wiki, "delete_graph", lambda kb_id: 7)
+    monkeypatch.setattr(delete_wiki, "stop_flow", lambda job: f"cancelled {job}")
+    asked = []
+    monkeypatch.setattr(
+        delete_wiki, "stop_model", lambda others: asked.append(others) or "asked it to stop"
+    )
+
+    with pytest.raises(ValueError, match="both"):
+        delete_wiki.main("del1", "del2")  # the confirmation must match
+    monkeypatch.setenv("WM_USERNAME", "someone-else")
+    with pytest.raises(ValueError, match="only they"):
+        delete_wiki.main("del1", "del1")
+    assert deleted == []
+
+    monkeypatch.setenv("WM_USERNAME", "me")
+    result = delete_wiki.main("del1", "del1")
+    assert deleted == ["0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"]
+    assert result["database"] == {"documents": 1, "pages": 0, "knowledge_graph_entities": 1}
+    assert "7 entities" in result["graph_database"] and result["pipeline"] == "cancelled job1"
+    assert result["model_job"] == "asked it to stop" and asked == [[]]  # keep1 isn't building
+    with connect(url) as conn:
+        for table in ("instances", "documents", "kg_nodes"):
+            assert conn.execute(
+                f"SELECT count(*) FROM wiki.{table} WHERE instance_id = 'del1'"
+            ).fetchone() == (0,)
+        # Other builds are untouched.
+        assert conn.execute(
+            "SELECT count(*) FROM wiki.documents WHERE instance_id = 'keep1'"
+        ).fetchone() == (1,)
+    with pytest.raises(ValueError, match="No wiki build"):
+        delete_wiki.main("del1", "del1")
+
+
+def test_the_model_job_is_tidied_up_unless_another_build_needs_it(monkeypatch):
+    from f.dhr.O2.delete_wiki import delete_wiki
+
+    stopped = []
+
+    class FakeBlythe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def stop_server(self, run_id):
+            stopped.append(run_id)
+
+    monkeypatch.setattr(delete_wiki, "Blythe", FakeBlythe)
+    status = {"run_id": "gw-1", "slurm_job_id": "42", "job_state": "waiting"}
+    monkeypatch.setattr(delete_wiki, "gateway_status", lambda: status)
+    assert "still use it" in delete_wiki.stop_model(["wiki-2"]) and stopped == []
+    assert "SLURM job 42" in delete_wiki.stop_model([]) and stopped == ["gw-1"]
+    status.update(job_state="stopped")
+    assert "already ended" in delete_wiki.stop_model([])
+    status.update(run_id=None)
+    assert "no model job" in delete_wiki.stop_model([])
+    monkeypatch.setattr(delete_wiki, "gateway_status", lambda: {"error": "can't ask"})
+    assert "stops by itself" in delete_wiki.stop_model([]) and stopped == ["gw-1"]
