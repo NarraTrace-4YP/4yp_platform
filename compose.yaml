@@ -362,6 +362,12 @@ services:
     depends_on:
       weknora-app:
         condition: service_healthy
+        # Its web server looks up weknora-app's address once, when it starts. When
+        # weknora-app is recreated (new settings, a new version) it gets a new address, and
+        # every /api call from the website then fails with nginx's 502 "An error occurred"
+        # page (seen 25 Nov 2026, after the knowledge graph was added). This makes
+        # `docker compose up` restart the website whenever it restarts weknora-app.
+        restart: true
 
   # The only thing open to the internet: serves Windmill, MLflow and WeKnora over HTTPS,
   # and gets and renews the certificates automatically.
