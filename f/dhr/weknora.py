@@ -316,6 +316,58 @@ class WeKnora:
                 return found
             page += 1
 
+    # Folders (f/dhr/O2/folders.py keeps their names in English). WeKnora updates the paths
+    # of the pages inside a folder when it's renamed or moved, and of a page when it's moved.
+
+    def wiki_folders(self, kb_id: str, parent_id: str = "") -> list[dict]:
+        """The folders directly inside parent_id ("" = the top level), empty ones included.
+        (WeKnora leaves out empty folders unless asked for more than one page type.)"""
+        body = _data(
+            self.request(
+                "GET",
+                f"/knowledgebase/{kb_id}/wiki/folders",
+                params={"parent_id": parent_id, "page_types": "entity,concept,summary,index"},
+            )
+        )
+        return (body.get("folders") if isinstance(body, dict) else body) or []
+
+    def create_wiki_folder(self, kb_id: str, name: str, parent_id: str = "") -> dict:
+        return _data(
+            self.request(
+                "POST",
+                f"/knowledgebase/{kb_id}/wiki/folders",
+                json={"name": name, "parent_id": parent_id},
+                retries=1,
+            )
+        )
+
+    def update_wiki_folder(
+        self, kb_id: str, folder_id: str, *, name: str = "", parent_id: str | None = None
+    ) -> dict:
+        """Renames a folder (name) and/or moves it under parent_id ("" = the top level)."""
+        body: dict = {"name": name} if name else {}
+        if parent_id is not None:
+            body.update(parent_id=parent_id, move_parent=True)
+        return _data(
+            self.request(
+                "PUT", f"/knowledgebase/{kb_id}/wiki/folders/{folder_id}", json=body, retries=1
+            )
+        )
+
+    def delete_wiki_folder(self, kb_id: str, folder_id: str) -> None:
+        """Deletes an empty folder."""
+        self.request("DELETE", f"/knowledgebase/{kb_id}/wiki/folders/{folder_id}", retries=1)
+
+    def move_wiki_page(self, kb_id: str, slug: str, folder_id: str) -> dict:
+        return _data(
+            self.request(
+                "PUT",
+                f"/knowledgebase/{kb_id}/wiki/move-page",
+                json={"slug": slug, "folder_id": folder_id},
+                retries=1,
+            )
+        )
+
     def wiki_issues(self, kb_id: str) -> list[dict]:
         body = _data(self.request("GET", f"/knowledgebase/{kb_id}/wiki/issues"))
         if isinstance(body, dict):

@@ -8,6 +8,11 @@
 # ///
 """O2 stage 3: make a new wiki (a WeKnora knowledge base) and queue the reviews into it.
 
+Fix (25 Nov 2026, problem review "O2 wiki folders in Chinese"): some wiki folders came out in
+Chinese because WeKnora's folder prompt has only Chinese examples. Solution: before any review
+is uploaded, the new wiki gets a set of English top-level folders to reuse (f/dhr/O2/folders.py
+has the details; check_wiki renames any Chinese folder that still appears).
+
 Fix (25 Nov 2026, problem review "O2 review parts taken out"): for a few hours on 25 Nov
 reviews were uploaded in parts (part_chars), so WeKnora's wiki would read past its 32,768-
 character limit per file. Problem: Rowan judged splitting a review into parts a bad idea.
@@ -36,6 +41,7 @@ from ...db import apply_migrations, connect
 from ...llm import MODEL
 from ...version import GIT_COMMIT
 from ...weknora import WeKnora, WeKnoraError
+from ..folders import seed_folders
 from ..instructions import CONTENT, EXTRACTION, GRANULARITIES
 from ..kb_settings import check_settings, chunking_config, graph_config, wiki_tuning
 from ..progress import report_upload
@@ -163,6 +169,11 @@ def main(
                 "UPDATE wiki.instances SET weknora_kb_id = %s WHERE instance_id = %s",
                 (kb_id, instance_id),
             )
+            # English folders for the wiki to file pages into (f/dhr/O2/folders.py).
+            try:
+                seed_folders(wk, kb_id)
+            except WeKnoraError as error:
+                print(f"Couldn't make the English starter folders: {error}", flush=True)
 
         set_status(conn, instance_id, "uploading")
         chosen = choose_reviews(conn, dataset, reviews, doc_ids)

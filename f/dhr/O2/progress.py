@@ -13,7 +13,8 @@ one knowledge-graph job per chunk, and its wiki step. With the graph on that is 
 jobs, so nothing was ever "read". Solution: a file counts as read once WeKnora has read it
 (finalizing or later), and the main measure is WeKnora's own count of follow-up jobs still to
 run for the build's files (pending_subtasks_count), against the most there have been. The
-line now says: files read, files finished, jobs left, the wiki queue, pages, and the model.
+line now says, in plain words: reviews read and done, follow-up jobs done of the total, the
+wiki's queue, pages so far, and what the model on Blythe is doing.
 
 The percentage is rough by nature: 5% to start, 10% for reading the files, 75% for working
 through the follow-up jobs, and the last 9% as files finish.
@@ -68,18 +69,29 @@ def build_progress(
     max_pending = max(max_pending_before, pending or 0)
     max_jobs = max(max_jobs_before, jobs_left or 0)
     active = stats.get("is_active")
+    s = "s" if total != 1 else ""
     parts = [
-        f"files read {read}/{total}" + (f" ({failed} failed)" if failed else ""),
-        f"finished {done}/{total}",
+        f"{read} of {total} review{s} read by WeKnora"
+        + (f" ({failed} failed)" if failed else "")
+        + f", {done} completely done"
     ]
-    if jobs_left is not None:
-        parts.append(f"jobs left {jobs_left:,}" + (f" of {max_jobs:,}" if max_jobs else ""))
-    parts.append(
-        f"wiki: {pending} task{'s' if pending != 1 else ''} queued, {'writing' if active else 'idle'}"
-        if pending is not None
-        else "wiki: no stats yet"
-    )
-    parts.append(f"{pages:,} pages, {links:,} links")
+    if jobs_left is not None and max_jobs:
+        finished_jobs = max_jobs - jobs_left
+        parts.append(
+            f"{finished_jobs:,} of {max_jobs:,} follow-up jobs done"
+            " (summaries, knowledge graph, wiki)"
+        )
+    if pending is None:
+        parts.append("wiki: no news from WeKnora yet")
+    elif active:
+        parts.append(f"wiki: writing pages, {pending} review{'s' if pending != 1 else ''} to go")
+    elif pending:
+        parts.append(
+            f"wiki: {pending} review{'s' if pending != 1 else ''} waiting to be written up"
+        )
+    else:
+        parts.append("wiki: nothing waiting")
+    parts.append(f"{pages:,} page{'s' if pages != 1 else ''} and {links:,} links so far")
     if model_line:
         parts.append(model_line)
     return {

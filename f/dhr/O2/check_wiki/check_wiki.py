@@ -3,11 +3,20 @@
 # dependencies = [
 #     "httpx==0.28.1",
 #     "neo4j==5.28.8",
+#     "openai==3.51.0",
 #     "psycopg[binary]==3.3.9",
 #     "wmill==1.875.0",
 # ]
 # ///
 """O2 stage 4: check how a wiki build is coming on, and save a copy of the wiki so far.
+
+Fix (25 Nov 2026, problem review "O2 wiki folders in Chinese"): some wiki folders came out in
+Chinese (WeKnora's folder prompt has only Chinese examples; f/dhr/O2/folders.py explains).
+Solution: each check, before the wiki is copied, any folder with Chinese in its name is given
+an English name by the build's own model and renamed in WeKnora (or merged into the English
+folder beside it that means the same). Only for the build's creator, and only while their
+model is already up, so a check never starts a model job or waits for one. The result's
+"folders" says what was done.
 
 Asks WeKnora how far each uploaded review has got (read, failed, still waiting) and whether
 its wiki builder still has work queued, records that in wiki.documents, and copies every
@@ -31,6 +40,7 @@ from __future__ import annotations
 from ...db import apply_migrations, connect
 from ...llm import describe_gateway, gateway_status
 from ...weknora import WeKnora
+from ..folders import english_folders, model_is_up
 from ..kgraph import copy_graph
 from ..progress import FINISHED, build_progress, report
 from ..wiki_store import get_instance, runner, save_wiki, set_status
@@ -73,6 +83,19 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
                 " WHERE instance_id = %s AND doc_id = %s AND part = %s",
                 (status, (d or {}).get("error_message") or None, instance_id, doc_id, part),
             )
+        gateway = gateway_status()
+        folders = None
+        if build["created_by"] == runner() and model_is_up(gateway):
+            try:
+                folders = english_folders(wk, kb_id)
+                if folders["renamed"] or folders["merged"]:
+                    print(
+                        f"Folders: {folders['renamed']} renamed and {folders['merged']} merged"
+                        " into English (they had Chinese names).",
+                        flush=True,
+                    )
+            except Exception as error:  # never let this stop a check
+                folders = {"error": str(error)[:300]}
         stats = wk.wiki_stats(kb_id) or {}
         pages = wk.wiki_pages(kb_id)
         n_links = sum(len(p.get("out_links") or []) for p in pages)
@@ -87,7 +110,7 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
             stats,
             len(pages),
             n_links,
-            describe_gateway(gateway_status()),
+            describe_gateway(gateway),
             max_pending,
             jobs_left,
             max_jobs,
@@ -119,6 +142,7 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
         "pages_by_type": stats.get("pages_by_type"),
         "saved": saved,
         "knowledge_graph": graph,
+        "folders": folders,
         "progress": progress["line"],
         "percent": 100 if done else progress["percent"],
     }

@@ -125,6 +125,21 @@ docker compose restart weknora-frontend
 
 `compose.yaml` now restarts it by itself whenever `docker compose up` restarts `weknora-app`.
 
+## Watching the model calls
+
+WeKnora writes every model call it makes, in full, to its LLM debug log: the messages it
+sent, the answer (or the error) and how long it took, one file per request, deleted after
+7 days. On the server, from the platform folder:
+
+```bash
+docker compose exec weknora-app sh -c 'ls -t /data/files/llm_debug | head'             # newest first
+docker compose exec weknora-app sh -c 'tail -f "/data/files/llm_debug/$(ls -t /data/files/llm_debug | head -1)"'
+docker compose exec weknora-app sh -c 'grep -l -i error /data/files/llm_debug/* | head' # calls that failed
+```
+
+The files hold review text, so they stay on the server. On Blythe,
+`narratrace-slurm/watch_prompts.py` shows the same calls arriving at the model.
+
 ## Watching it work
 
 On the server:
