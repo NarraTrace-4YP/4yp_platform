@@ -12,9 +12,10 @@
 Asks WeKnora how far each uploaded review has got (read, failed, still waiting) and whether
 its wiki builder still has work queued, records that in wiki.documents, and copies every
 wiki page, link and page source into the database (so the O2 app shows the wiki as it
-grows). It also reports live progress (f/dhr/O2/progress.py): a line in the run's log with
-the reviews read, the wiki's queue, the pages so far and what the model is doing (from the
-LLM gateway), the run's progress bar, and the same line in the O2 app.
+grows). It also reports live progress (f/dhr/O2/progress.py): a line in this step's log with
+the files read and finished, WeKnora's follow-up jobs left, the wiki's queue, the pages so
+far and what the model is doing (from the LLM gateway), the whole run's progress bar, and
+the same line in the O2 app.
 
 For a build with the knowledge graph on, it also copies the graph from WeKnora's graph
 database into wiki.kg_nodes / wiki.kg_relations (f/dhr/O2/kgraph.py) for the O2 app. If the
@@ -57,10 +58,13 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
         ).fetchall()
         counts: dict[str, int] = {}
         failed = []
+        jobs_left = 0  # WeKnora's follow-up jobs still to run (summary, graph chunks, wiki)
         for doc_id, part, knowledge_id in expected:
             d = by_id.get(knowledge_id)
             status = d.get("parse_status") if d else ("missing" if knowledge_id else "not uploaded")
             counts[status] = counts.get(status, 0) + 1
+            if status == "finalizing":
+                jobs_left += int((d or {}).get("pending_subtasks_count") or 0)
             if status == "failed":
                 failed.append({"doc_id": doc_id, "error": (d or {}).get("error_message")})
             conn.execute(
@@ -72,13 +76,21 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
         stats = wk.wiki_stats(kb_id) or {}
         pages = wk.wiki_pages(kb_id)
         n_links = sum(len(p.get("out_links") or []) for p in pages)
-        max_pending = conn.execute(
-            "SELECT coalesce((stats -> 'progress' ->> 'max_pending')::int, 0)"
+        max_pending, max_jobs = conn.execute(
+            "SELECT coalesce((stats -> 'progress' ->> 'max_pending')::int, 0),"
+            " coalesce((stats -> 'progress' ->> 'max_jobs')::int, 0)"
             " FROM wiki.instances WHERE instance_id = %s",
             (instance_id,),
-        ).fetchone()[0]
+        ).fetchone()
         progress = build_progress(
-            counts, stats, len(pages), n_links, describe_gateway(gateway_status()), max_pending
+            counts,
+            stats,
+            len(pages),
+            n_links,
+            describe_gateway(gateway_status()),
+            max_pending,
+            jobs_left,
+            max_jobs,
         )
         saved = save_wiki(conn, instance_id, pages, {**stats, "progress": progress})
         kb_settings = (build["settings"] or {}).get("knowledge_base") or {}

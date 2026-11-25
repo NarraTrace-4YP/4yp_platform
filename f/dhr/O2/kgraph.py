@@ -68,7 +68,13 @@ def fetch_graph(kb_id: str, driver=None) -> tuple[list[dict], list[dict]]:
         try:
             from neo4j import GraphDatabase
 
-            driver = GraphDatabase.driver(URI, auth=(USER, password()), connection_timeout=10)
+            driver = GraphDatabase.driver(
+                URI,
+                auth=(USER, password()),
+                connection_timeout=10,
+                # A new build has no entities yet: don't fill the log with "unknown label".
+                notifications_min_severity="OFF",
+            )
             driver.verify_connectivity()
         except GraphUnavailable:
             raise
@@ -107,7 +113,13 @@ def delete_graph(kb_id: str, driver=None) -> int:
         try:
             from neo4j import GraphDatabase
 
-            driver = GraphDatabase.driver(URI, auth=(USER, password()), connection_timeout=10)
+            driver = GraphDatabase.driver(
+                URI,
+                auth=(USER, password()),
+                connection_timeout=10,
+                # A new build has no entities yet: don't fill the log with "unknown label".
+                notifications_min_severity="OFF",
+            )
             driver.verify_connectivity()
         except GraphUnavailable:
             raise
