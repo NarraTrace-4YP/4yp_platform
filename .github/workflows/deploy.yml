@@ -103,6 +103,22 @@ jobs:
           test "$(curl --fail-with-body --silent --show-error \
             "${WINDMILL_URL%/}/api/w/dhr/apps_u/public_app/$secret" | jq -r .path)" = "f/dhr/O1/app"
           echo "public_url=${WINDMILL_URL%/}/public/dhr/$secret" >> "$GITHUB_OUTPUT"
+          # The O2 app (wikis built from the reviews) is public the same way, once it exists.
+          if curl --fail --silent --show-error -H "Authorization: Bearer $WINDMILL_TOKEN" \
+            "${WINDMILL_URL%/}/api/w/dhr/apps/exists/f/dhr/O2/app" | grep -q true; then
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $WINDMILL_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{"execution_mode":"anonymous","skip_draft_deletion":true}' \
+              "${WINDMILL_URL%/}/api/w/dhr/apps/update/f/dhr/O2/app"
+            o2_secret=$(curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $WINDMILL_TOKEN" \
+              "${WINDMILL_URL%/}/api/w/dhr/apps/secret_of/f/dhr/O2/app")
+            test "$(curl --fail-with-body --silent --show-error \
+              "${WINDMILL_URL%/}/api/w/dhr/apps_u/public_app/$o2_secret" | jq -r .path)" = "f/dhr/O2/app"
+            echo "o2_public_url=${WINDMILL_URL%/}/public/dhr/$o2_secret" >> "$GITHUB_OUTPUT"
+          fi
 
       # So that later edits made in Windmill can be told apart from this deploy.
       - name: Remember what Windmill holds now
@@ -115,3 +131,9 @@ jobs:
         env:
           O1_PUBLIC_URL: ${{ steps.objective_apps.outputs.public_url }}
         run: python3 .github/check_objective_embed.py --windmill-url "$WINDMILL_URL" --public-url "$O1_PUBLIC_URL"
+
+      - name: Verify the website embeds the current O2 app
+        if: steps.objective_apps.outputs.o2_public_url != ''
+        env:
+          O2_PUBLIC_URL: ${{ steps.objective_apps.outputs.o2_public_url }}
+        run: python3 .github/check_objective_embed.py --windmill-url "$WINDMILL_URL" --public-url "$O2_PUBLIC_URL" --name o2

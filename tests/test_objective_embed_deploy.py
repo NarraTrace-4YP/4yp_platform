@@ -39,3 +39,19 @@ def test_stale_embed_check_runs_after_the_deployment_snapshot():
     assert workflow.index("windmill_sync.py snapshot") < workflow.index(
         "check_objective_embed.py --windmill-url"
     )
+
+
+def test_the_o2_embed_is_checked_against_its_own_runtime_file(monkeypatch):
+    requests = []
+
+    def fetch(request, timeout):
+        requests.append(request.full_url)
+        return io.BytesIO(
+            json.dumps({"url": "https://windmill.example.com/public/dhr/o2"}).encode()
+        )
+
+    monkeypatch.setattr(checker.urllib.request, "urlopen", fetch)
+    checker.check_objective_embed(
+        "https://windmill.example.com/", "https://windmill.example.com/public/dhr/o2", "o2"
+    )
+    assert requests == ["https://example.com/runtime/o2.json"]

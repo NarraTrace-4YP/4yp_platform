@@ -76,6 +76,9 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-padding-top: calc(var(--masthead) + 24px);
+  /* Always keep room for the scrollbar, so the masthead doesn't jump sideways between the
+     scrolling pages and the app pages (O1, O2), which don't scroll. */
+  scrollbar-gutter: stable;
 }
 
 body {

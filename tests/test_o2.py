@@ -580,3 +580,134 @@ def test_the_client_turns_the_graph_on_and_reads_the_graph_database():
     wk.create_knowledge_base(name="n", description="d", chat_model_id="m1")
     assert seen["body"]["indexing_strategy"]["graph_enabled"] is False
     assert "extract_config" not in seen["body"]
+
+
+# --- Knowledge graph copy (25 Nov 2026) ------------------------------------------------------
+
+
+def test_the_neo4j_label_matches_weknoras():
+    from f.dhr.O2 import kgraph
+
+    kb = "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"
+    assert kgraph.label(kb) == "ENTITY0b1c2d3e_4f50_6172_8394_a5b6c7d8e9f0"
+    with pytest.raises(ValueError):
+        kgraph.label("x` MATCH (n) DETACH DELETE n //")
+
+
+def test_a_reviews_parts_are_merged_and_reviews_kept_apart():
+    from f.dhr.O2 import kgraph
+
+    nodes = [
+        {"name": "Adult A", "kg": "k1", "attributes": ["The victim"], "n_chunks": 2},
+        {
+            "name": "Adult A",
+            "kg": "k2",
+            "attributes": ["The victim", "Lived in Northtown"],
+            "n_chunks": 1,
+        },
+        {"name": "Adult A", "kg": "k3", "attributes": [], "n_chunks": 1},
+        {"name": "GP", "kg": "k1", "attributes": [], "n_chunks": 1},
+        {"name": "Stray", "kg": "elsewhere", "attributes": [], "n_chunks": 1},
+    ]
+    relations = [
+        {"source": "Adult A", "target": "GP", "kg": "k1", "type": "Disclosed abuse to"},
+        {"source": "Adult A", "target": "GP", "kg": "k2", "type": "Disclosed abuse to"},
+        {"source": "Adult A", "target": "Adult A", "kg": "k1", "type": "Lives with"},
+    ]
+    node_rows, rel_rows = kgraph.merge_graph(nodes, relations, {"k1": "R1", "k2": "R1", "k3": "R2"})
+    assert node_rows == [
+        ("R1", "Adult A", ["The victim", "Lived in Northtown"], 3, 2),
+        ("R1", "GP", [], 1, 1),
+        ("R2", "Adult A", [], 1, 1),
+    ]
+    # k2's relation names a GP that only k1 found, but both are review R1, so it counts once.
+    assert rel_rows == [("R1", "Adult A", "GP", "Disclosed abuse to")]
+
+
+def test_fetch_graph_asks_for_this_knowledge_base_only():
+    from f.dhr.O2 import kgraph
+
+    seen = []
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def run(self, query):
+            seen.append(query)
+            return (
+                [{"name": "x", "kg": "k", "attributes": [], "n_chunks": 0}]
+                if "RETURN n.name" in query
+                else []
+            )
+
+    class Driver:
+        def session(self):
+            return Session()
+
+    nodes, relations = kgraph.fetch_graph("0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0", driver=Driver())
+    assert len(nodes) == 1 and relations == []
+    assert all("`ENTITY0b1c2d3e_4f50_6172_8394_a5b6c7d8e9f0`" in q for q in seen)
+
+
+def test_an_unreachable_graph_database_does_not_stop_the_check(monkeypatch):
+    from f.dhr.O2 import kgraph
+
+    def unavailable(kb_id):
+        raise kgraph.GraphUnavailable("no password")
+
+    monkeypatch.setattr(kgraph, "fetch_graph", unavailable)
+    assert kgraph.copy_graph(None, "w", "kb") == {"error": "no password"}
+
+
+def test_the_knowledge_graph_is_saved_and_served(monkeypatch):
+    import os
+
+    url = os.environ.get("DHR_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("set DHR_TEST_DATABASE_URL to an empty test database to run this")
+    os.environ["DHR_DATABASE_URL"] = url
+    from f.dhr.db import apply_migrations, connect
+    from f.dhr.O2 import kgraph
+    from f.dhr.O2.app_backend import get_kgraph
+
+    with connect(url) as conn:
+        for schema in ("corpus", "evaluation", "scratch"):
+            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        apply_migrations(conn)
+        conn.execute("DELETE FROM wiki.instances WHERE instance_id = 'kg1'")
+        conn.execute(
+            "INSERT INTO wiki.instances (instance_id, name, created_by, dataset, reviews, model,"
+            " settings) VALUES ('kg1', 'n', 'me', 'DHRC-100', 'pilot', 'm', '{}')"
+        )
+        for part, k in ((1, "k1"), (2, "k2")):
+            conn.execute(
+                "INSERT INTO wiki.documents (instance_id, doc_id, part, n_parts, dataset, revision,"
+                " file_name, sha256, n_chars, knowledge_id) VALUES ('kg1', 'R1', %s, 2, 'DHRC-100',"
+                " 'r', %s, 'h', 5, %s)",
+                (part, f"R1 (part {part} of 2).md", k),
+            )
+        nodes = [
+            {"name": "Adult A", "kg": "k1", "attributes": ["The victim"], "n_chunks": 1},
+            {"name": "Police", "kg": "k2", "attributes": [], "n_chunks": 1},
+            {"name": "GP", "kg": "k2", "attributes": [], "n_chunks": 1},
+        ]
+        relations = [{"source": "Police", "target": "GP", "kg": "k2", "type": "Referred to"}]
+        assert kgraph.save_graph(conn, "kg1", nodes, relations) == {"nodes": 3, "relations": 1}
+        assert kgraph.save_graph(conn, "kg1", nodes, relations)["nodes"] == 3  # replaces
+    graph = get_kgraph.main("kg1")
+    assert graph["total_nodes"] == 3 and not graph["truncated"]
+    assert graph["nodes"][0]["degree"] == 1  # best-connected first
+    assert graph["links"] == [{"source": "R1␟Police", "target": "R1␟GP", "type": "Referred to"}]
+    assert graph["relation_types"] == {"Referred to": 1}
+    assert get_kgraph.main("kg1", max_nodes=1)["truncated"]
+
+
+def test_the_server_gives_windmill_the_graph_password():
+    from pathlib import Path
+
+    server = (Path(__file__).parent.parent / "server/windmill.sh").read_text(encoding="utf-8")
+    assert "f/dhr/weknora_graph_password" in server and "WEKNORA_GRAPH_PASSWORD" in server

@@ -2,6 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #     "httpx==0.28.1",
+#     "neo4j==5.28.8",
 #     "psycopg[binary]==3.3.9",
 #     "wmill==1.875.0",
 # ]
@@ -15,6 +16,10 @@ grows). It also reports live progress (f/dhr/O2/progress.py): a line in the run'
 the reviews read, the wiki's queue, the pages so far and what the model is doing (from the
 LLM gateway), the run's progress bar, and the same line in the O2 app.
 
+For a build with the knowledge graph on, it also copies the graph from WeKnora's graph
+database into wiki.kg_nodes / wiki.kg_relations (f/dhr/O2/kgraph.py) for the O2 app. If the
+graph database can't be read, the check says so in its result and carries on.
+
 The flow runs this every few minutes until the build has been quiet (every review finished,
 nothing queued, builder idle) on `quiet_needed` checks in a row, then marks the build
 "built". Safe to run on its own at any time for any build you made.
@@ -25,6 +30,7 @@ from __future__ import annotations
 from ...db import apply_migrations, connect
 from ...llm import describe_gateway, gateway_status
 from ...weknora import WeKnora
+from ..kgraph import copy_graph
 from ..progress import FINISHED, build_progress, report
 from ..wiki_store import get_instance, runner, save_wiki, set_status
 
@@ -81,6 +87,8 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
             counts, stats, len(pages), n_links, describe_gateway(gateway_status()), max_pending
         )
         saved = save_wiki(conn, instance_id, pages, {**stats, "progress": progress})
+        kb_settings = (build["settings"] or {}).get("knowledge_base") or {}
+        graph = copy_graph(conn, instance_id, kb_id) if kb_settings.get("knowledge_graph") else None
 
         all_finished = all(s in FINISHED for s in counts) and bool(expected)
         idle = not stats.get("is_active") and not stats.get("pending_tasks")
@@ -104,6 +112,7 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
         "wiki_active": stats.get("is_active"),
         "pages_by_type": stats.get("pages_by_type"),
         "saved": saved,
+        "knowledge_graph": graph,
         "progress": progress["line"],
         "percent": 100 if done else progress["percent"],
     }

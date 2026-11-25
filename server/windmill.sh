@@ -233,9 +233,12 @@ wm_configure() {
 	wm_variable f/dhr/mlflow_tracking_uri "http://mlflow:5000" false "Where the pipelines log runs"
 	wm_variable f/dhr/mlflow_username "admin" false "MLflow login the pipelines use"
 	wm_variable f/dhr/mlflow_password "$MLFLOW_ADMIN_PASSWORD" true "MLflow password the pipelines use"
+	wm_variable f/dhr/weknora_graph_password "${WEKNORA_GRAPH_PASSWORD:-not-set}" true \
+		"Password of WeKnora's graph database (weknora-neo4j); the O2 checks copy the knowledge graph"
 	echo "  stored the pipelines' settings as secret variables in f/dhr"
 
 	wm_objective_embed f/dhr/O1/app o1 "$public_origin"
+	wm_objective_embed f/dhr/O2/app o2 "$public_origin"
 
 	# The token GitHub Actions uses to deploy. Made once; kept in .env.
 	local saved_token=$WM_TOKEN
