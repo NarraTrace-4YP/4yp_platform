@@ -13,8 +13,7 @@ one knowledge-graph job per chunk, and its wiki step. With the graph on that is 
 jobs, so nothing was ever "read". Solution: a file counts as read once WeKnora has read it
 (finalizing or later), and the main measure is WeKnora's own count of follow-up jobs still to
 run for the build's files (pending_subtasks_count), against the most there have been. The
-line now says, in plain words: reviews read and done, follow-up jobs done of the total, the
-wiki's queue, pages so far, and what the model on Blythe is doing.
+line now says: files read, files finished, jobs left, the wiki queue, pages, and the model.
 
 The percentage is rough by nature: 5% to start, 10% for reading the files, 75% for working
 through the follow-up jobs, and the last 9% as files finish.

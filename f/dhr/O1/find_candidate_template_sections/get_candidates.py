@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 4, app: candidate template sections and their scores (Template candidates tab).
+"""O1 stage 4, app: template candidates (Template candidates tab).
 
 Return the latest matching run for the requested dataset and guidance, attach
 candidate lists to review sections, and report coverage for each template.

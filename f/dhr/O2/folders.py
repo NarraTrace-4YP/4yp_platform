@@ -42,7 +42,7 @@ SEED_FOLDERS = [
     "Reviews & Recommendations",
 ]
 
-_CHINESE = re.compile("[\u3400-\u9fff\uf900-\ufaff]")
+_CHINESE = re.compile("[㐀-鿿豈-﫿]")
 
 
 def has_chinese(text: str | None) -> bool:

@@ -6,7 +6,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""Blythe check: test that Windmill can log in to Blythe as you, and that your set-up there is ready.
+"""Tool: check your Blythe set-up.
 
 Run it in Windmill as yourself (it uses your own account, like everything on Blythe). It
 checks, in order:

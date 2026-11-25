@@ -5,7 +5,7 @@
 #     "wmill==1.875.0",
 # ]
 # ///
-"""O1 stage 2, app: count case details per dataset and in the library (Attributes tab).
+"""O1 stage 2, app: case detail counts (Attributes tab).
 
 Group library filter labels into the same sections used by the case viewer.
 Return dataset and library totals for comparing attribute coverage in the app.

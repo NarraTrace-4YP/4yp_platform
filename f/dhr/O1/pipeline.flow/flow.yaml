@@ -1,21 +1,15 @@
-summary: 'O1: corpus preparation'
-description: >-
-  Builds O1 (a hierarchical, standardised DHR corpus linked to the Home Office DHR
-  Library's case metadata) from scratch, one step after another: load DHRC-100, load
-  DHRC-RAW, collect the case metadata, group each dataset's blocks by section, find each
-  section's candidate template sections (against the 2016 guidance, or the 2026 one), then
-  report where O1 stands. Each
-  step can be switched off. The last O1 step (an LLM choosing the template section) will be
-  added here when it is built. The O1 app (f/dhr/O1/app) explains each step and can start this.
+summary: 'O1: corpus preparation (stages 1-5)'
+description: 'Runs O1 end to end: load the datasets, link case details, group
+  sections, find template candidates, then start stage 5 (template choices with
+  the LLM on Blythe). Untick any stage to skip it. Stage 5 starts as its own run
+  on your Blythe account and can take hours: this flow finishes once it has
+  started, and returns its run link.'
 value:
   modules:
     - id: load_dhrc_100
-      summary: Load DHRC-100 (the 100 checked reviews)
-      skip_if:
-        expr: flow_input.load_dhrc_100 === false
+      summary: 'Stage 1: load DHRC-100'
       value:
         type: script
-        path: f/dhr/O1/load_reviews/load_reviews
         input_transforms:
           dataset:
             type: static
@@ -23,13 +17,13 @@ value:
           revision:
             type: javascript
             expr: flow_input.dhrc_100_revision || "main"
-    - id: load_dhrc_raw
-      summary: Load DHRC-RAW (all 702 reviews, unchecked)
+        path: f/dhr/O1/load_reviews/load_reviews
       skip_if:
-        expr: flow_input.load_dhrc_raw === false
+        expr: flow_input.load_dhrc_100 === false
+    - id: load_dhrc_raw
+      summary: 'Stage 1: load DHRC-RAW'
       value:
         type: script
-        path: f/dhr/O1/load_reviews/load_reviews
         input_transforms:
           dataset:
             type: static
@@ -37,52 +31,52 @@ value:
           revision:
             type: javascript
             expr: flow_input.dhrc_raw_revision || "main"
-    - id: collect_case_metadata
-      summary: Collect the case metadata from the DHR Library (about 20 minutes)
+        path: f/dhr/O1/load_reviews/load_reviews
       skip_if:
-        expr: flow_input.collect_case_metadata === false
+        expr: flow_input.load_dhrc_raw === false
+    - id: collect_case_metadata
+      summary: 'Stage 2: link case details (~20 min)'
       value:
         type: script
-        path: f/dhr/O1/link_case_metadata/link_case_metadata
         input_transforms:
-          max_filters:
-            type: static
-            value: 0
           delay_seconds:
             type: static
             value: 1
           dry_run:
             type: static
             value: false
+          max_filters:
+            type: static
+            value: 0
+        path: f/dhr/O1/link_case_metadata/link_case_metadata
+      skip_if:
+        expr: flow_input.collect_case_metadata === false
     - id: group_sections_100
-      summary: Group DHRC-100's blocks by section (from the checked headings)
+      summary: 'Stage 3: group DHRC-100 sections'
+      value:
+        type: script
+        input_transforms:
+          dataset:
+            type: static
+            value: DHRC-100
+        path: f/dhr/O1/group_blocks_by_section/group_blocks_by_section
       skip_if:
         expr: flow_input.group_sections_100 === false
+    - id: group_sections_raw
+      summary: 'Stage 3: group DHRC-RAW sections'
       value:
         type: script
-        path: f/dhr/O1/group_blocks_by_section/group_blocks_by_section
         input_transforms:
           dataset:
             type: static
-            value: DHRC-100
-    - id: group_sections_raw
-      summary: Group DHRC-RAW's blocks by section (from Datalab's own headings)
+            value: DHRC-RAW
+        path: f/dhr/O1/group_blocks_by_section/group_blocks_by_section
       skip_if:
         expr: flow_input.group_sections_raw === false
-      value:
-        type: script
-        path: f/dhr/O1/group_blocks_by_section/group_blocks_by_section
-        input_transforms:
-          dataset:
-            type: static
-            value: DHRC-RAW
     - id: template_candidates_100
-      summary: Find DHRC-100's candidate template sections (about 5 minutes)
-      skip_if:
-        expr: flow_input.template_candidates_100 === false
+      summary: 'Stage 4: DHRC-100 template candidates (~5 min)'
       value:
         type: script
-        path: f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections
         input_transforms:
           dataset:
             type: static
@@ -90,13 +84,13 @@ value:
           guidance:
             type: javascript
             expr: flow_input.template_guidance || "dhr-2016"
-    - id: template_candidates_raw
-      summary: Find DHRC-RAW's candidate template sections (about 40 minutes)
+        path: f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections
       skip_if:
-        expr: flow_input.template_candidates_raw === false
+        expr: flow_input.template_candidates_100 === false
+    - id: template_candidates_raw
+      summary: 'Stage 4: DHRC-RAW template candidates (~40 min)'
       value:
         type: script
-        path: f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections
         input_transforms:
           dataset:
             type: static
@@ -104,12 +98,64 @@ value:
           guidance:
             type: javascript
             expr: flow_input.template_guidance || "dhr-2016"
+        path: f/dhr/O1/find_candidate_template_sections/find_candidate_template_sections
+      skip_if:
+        expr: flow_input.template_candidates_raw === false
+    - id: choose_templates
+      summary: 'Stage 5: start the template choices (own run, on Blythe)'
+      value:
+        type: rawscript
+        content: '!inline
+          stage_5_start_the_template_choices_(own_run,_on_blythe).inline_script.py'
+        input_transforms:
+          dataset:
+            type: javascript
+            expr: flow_input.choose_dataset || "both"
+          dry_run:
+            type: javascript
+            expr: flow_input.choose_dry_run === true
+          guidance:
+            type: javascript
+            expr: flow_input.template_guidance || "dhr-2016"
+          prompt:
+            type: javascript
+            expr: flow_input.choose_prompt || "v3"
+          reviews:
+            type: javascript
+            expr: flow_input.choose_reviews || "all"
+        lock: '!inline
+          stage_5_start_the_template_choices_(own_run,_on_blythe).inline_script.lock'
+        language: python3
+      skip_if:
+        expr: flow_input.choose_templates === false
     - id: status
       summary: Report where O1 stands
       value:
         type: script
-        path: f/dhr/O1/app_backend/get_status
         input_transforms: {}
+        path: f/dhr/O1/app_backend/get_status
+  groups:
+    - summary: 'Stage 1: load reviews'
+      color: blue
+      end_id: load_dhrc_raw
+      start_id: load_dhrc_100
+    - summary: 'Stage 2: case details'
+      color: cyan
+      end_id: collect_case_metadata
+      start_id: collect_case_metadata
+    - summary: 'Stage 3: sections'
+      color: green
+      end_id: group_sections_raw
+      start_id: group_sections_100
+    - summary: 'Stage 4: template candidates'
+      color: yellow
+      end_id: template_candidates_raw
+      start_id: template_candidates_100
+    - summary: 'Stage 5: template choices'
+      color: purple
+      end_id: choose_templates
+      note: Starts as its own run on Blythe; the flow doesn't wait for it.
+      start_id: choose_templates
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
@@ -124,61 +170,98 @@ schema:
     - template_candidates_100
     - template_candidates_raw
     - template_guidance
+    - choose_templates
+    - choose_dataset
+    - choose_reviews
+    - choose_prompt
+    - choose_dry_run
   properties:
-    load_dhrc_100:
-      type: boolean
-      default: true
-      description: Load DHRC-100 from Hugging Face.
-    dhrc_100_revision:
+    choose_dataset:
       type: string
-      default: main
-      description: Which version of DHRC-100 (main is the latest, or give a commit id).
-    load_dhrc_raw:
+      description: 'Stage 5: which datasets (both = DHRC-100 then DHRC-RAW, side by
+        side on Blythe). Each needs stage 4 against the chosen guidance first.'
+      default: both
+      enum:
+        - both
+        - DHRC-100
+        - DHRC-RAW
+    choose_dry_run:
       type: boolean
-      default: true
-      description: Load DHRC-RAW from Hugging Face.
-    dhrc_raw_revision:
+      description: 'Stage 5: only show what would be sent (no Blythe, no database change).'
+      default: false
+    choose_prompt:
       type: string
-      default: main
-      description: Which version of DHRC-RAW (main is the latest, or give a commit id).
+      description: "Stage 5: the section question. v3 (the stored choices' prompt)
+        shows it after the review's whole outline; v2 shows the section alone."
+      default: v3
+      enum:
+        - v2
+        - v3
+    choose_reviews:
+      type: string
+      description: 'Stage 5: all reviews, or only the 10 pilot reviews (minutes of GPU
+        time).'
+      default: all
+      enum:
+        - all
+        - pilot
+    choose_templates:
+      type: boolean
+      description: 'Stage 5: start the template choices with the LLM on Blythe, on
+        your own Blythe account. It starts as its own run (this flow returns its
+        link) and can take hours; a full run replaces the stored choices for
+        each dataset and guidance it covers.'
+      default: true
     collect_case_metadata:
       type: boolean
+      description: "Stage 2: collect a fresh snapshot of the case details from the DHR
+        Library (about 20 minutes). One snapshot covers every dataset, so it
+        isn't needed after a reload."
       default: true
-      description: >-
-        Collect a fresh snapshot of the case metadata from the DHR Library (about 20
-        minutes). Not needed after loading a dataset: one snapshot covers every dataset.
+    dhrc_100_revision:
+      type: string
+      description: Which version of DHRC-100 (main is the latest, or give a commit id).
+      default: main
+    dhrc_raw_revision:
+      type: string
+      description: Which version of DHRC-RAW (main is the latest, or give a commit id).
+      default: main
     group_sections_100:
       type: boolean
+      description: "Stage 3: group DHRC-100's blocks by section, using the headings
+        the team checked. Needed after loading DHRC-100 (a reload removes the
+        old grouping)."
       default: true
-      description: >-
-        Group DHRC-100's blocks by section, using the headings the team checked. Needed
-        after loading DHRC-100 (a reload removes the old grouping).
     group_sections_raw:
       type: boolean
+      description: "Stage 3: group DHRC-RAW's blocks by section, using Datalab's own
+        (unchecked) headings. Needed after loading DHRC-RAW."
       default: true
-      description: >-
-        Group DHRC-RAW's blocks by section, using Datalab's own (unchecked) headings.
-        Needed after loading DHRC-RAW.
+    load_dhrc_100:
+      type: boolean
+      description: 'Stage 1: load DHRC-100 from Hugging Face.'
+      default: true
+    load_dhrc_raw:
+      type: boolean
+      description: 'Stage 1: load DHRC-RAW from Hugging Face.'
+      default: true
     template_candidates_100:
       type: boolean
+      description: 'Stage 4: find the template sections each DHRC-100 section might be
+        (fuzzy heading match and embeddings). Needed after grouping DHRC-100.'
       default: true
-      description: >-
-        Find the template sections each DHRC-100 section might be (fuzzy heading match and
-        embeddings against the 2016 guidance's templates). Needed after grouping DHRC-100.
     template_candidates_raw:
       type: boolean
+      description: "Stage 4: the same for DHRC-RAW (about 40 minutes on the server's
+        CPU). Needed after grouping DHRC-RAW."
       default: true
-      description: >-
-        The same for DHRC-RAW (about 40 minutes on the server's CPU). Needed after grouping
-        DHRC-RAW.
     template_guidance:
       type: string
+      description: 'Whose templates stages 4 and 5 use: the 2016 DHR guidance (the one
+        the reviews were written under) or the September 2026 DARDR guidance.
+        Results against the other are kept.'
       default: dhr-2016
       enum:
         - dhr-2016
         - dardr-2026
-      description: >-
-        Whose templates to match the sections against: the 2016 DHR guidance (the one the
-        specification uses, and the reviews were written under) or the September 2026 DARDR
-        guidance. Candidates against the other are kept.
   required: []

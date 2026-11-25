@@ -1826,6 +1826,94 @@ input[type='search'] {
   }
 }
 
+/* ---- Notes: the design notes, written in markdown ------------------------------------ */
+
+.notes-content {
+  max-width: 920px;
+}
+
+.notes-content h1 {
+  margin: 0 0 12px;
+  font-size: 34px;
+  line-height: 1.15;
+}
+
+.notes-content h2 {
+  margin: 48px 0 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 23px;
+  scroll-margin-top: 16px;
+}
+
+.notes-content hr {
+  border: 0;
+  margin: 24px 0 0;
+}
+
+.notes-content p,
+.notes-content li {
+  max-width: 76ch;
+}
+
+.notes-content li + li {
+  margin-top: 6px;
+}
+
+.notes-content em {
+  color: var(--grey-800);
+}
+
+.notes-content table {
+  width: 100%;
+  margin: 8px 0 20px;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--paper);
+}
+
+.notes-content th,
+.notes-content td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.notes-content th {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--line);
+}
+
+.notes-content td:first-child {
+  width: 50%;
+}
+
+@media (max-width: 640px) {
+  .notes-content table,
+  .notes-content tbody,
+  .notes-content tr,
+  .notes-content td {
+    display: block;
+    width: 100%;
+  }
+
+  .notes-content thead {
+    display: none;
+  }
+
+  .notes-content td:first-child {
+    width: 100%;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+}
+
 /* A view comes in with a short fade when you switch to it. */
 @media (prefers-reduced-motion: no-preference) {
   .content > .page,
