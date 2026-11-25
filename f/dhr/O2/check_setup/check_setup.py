@@ -14,8 +14,10 @@ knowledge-base setting is allowed (f/dhr/O2/kb_settings.py), WeKnora's graph dat
 when the knowledge graph is wanted, and the chosen reviews are in the database, grouped by
 O1. Starts nothing on Blythe and changes nothing in WeKnora, so it is safe to run on its own.
 
-Returns the WeKnora model id the later steps use, each review's size and how many files
-(parts) it will be uploaded as, and a rough count of the model calls the build will make.
+Returns the WeKnora model id the later steps use, each review's size, how many reviews are
+longer than WeKnora's wiki reads (it uses only the first 32,768 characters of each file;
+each review is uploaded whole, as one file), and a rough count of the model calls the build
+will make.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ from __future__ import annotations
 from ...db import apply_migrations, connect
 from ...llm import MODEL
 from ...weknora import WeKnora, WeKnoraError
-from ..kb_settings import check_settings
-from ..reviews import check_choices, choose_reviews, review_parts
+from ..kb_settings import WEKNORA_WIKI_READ_LIMIT, check_settings
+from ..reviews import check_choices, choose_reviews, review_file
 
 
 def main(
@@ -32,7 +34,6 @@ def main(
     reviews: str = "pilot",
     doc_ids: list[str] | None = None,
     template_guidance: str = "dhr-2016",
-    part_chars: int = 30000,
     chunk_strategy: str = "auto",
     chunk_size: int = 512,
     chunk_overlap: int = 80,
@@ -46,7 +47,6 @@ def main(
 ):
     check_choices(dataset, reviews, doc_ids, template_guidance)
     kb = check_settings(
-        part_chars,
         chunk_strategy,
         chunk_size,
         chunk_overlap,
@@ -72,19 +72,19 @@ def main(
         chosen = choose_reviews(conn, dataset, reviews, doc_ids)
         sizes = []
         for review in chosen:
-            files = review_parts(conn, review, template_guidance, kb["part_chars"])
+            f = review_file(conn, review, template_guidance)
             sizes.append(
                 {
                     "doc_id": review["doc_id"],
                     "dataset": review["dataset"],
-                    "n_chars": sum(f["n_chars"] for f in files),
-                    "n_parts": len(files),
-                    "n_joined": files[0]["n_joined"],
-                    "n_template_labels": files[0]["n_template_labels"],
+                    "n_chars": f["n_chars"],
+                    "wiki_reads_all": f["n_chars"] <= WEKNORA_WIKI_READ_LIMIT,
+                    "n_joined": f["n_joined"],
+                    "n_template_labels": f["n_template_labels"],
                 }
             )
     total = sum(s["n_chars"] for s in sizes)
-    n_files = sum(s["n_parts"] for s in sizes)
+    n_files = len(sizes)
     chunks = round(total / max(1, kb["chunk_size"] - kb["chunk_overlap"]))
     return {
         "model_id": model["id"],
@@ -94,6 +94,8 @@ def main(
         "n_reviews": len(chosen),
         "n_files": n_files,
         "total_chars": total,
+        # WeKnora's wiki builder uses only the first 32,768 characters of these reviews.
+        "n_longer_than_wiki_reads": sum(1 for s in sizes if not s["wiki_reads_all"]),
         # Rough: WeKnora's chunks are cut at sentence and heading ends, so counts vary.
         "estimate": {
             "chunks": chunks,

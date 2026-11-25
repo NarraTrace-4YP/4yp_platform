@@ -8,7 +8,7 @@
 """O2 stages 1-4, app: every wiki build, its reviews and its page counts (Wikis tab).
 
 Read-only: lists wiki.instances newest first, each with how its reviews fared in WeKnora
-(a review uploaded in parts is one row, its parts added up; review_status counts files)
+(one row per review; review_status counts uploaded files)
 and how many pages, links and page types its saved copy has. The instructions each build
 was given are included, so a build can be read back exactly.
 """
@@ -57,8 +57,8 @@ BUILD_COLUMNS = (
     "pages_by_type",
     "review_status",
 )
-# One row per review, its parts added up: "completed" once every part is, "failed" if any
-# part failed, otherwise how far its parts have got (e.g. "processing").
+# One row per review. (Builds made on 25 Nov while reviews were briefly uploaded in parts have
+# several rows per review, added up here: "completed" once every one is.)
 DOCUMENTS_SQL = """
 SELECT d.instance_id, d.doc_id, min(d.dataset), sum(d.n_chars)::int, max(d.n_joined),
        CASE WHEN bool_or(d.parse_status = 'failed') THEN 'failed'
@@ -69,9 +69,7 @@ SELECT d.instance_id, d.doc_id, min(d.dataset), sum(d.n_chars)::int, max(d.n_joi
        string_agg(d.error_message, ' | ' ORDER BY d.part) FILTER (WHERE d.error_message IS NOT NULL),
        max(d.uploaded_at),
        (SELECT count(*) FROM wiki.page_sources s
-        WHERE s.instance_id = d.instance_id AND s.doc_id = d.doc_id) AS n_pages,
-       count(*)::int AS n_parts,
-       (count(*) FILTER (WHERE d.parse_status = 'completed'))::int AS parts_read
+        WHERE s.instance_id = d.instance_id AND s.doc_id = d.doc_id) AS n_pages
 FROM wiki.documents AS d
 GROUP BY d.instance_id, d.doc_id
 ORDER BY d.instance_id, d.doc_id
@@ -85,8 +83,6 @@ DOCUMENT_COLUMNS = (
     "error_message",
     "uploaded_at",
     "n_pages",
-    "n_parts",
-    "parts_read",
 )
 
 

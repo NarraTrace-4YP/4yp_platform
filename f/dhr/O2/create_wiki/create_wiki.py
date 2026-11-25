@@ -8,25 +8,24 @@
 # ///
 """O2 stage 3: make a new wiki (a WeKnora knowledge base) and queue the reviews into it.
 
-Fix (25 Nov 2026, problem review "O2 wiki reads only the start of each review"): WeKnora
-v0.9.0's wiki builder reads only the first 32,768 characters of each file, and 97 of the 100
-DHRC-100 reviews are longer, so about 75% of the text never reached the wiki. Why: a fixed
-limit inside WeKnora (maxContentForWiki). Solution: each review is uploaded as parts under
-part_chars characters (default 30,000), cut at headings (f/dhr/O2/reviews.py), one
-wiki.documents row per part. At the same time (Rowan's request), every knowledge-base setting
-that can change safely is now an input: chunking, the wiki's throughput settings and the
-knowledge graph, on by default (f/dhr/O2/kb_settings.py lists them, and the ones that stay
-fixed, with reasons).
+Fix (25 Nov 2026, problem review "O2 review parts taken out"): for a few hours on 25 Nov
+reviews were uploaded in parts (part_chars), so WeKnora's wiki would read past its 32,768-
+character limit per file. Problem: Rowan judged splitting a review into parts a bad idea.
+Solution: each review is uploaded whole again, as one file (one wiki.documents row, part 1 of
+1); the part and n_parts columns stay, as migrations are never undone. A build that was made
+in parts can't be resumed; make a new one. The other knowledge-base settings added that day
+stay: chunking, the wiki's throughput settings and the knowledge graph, on by default
+(f/dhr/O2/kb_settings.py lists them, and the ones that stay fixed, with reasons).
 
 Records a new build in wiki.instances, creates a knowledge base in the team's WeKnora space
 (wiki on, knowledge graph on unless turned off, vector and keyword search off) with the
 runner's own entry for the team model and the DHR instructions (f/dhr/O2/instructions.py,
-or the text given here), then uploads each chosen review as Markdown, in parts
+or the text given here), then uploads each chosen review as one Markdown file
 (f/dhr/O2/reviews.py), and records exactly what was uploaded in wiki.documents. WeKnora
 reads each file and builds the wiki (and the graph) in the background.
 
 To finish a build whose uploads stopped part-way, give its instance_id: nothing new is made,
-and only the files not yet uploaded are sent, cut the way the build was first cut.
+and only the reviews not yet uploaded are sent.
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ from ...weknora import WeKnora, WeKnoraError
 from ..instructions import CONTENT, EXTRACTION, GRANULARITIES
 from ..kb_settings import check_settings, chunking_config, graph_config, wiki_tuning
 from ..progress import report_upload
-from ..reviews import check_choices, choose_reviews, review_parts
+from ..reviews import check_choices, choose_reviews, review_file
 from ..wiki_store import flow_job_id, get_instance, new_instance_id, runner, set_status
 
 
@@ -55,7 +54,6 @@ def main(
     content_instructions: str = "",
     model_id: str = "",
     instance_id: str = "",
-    part_chars: int = 30000,  # kb_settings.DEFAULT_PART_CHARS
     chunk_strategy: str = "auto",
     chunk_size: int = 512,
     chunk_overlap: int = 80,
@@ -69,7 +67,6 @@ def main(
 ):
     check_choices(dataset, reviews, doc_ids, template_guidance)
     kb = check_settings(
-        part_chars,
         chunk_strategy,
         chunk_size,
         chunk_overlap,
@@ -103,8 +100,12 @@ def main(
             dataset, reviews = build["dataset"], build["reviews"]
             doc_ids = settings.get("doc_ids")
             template_guidance = settings.get("template_guidance", "none")
-            # A build made before parts existed uploaded each review whole.
-            kb = settings.get("knowledge_base") or {**kb, "part_chars": 0}
+            kb = settings.get("knowledge_base") or kb
+            if kb.get("part_chars"):
+                raise ValueError(
+                    f"{instance_id} uploaded its reviews in parts, which the pipeline no longer"
+                    " does: start a new build instead."
+                )
             kb_id = build["kb_id"]
         else:
             model_id = model_id or wk.chat_model(MODEL)["id"]
@@ -176,12 +177,11 @@ def main(
         uploaded, failed = [], []
         n_files = 0
         for number, review in enumerate(chosen, start=1):
-            files = review_parts(conn, review, template_guidance, kb["part_chars"])
+            files = [review_file(conn, review, template_guidance)]
             n_files += len(files)
             if all((f["doc_id"], f["part"], f["n_parts"]) in done for f in files):
                 continue
-            # A rerun cuts a review the same way unless the review changed in the meantime;
-            # then its old rows no longer match a file and are replaced.
+            # A row left from a failed upload is replaced.
             conn.execute(
                 "DELETE FROM wiki.documents WHERE instance_id = %s AND doc_id = %s"
                 " AND (n_parts <> %s OR knowledge_id IS NULL)",
@@ -223,9 +223,7 @@ def main(
                         " WHERE instance_id = %s AND doc_id = %s AND part = %s",
                         (str(error)[:2000], instance_id, f["doc_id"], f["part"]),
                     )
-                    failed.append(
-                        {"doc_id": f["doc_id"], "part": f["part"], "error": str(error)[:300]}
-                    )
+                    failed.append({"doc_id": f["doc_id"], "error": str(error)[:300]})
                     continue
                 conn.execute(
                     """
@@ -241,11 +239,7 @@ def main(
                     ),
                 )
                 uploaded.append(key)
-            report_upload(
-                number,
-                len(chosen),
-                f"{review['doc_id']} ({len(files)} part{'s' if len(files) != 1 else ''})",
-            )
+            report_upload(number, len(chosen), review["doc_id"])
 
         if failed and not uploaded and not done:
             set_status(
