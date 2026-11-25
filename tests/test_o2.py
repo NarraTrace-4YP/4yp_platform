@@ -386,7 +386,7 @@ def test_progress_moves_from_reading_to_writing():
         {"completed": 9, "failed": 1}, {"pending_tasks": 0}, 90, 200, None, 40
     )
     assert nearly["percent"] == 99 and "(1 failed)" in nearly["line"]
-    assert "0 tasks queued, idle" in nearly["line"]
+    assert "wiki: nothing waiting" in nearly["line"]
 
 
 def test_files_waiting_for_follow_up_jobs_count_as_read():
@@ -395,8 +395,9 @@ def test_files_waiting_for_follow_up_jobs_count_as_read():
     from f.dhr.O2 import progress
 
     start = progress.build_progress({"finalizing": 10}, {"pending_tasks": 10}, 1, 0, None, 10, 2500)
-    assert "files read 10/10" in start["line"] and "finished 0/10" in start["line"]
-    assert "jobs left 2,500 of 2,500" in start["line"] and start["percent"] == 15
+    assert "10 of 10 reviews read by WeKnora, 0 completely done" in start["line"]
+    assert "0 of 2,500 follow-up jobs done" in start["line"] and start["percent"] == 15
+    assert "wiki: 10 reviews waiting to be written up" in start["line"]
     half = progress.build_progress(
         {"finalizing": 6, "completed": 4}, {"pending_tasks": 6}, 80, 100, None, 10, 1250, 2500
     )
@@ -411,20 +412,20 @@ def test_the_gateway_line_reads_its_status():
     from f.dhr.llm import describe_gateway
 
     assert describe_gateway({"error": "can't"}) == "model: can't"
-    assert describe_gateway({"user": "me", "run_id": None}) == "model: no job running yet"
+    assert describe_gateway({"user": "me", "run_id": None}).startswith("model: not running yet")
     line = describe_gateway(
         {
             "run_id": "gw-1",
             "slurm_job_id": "123",
-            "job_state": "running",
+            "job_state": "answering",
             "calls_with_the_job": 4,
             "calls_waiting_to_send": 1,
             "usage": {"calls": 1234, "completion_tokens": 56789},
         }
     )
     assert line == (
-        "model: running (SLURM 123), 4 answering, 1 queued, 1,234 calls / 56,789"
-        " tokens written so far"
+        "model on Blythe (SLURM job 123): answering, working on 4 calls, 1 about to be sent;"
+        " 1,234 calls answered in total"
     )
 
 
@@ -849,3 +850,128 @@ def test_the_model_job_is_tidied_up_unless_another_build_needs_it(monkeypatch):
     assert "no model job" in delete_wiki.stop_model([])
     monkeypatch.setattr(delete_wiki, "gateway_status", lambda: {"error": "can't ask"})
     assert "stops by itself" in delete_wiki.stop_model([]) and stopped == ["gw-1"]
+
+
+# --- folders kept in English (f/dhr/O2/folders.py) ---------------------------------------
+
+
+class FakeFolders:
+    """WeKnora's folder tree and pages, as far as f/dhr/O2/folders.py uses them."""
+
+    def __init__(self):
+        self.folders, self.pages, self.n = {}, [], 0
+
+    def add(self, name, parent=""):
+        self.n += 1
+        fid = f"f{self.n}"
+        depth = 1 + (self.folders[parent]["depth"] if parent else 0)
+        self.folders[fid] = {"id": fid, "name": name, "parent_id": parent, "depth": depth}
+        return fid
+
+    def path(self, fid):
+        f = self.folders[fid]
+        return (self.path(f["parent_id"]) + "/" if f["parent_id"] else "") + f["name"]
+
+    def wiki_folders(self, kb_id, parent_id=""):
+        kids = [f for f in self.folders.values() if f["parent_id"] == parent_id]
+        return [
+            {
+                **f,
+                "path": self.path(f["id"]),
+                "has_children": any(g["parent_id"] == f["id"] for g in self.folders.values()),
+            }
+            for f in kids
+        ]
+
+    def create_wiki_folder(self, kb_id, name, parent_id=""):
+        if any(f["name"] == name and f["parent_id"] == parent_id for f in self.folders.values()):
+            raise RuntimeError("WeKnora answered 409: conflict")
+        return {"id": self.add(name, parent_id)}
+
+    def update_wiki_folder(self, kb_id, folder_id, *, name="", parent_id=None):
+        f = self.folders[folder_id]
+        target = f["parent_id"] if parent_id is None else parent_id
+        new = name or f["name"]
+        if any(
+            g["name"] == new and g["parent_id"] == target and g["id"] != folder_id
+            for g in self.folders.values()
+        ):
+            raise RuntimeError("WeKnora answered 409: conflict")
+        f.update(name=new, parent_id=target)
+
+    def delete_wiki_folder(self, kb_id, folder_id):
+        assert not any(g["parent_id"] == folder_id for g in self.folders.values())
+        assert not any(p["folder_id"] == folder_id for p in self.pages)
+        del self.folders[folder_id]
+
+    def move_wiki_page(self, kb_id, slug, folder_id):
+        next(p for p in self.pages if p["slug"] == slug)["folder_id"] = folder_id
+
+    def wiki_pages(self, kb_id):
+        return [dict(p) for p in self.pages]
+
+
+def test_seed_folders_makes_only_the_missing_ones():
+    from f.dhr.O2.folders import SEED_FOLDERS, seed_folders
+
+    wk = FakeFolders()
+    wk.add("People")
+    made = seed_folders(wk, "kb")
+    assert "People" not in made and len(made) == len(SEED_FOLDERS) - 1
+    assert seed_folders(wk, "kb") == []
+
+
+def test_english_folders_renames_and_merges():
+    import json
+
+    from f.dhr.O2.folders import english_folders, has_chinese
+
+    wk = FakeFolders()
+    health_en = wk.add("Health & Wellbeing")
+    health_zh = wk.add("健康与福祉")
+    sub_zh = wk.add("物质滥用", health_zh)
+    law_zh = wk.add("法律概念")
+    wk.pages = [
+        {"slug": "concept/alcohol", "folder_id": sub_zh},
+        {"slug": "concept/wellbeing", "folder_id": health_zh},
+        {"slug": "concept/abh", "folder_id": law_zh},
+    ]
+    english = {
+        "健康与福祉": "Health & Wellbeing",
+        "物质滥用": "Substance Misuse",
+        "法律概念": "Legal Concepts",
+    }
+    prompts = []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        out = []
+        for line in prompt.splitlines():
+            if line.startswith("- id "):
+                fid, rest = line[5:].split(":", 1)
+                name = rest.split("→", 1)[1].split("|", 1)[0].strip()
+                out.append({"id": fid, "english": english[name]})
+        return json.dumps({"translations": out})
+
+    result = english_folders(wk, "kb", ask=ask)
+    assert result == {"chinese": 3, "renamed": 2, "merged": 1, "pages_moved": 1, "left": 0}
+    assert "English beside it: Health & Wellbeing" in prompts[0]
+    assert len(prompts) == 2  # top level, then the sub-folder
+    assert not any(has_chinese(f["name"]) for f in wk.folders.values())
+    assert health_zh not in wk.folders
+    assert wk.folders[sub_zh]["parent_id"] == health_en
+    assert wk.path(sub_zh) == "Health & Wellbeing/Substance Misuse"
+    assert {p["slug"]: p["folder_id"] for p in wk.pages}["concept/wellbeing"] == health_en
+    assert english_folders(wk, "kb", ask=ask)["chinese"] == 0  # nothing left, no call
+    assert len(prompts) == 2
+
+
+def test_english_folders_ignores_bad_answers():
+    from f.dhr.O2.folders import english_folders
+
+    wk = FakeFolders()
+    wk.add("案例与人物")
+    result = english_folders(
+        wk, "kb", ask=lambda p: '{"translations": [{"id": "f1", "english": "案例"}]}'
+    )
+    assert result["renamed"] == 0 and result["left"] == 1

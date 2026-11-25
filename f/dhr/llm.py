@@ -76,15 +76,29 @@ def gateway_status() -> dict:
     return {**status, "usage": usage}
 
 
+JOB_STATES = {
+    "submitted": "waiting for a Blythe GPU",
+    "loading": "loading",
+    "waiting": "ready",
+    "answering": "answering",
+    "stopped": "stopped",
+    "failed": "failed",
+}
+
+
 def describe_gateway(status: dict) -> str:
-    """One line about the model job, for a progress log."""
+    """One plain sentence about the model job, for a progress log."""
     if "error" in status:
         return f"model: {status['error']}"
     if not status.get("run_id"):
-        return "model: no job running yet"
+        return "model: not running yet (it starts with the first call)"
     usage = status.get("usage") or {}
+    state = JOB_STATES.get(status.get("job_state") or "", status.get("job_state") or "starting")
+    working, waiting = status.get("calls_with_the_job", 0), status.get("calls_waiting_to_send", 0)
+    now = f"working on {working:,} call{'s' if working != 1 else ''}" if working else "no calls now"
+    if waiting:
+        now += f", {waiting:,} about to be sent"
     return (
-        f"model: {status.get('job_state') or '?'} (SLURM {status.get('slurm_job_id') or '-'}),"
-        f" {status.get('calls_with_the_job', 0)} answering, {status.get('calls_waiting_to_send', 0)} queued,"
-        f" {usage.get('calls', 0):,} calls / {usage.get('completion_tokens', 0):,} tokens written so far"
+        f"model on Blythe (SLURM job {status.get('slurm_job_id') or '-'}): {state}, {now};"
+        f" {usage.get('calls', 0):,} calls answered in total"
     )
