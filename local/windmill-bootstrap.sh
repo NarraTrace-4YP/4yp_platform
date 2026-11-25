@@ -133,6 +133,18 @@ public_app=$(curl -fsS --max-time 20 \
 	die "The generated public O1 share URL points at the wrong app."
 printf '  O1 embed: %s\n' "$public_url"
 
+# The O2 app (wikis built from the reviews) is public the same way, once it is in f/dhr.
+if [[ "$(call GET "/w/$workspace/apps/exists/f/dhr/O2/app")" == true ]]; then
+	call POST "/w/$workspace/apps/update/f/dhr/O2/app" \
+		'{"execution_mode":"anonymous","skip_draft_deletion":true}' >/dev/null
+	o2_secret=$(call GET "/w/$workspace/apps/secret_of/f/dhr/O2/app") ||
+		die "Windmill did not create the public O2 share URL."
+	[[ "$o2_secret" =~ ^[0-9a-f]{32}$ ]] || die "Windmill returned an invalid O2 share ID."
+	jq -n --arg url "$WINDMILL_PUBLIC_URL/public/$workspace/$o2_secret" '{url: $url}' >/runtime/o2.json.tmp
+	mv /runtime/o2.json.tmp /runtime/o2.json
+	printf '  O2 embed: %s\n' "$WINDMILL_PUBLIC_URL/public/$workspace/$o2_secret"
+fi
+
 printf '\nLocal Windmill is ready.\n'
 printf '  URL:   %s\n' "$WINDMILL_PUBLIC_URL"
 printf '  Login: %s\n' "$admin_email"

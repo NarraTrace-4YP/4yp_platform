@@ -1263,4 +1263,40 @@ ALTER TABLE wiki.documents ADD PRIMARY KEY (instance_id, doc_id, part);
 ALTER TABLE wiki.documents ADD CHECK (part BETWEEN 1 AND n_parts);
 """,
     ),
+    (
+        "016_knowledge_graph",
+        """
+-- O2: a copy of each build's knowledge graph (f/dhr/O2/kgraph.py), read from WeKnora's graph
+-- database at every check and replaced each time, for the O2 app's Knowledge graph tab.
+-- One node per (review, name): a review's parts are merged; reviews are kept apart.
+CREATE TABLE wiki.kg_nodes (
+    instance_id  text NOT NULL REFERENCES wiki.instances ON DELETE CASCADE,
+    doc_id       text NOT NULL,
+    name         text NOT NULL,
+    attributes   jsonb NOT NULL DEFAULT '[]',   -- what the review says about it
+    n_chunks     integer NOT NULL DEFAULT 0,    -- chunks it was found in
+    n_parts      integer NOT NULL DEFAULT 1,    -- parts of the review it was found in
+    PRIMARY KEY (instance_id, doc_id, name)
+);
+
+-- One row per relationship, both ends in the same review.
+CREATE TABLE wiki.kg_relations (
+    instance_id  text NOT NULL,
+    doc_id       text NOT NULL,
+    source       text NOT NULL,
+    target       text NOT NULL,
+    type         text NOT NULL,                 -- e.g. "Referred to" (f/dhr/O2/graph.py)
+    PRIMARY KEY (instance_id, doc_id, source, target, type),
+    FOREIGN KEY (instance_id, doc_id, source) REFERENCES wiki.kg_nodes ON DELETE CASCADE,
+    FOREIGN KEY (instance_id, doc_id, target) REFERENCES wiki.kg_nodes ON DELETE CASCADE
+);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'wiki_agent') THEN
+        GRANT SELECT ON wiki.kg_nodes, wiki.kg_relations TO wiki_agent;
+    END IF;
+END $$;
+""",
+    ),
 ]

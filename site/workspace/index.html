@@ -43,6 +43,7 @@
           <a href="/">Project</a>
           <a href="/status/">Status</a>
           <a href="/o1/">O1 app</a>
+          <a href="/o2/">O2 app</a>
           <a href="/workspace/" aria-current="page">Workspace</a>
         </nav>
       </div>
@@ -80,6 +81,24 @@
             </div>
           </li>
           <li class="tool">
+            <h3><a href="/o2/">O2 app</a></h3>
+            <p>
+              The interface for knowledge organisation. Browse each wiki built from the reviews: its
+              settings and progress, the graph of linked pages, the knowledge graph of people,
+              agencies and events, and the pages themselves. It only reads results; builds are run
+              in Windmill.
+            </p>
+            <div class="tool-meta">
+              <span class="access">Public page</span>
+              <div class="tool-also">
+                <a
+                  href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/apps_raw/get/f/dhr/O2/app?workspace=dhr'
+                  >Open in Windmill</a
+                >
+              </div>
+            </div>
+          </li>
+          <li class="tool">
             <h3><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/'>Windmill</a></h3>
             <p>
               Coordinates the processing pipeline, from importing reviews to preparing sections for
@@ -93,6 +112,9 @@
                 <a
                   href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/flows/get/f/dhr/O1/pipeline?workspace=dhr'
                   >O1 pipeline</a
+                ><a
+                  href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/flows/get/f/dhr/O2/pipeline?workspace=dhr'
+                  >O2 pipeline</a
                 ><a href='{{env "PUBLIC_SCHEME"}}://windmill.{{env "DOMAIN"}}/runs?workspace=dhr'
                   >Recent runs</a
                 >

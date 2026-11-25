@@ -18,6 +18,9 @@ SITE = ROOT / "site"
 PAGES = sorted(SITE.rglob("*.html"))
 O1_PAGE = SITE / "o1" / "index.html"
 O1_RUNTIME_CONFIG = "/runtime/o1.json"
+O2_PAGE = SITE / "o2" / "index.html"
+O2_RUNTIME_CONFIG = "/runtime/o2.json"
+EMBED_PAGES = (O1_PAGE, O2_PAGE)
 
 
 class Page(HTMLParser):
@@ -97,6 +100,7 @@ def test_the_pages_exist():
     ):
         assert (SITE / name).is_file(), f"site/{name} is missing"
     assert O1_PAGE.is_file()
+    assert O2_PAGE.is_file()
 
 
 @pytest.mark.parametrize("path", PAGES, ids=lambda p: str(p.relative_to(SITE)))
@@ -111,7 +115,7 @@ def test_page_loads_only_its_own_files(path):
     page = Page(path)
     outside = [ref for ref in page.loads if not is_local(ref)]
     assert not outside, f"loads from other sites, which the Caddyfile blocks: {outside}"
-    assert page.frames == ([""] if path == O1_PAGE else [])
+    assert page.frames == ([""] if path in EMBED_PAGES else [])
 
 
 @pytest.mark.parametrize("path", PAGES, ids=lambda p: str(p.relative_to(SITE)))
@@ -190,3 +194,21 @@ def test_embedded_o1_app_uses_generated_instance_specific_public_url():
     assert 'src="/assets/objective-embed.js"' in page
     assert "/public/dhr/" in script
     assert "09f7276fa53f893213d238447a5f345e" not in page
+
+
+def test_embedded_o2_app_uses_its_own_generated_public_url():
+    page = O2_PAGE.read_text(encoding="utf-8")
+    assert f'data-objective-embed="{O2_RUNTIME_CONFIG}"' in page
+    assert 'src="/assets/objective-embed.js"' in page
+    server = (ROOT / "server/windmill.sh").read_text(encoding="utf-8")
+    assert "wm_objective_embed f/dhr/O2/app o2" in server
+    for path in PAGES:
+        if path.name == "index.html" and path.parent.name in (
+            "",
+            "site",
+            "o1",
+            "o2",
+            "status",
+            "workspace",
+        ):
+            assert 'href="/o2/"' in path.read_text(encoding="utf-8"), path

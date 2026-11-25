@@ -85,6 +85,12 @@ longer show the warning, and Settings → System Info should list the graph data
 Graphs made in WeKnora's own website also need their relationship types and example filled
 in there; the pipeline fills them in itself.
 
+Each check of a build also copies its graph from Neo4j into the project database
+(`wiki.kg_nodes`, `wiki.kg_relations`), and the O2 app's **Knowledge graph** tab shows it in
+3D. Windmill reads Neo4j with the password in the secret variable
+`f/dhr/weknora_graph_password`, which `server/update.sh` copies from `.env`. Until then the
+checks say "No Neo4j password" in their result and carry on without the graph.
+
 The graph costs a model call per chunk, on top of the wiki's. At WeKnora's default
 `chunk_size` of 512 characters that is about 250 calls for a typical review, so a larger
 `chunk_size` (2,000, say) makes it about four times cheaper. The pipeline's first step
