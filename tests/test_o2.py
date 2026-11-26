@@ -1373,13 +1373,21 @@ class FakeModels:
     """WeKnora's model list, copy and update, as far as WeKnora.model_entry uses them."""
 
     def __init__(self, models):
-        self.models, self.calls = models, []
+        self.models, self.calls, self.keys = models, [], {}
 
     def __call__(self, request):
         self.calls.append((request.method, request.url.path))
         if request.method == "GET":
             return httpx.Response(200, json={"success": True, "data": self.models})
         body = json.loads(request.content)
+        if request.url.path.endswith("/credentials"):
+            self.keys[request.url.path.split("/")[-2]] = body["api_key"]
+            return httpx.Response(200, json={"success": True})
+        if request.method == "POST" and request.url.path.endswith("/models"):
+            made = {**body, "id": f"m{len(self.models) + 1}"}
+            self.keys[made["id"]] = made["parameters"].pop("api_key")  # never shown back
+            self.models.append(made)
+            return httpx.Response(201, json={"success": True, "data": made})
         if request.url.path.endswith("/copy"):
             source = next(m for m in self.models if request.url.path.split("/")[-2] == m["id"])
             copy = {**source, "id": f"m{len(self.models) + 1}", **body}
@@ -1415,8 +1423,41 @@ def test_a_models_entry_is_copied_from_the_persons_own_with_their_token():
     assert wk.model_entry(BF16, user="rshields2004")["id"] == "m3"
     assert fake.calls == [("GET", "/api/v1/models")]  # already there: nothing changed
 
-    with pytest.raises(WeKnoraError, match="no model entry of yours to copy"):
-        wk.model_entry(BF16, user="ks0610")
+    def no_token():
+        raise RuntimeError("job tokens can't make tokens")
+
+    with pytest.raises(WeKnoraError, match="Couldn't make a Windmill token"):
+        wk.model_entry(BF16, user="ks0610", new_token=no_token)
+
+
+def test_with_no_entry_at_all_one_is_made_from_scratch_with_a_new_token():
+    """26 Nov 2026: nobody needs to add a model in WeKnora by hand."""
+    from datetime import date, timedelta
+
+    fake = FakeModels([])
+    wk = fake_weknora(fake, shared=True)
+    until = date.today() + timedelta(days=365)
+    entry = wk.model_entry(BF16, user="ks0610", new_token=lambda: ("tok-new", until))
+    assert entry["name"] == "qwen-27b-bf16" and entry["display_name"] == "Qwen3.8 27B BF16 (ks0610)"
+    assert entry["parameters"] == {
+        "base_url": "http://llm-gateway:8000/v1",
+        "provider": "generic",
+        "context_window": 131072,
+        "max_concurrency": 64,
+    }
+    assert fake.keys[entry["id"]] == "tok-new"
+    assert f"valid until {until.isoformat()}" in entry["description"]
+
+    # A month before the token ends, the pipeline gives the entry a new one.
+    soon = (date.today() + timedelta(days=10)).isoformat()
+    stored = fake.models[0]
+    stored["description"] = stored["description"].replace(until.isoformat(), soon)
+    later = date.today() + timedelta(days=365)
+    renewed = wk.model_entry(BF16, user="ks0610", new_token=lambda: ("tok-2", later))
+    assert fake.keys[entry["id"]] == "tok-2" and later.isoformat() in renewed["description"]
+    calls = len(fake.calls)
+    wk.model_entry(BF16, user="ks0610", new_token=lambda: pytest.fail("renewed too soon"))
+    assert len(fake.calls) == calls + 1  # just the look
 
 
 def test_a_models_entry_follows_the_gateways_numbers():

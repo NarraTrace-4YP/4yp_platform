@@ -7,16 +7,17 @@ The team works in one shared WeKnora space (Rowan, 24 Nov 2026), reached with th
 API key, kept in the secret Windmill variable f/dhr/weknora_api_key. Every wiki lives there,
 so the whole team can open every build in WeKnora.
 
-The model still runs on the account of whoever starts the work. Each person adds ONE entry
-by hand in the shared space's model settings, with display name "Qwen (<their Windmill
-username>)" and their own Windmill token as its API key. From that one,
-WeKnora.model_entry() makes them an entry for every model a build chooses (26 Nov 2026):
-model name = the gateway's key for it (e.g. qwen-27b-bf16), display name "<label>
-(<username>)", with the model's context window and concurrency, copied so their token comes
-along without anyone typing it. So a build by markcoding05 on qwen-27b-bf16 uses
-"Qwen3.8 27B BF16 (markcoding05)", which calls the LLM gateway with markcoding05's token,
-and so runs on markcoding05's Blythe account, never on someone else's. No model name is
-written in WeKnora by hand except in that first entry, whose model name doesn't matter.
+The model still runs on the account of whoever starts the work: WeKnora calls the LLM
+gateway with that person's Windmill token as the API key, and the gateway logs in to Blythe
+as them. WeKnora.model_entry() makes each person's entry for every model a build chooses
+(26 Nov 2026), so nobody adds models in WeKnora by hand: model name = the gateway's key for
+it (e.g. qwen-27b-bf16), display name "<label> (<username>)", the model's context window
+and concurrency, and as API key a Windmill token made for them for this (valid
+TOKEN_DAYS days, renewed by the pipeline a month before it ends; they see it in Windmill:
+Account settings > Tokens). Someone who already has an entry of their own ("Qwen
+(<username>)") has it copied instead, token and all. So a build by markcoding05 on
+qwen-27b-bf16 uses "Qwen3.8 27B BF16 (markcoding05)", which runs on markcoding05's Blythe
+account, never on someone else's.
 
 A personal key in u/<you>/weknora_api_key (an API key from your own space) is still used if
 the shared one is missing; then any chat model named after the gateway model's key will do.
@@ -30,12 +31,34 @@ the shared one is missing; then any chat model named after the gateway model's k
 from __future__ import annotations
 
 import os
+import re
 import time
+from datetime import date, timedelta
 
 BASE_URL = "http://weknora-app:8080/api/v1"
 KEY_VARIABLE = "weknora_api_key"
 SHARED_KEY_PATH = f"f/dhr/{KEY_VARIABLE}"
 TIMEOUT_SECONDS = 120
+GATEWAY_URL = "http://llm-gateway:8000/v1"  # what WeKnora calls the models through
+TOKEN_DAYS = 365  # how long the Windmill token in a made entry lasts
+RENEW_DAYS = 30  # renew it when this close to its end
+VALID_UNTIL = re.compile(r"valid until (\d{4}-\d{2}-\d{2})")
+
+
+def make_gateway_token() -> tuple[str, date]:
+    """A new Windmill token for the person running the script, for their WeKnora model
+    entries (the gateway knows them, and reaches their Blythe variables, by it)."""
+    import wmill
+
+    until = date.today() + timedelta(days=TOKEN_DAYS)
+    return wmill.create_token(duration=timedelta(days=TOKEN_DAYS)), until
+
+
+def _token_note(until: date) -> str:
+    return (
+        f" Its API key is a Windmill token made for you, valid until {until.isoformat()}"
+        " (Windmill: Account settings > Tokens); the pipeline renews it."
+    )
 
 
 class WeKnoraError(RuntimeError):
@@ -192,12 +215,15 @@ class WeKnora:
             )
         return found[0]
 
-    def model_entry(self, model: dict, user: str | None = None) -> dict:
+    def model_entry(self, model: dict, user: str | None = None, new_token=None) -> dict:
         """The runner's own entry for a gateway model, made if missing (see the top of this
         file). `model` is one entry of f/dhr/llm.models()["data"]: id (the gateway's key),
         label, model, context_window, concurrency. An entry whose context window or
-        concurrency no longer match the gateway's is updated."""
+        concurrency no longer match the gateway's is updated, and one whose token (made by
+        this) is near its end gets a new one. new_token() -> (token, valid until); by default
+        a Windmill token for the runner (make_gateway_token)."""
         user = user or runner() or "?"
+        new_token = new_token or make_gateway_token
         label = f"{model['label']} ({user})"
         chat = [m for m in self.models() if m.get("type") == "KnowledgeQA"]
         if not self.shared:  # someone's own space: any chat model with that name will do
@@ -213,46 +239,86 @@ class WeKnora:
                 model["context_window"],
                 model["concurrency"],
             ):
-                self._fit_entry(entry, model, label)
+                entry = self._fit_entry(entry, model, label)
+            until = VALID_UNTIL.search(entry.get("description") or "")
+            if until and date.fromisoformat(until.group(1)) - date.today() < timedelta(
+                days=RENEW_DAYS
+            ):
+                token, new_until = new_token()
+                self.request("PUT", f"/models/{entry['id']}/credentials", json={"api_key": token})
+                entry = self._fit_entry(
+                    entry, model, label, self._describe(model) + _token_note(new_until)
+                )
             return entry
         template = sorted(
-            mine,  # their hand-made entry, or one made from it: each carries their own token
+            mine,  # an entry of theirs already carries their own token
             key=lambda m: (
                 "llm-gateway" not in ((m.get("parameters") or {}).get("base_url") or ""),
                 m.get("display_name") != model_label(user),
             ),
         )
-        if not template:
-            seen = ", ".join(repr(m.get("display_name")) for m in chat) or "none at all"
-            raise WeKnoraError(
-                f"The team's WeKnora space has no model entry of yours to copy (chat models"
-                f" there: {seen}). Add one, once, in the team space: Settings > Models > Add"
-                " Model, chat, source API, provider Custom (OpenAI-compatible), base URL"
-                " http://llm-gateway:8000/v1, your own Windmill token as the API key, any model"
-                f" name (e.g. default), display name {model_label(user)!r}. The pipeline makes"
-                " your entry for each model from it, so the work runs on your own Blythe account."
+        if template:
+            copy = _data(
+                self.request(
+                    "POST", f"/models/{template[0]['id']}/copy", json={"display_name": label}
+                )
             )
-        copy = _data(
-            self.request("POST", f"/models/{template[0]['id']}/copy", json={"display_name": label})
+            return self._fit_entry(copy, model, label, template[0].get("description"))
+        try:
+            token, until = new_token()
+        except Exception as error:  # noqa: BLE001 - say what to do instead
+            raise WeKnoraError(
+                f"Couldn't make a Windmill token for your WeKnora model entry ({error})."
+                " Instead add one entry yourself in the team space: Settings > Models > Add"
+                f" Model, chat, provider Custom (OpenAI-compatible), base URL {GATEWAY_URL},"
+                " your own Windmill token as the API key, model name default, display name"
+                f" {model_label(user)!r}. The pipeline copies it for each model."
+            ) from error
+        made = self.request(
+            "POST",
+            "/models",
+            json={
+                "name": model["id"],
+                "display_name": label,
+                "type": "KnowledgeQA",
+                "source": "remote",
+                "description": self._describe(model) + _token_note(until),
+                "parameters": {
+                    "base_url": GATEWAY_URL,
+                    "api_key": token,
+                    "provider": "generic",  # WeKnora's "Custom (OpenAI-compatible)"
+                    "context_window": model["context_window"],
+                    "max_concurrency": model["concurrency"],
+                },
+            },
         )
-        return self._fit_entry(copy, model, label)
+        return _data(made)
 
-    def _fit_entry(self, entry: dict, model: dict, label: str) -> dict:
+    @staticmethod
+    def _describe(model: dict) -> str:
+        return (
+            f"{model['model']} through the NarraTrace LLM gateway, on your own Blythe account."
+            " Made by f/dhr/O2/check_setup."
+        )
+
+    def _fit_entry(
+        self, entry: dict, model: dict, label: str, description: str | None = None
+    ) -> dict:
         """Names `entry` after the gateway model and sets its context window and background
         concurrency. Its API key (the person's token) is kept: WeKnora never changes a
-        stored key through this call."""
+        stored key through this call. The description is kept unless one is given."""
         params = dict(entry.get("parameters") or {})
         params["context_window"] = model["context_window"]
         params["max_concurrency"] = model["concurrency"]
         if isinstance(params.get("spec"), dict) and params["spec"].get("context_window"):
             params["spec"] = {**params["spec"], "context_window": model["context_window"]}
+        description = description or entry.get("description") or self._describe(model)
+        if not VALID_UNTIL.search(description) and "NarraTrace LLM gateway" not in description:
+            description = self._describe(model)
         body = {
             "name": model["id"],
             "display_name": label,
-            "description": (
-                f"{model['model']} through the NarraTrace LLM gateway, on your own Blythe"
-                " account. Made by f/dhr/O2/check_setup."
-            ),
+            "description": description,
             "parameters": params,
             "source": entry.get("source") or "remote",
             "type": entry.get("type") or "KnowledgeQA",
