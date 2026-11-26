@@ -95,3 +95,22 @@ server with `sudo /opt/dhr/server/update.sh`, which rebuilds the image.
 Settings can be changed with environment variables on the service, e.g.
 `GATEWAY_IDLE_MINUTES=45` or `GATEWAY_MAX_MODEL_LEN=16384` (every field of `Settings` in
 `sessions.py`, as `GATEWAY_<NAME>`).
+
+## The model
+
+Since 26 Nov 2026 each person's job runs **Qwen3.8-27B at full precision (BF16), split over
+two L40s** (`PROFILES["bf16-2gpu"]` in `sessions.py`). Prompts may be up to 131,072 tokens
+(the two cards hold about 275,000 tokens between all prompts in flight) and up to 64 are
+worked on at once. It uses the settings of the first two-GPU test job that worked (1389794,
+25 Nov): no CUDA graphs (`enforce_eager`), NCCL for every all-reduce, no direct GPU-to-GPU
+copies (the job file sets that), and a 20-second check that the GPUs can talk before the model
+loads. Loading takes about 5 minutes after the job gets its GPUs; two GPUs may queue longer
+than one.
+
+To go back to the 8-bit model on one L40 (32,768-token prompts), set
+`GATEWAY_PROFILE=fp8-1gpu` on the service and restart it. New jobs use it; a job already
+running keeps its model until it stops.
+
+Calls may name `Qwen/Qwen3.8-27B` or `Qwen/Qwen3.8-27B-FP8` (what `f/dhr/llm.py` and
+everyone's WeKnora model entry use): either is answered by the model the gateway runs, and the
+answer's `model` says which. `/health` names it too.

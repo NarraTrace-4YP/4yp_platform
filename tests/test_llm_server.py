@@ -84,6 +84,13 @@ def answer_as_the_job(run, request_id, answers):
         (run / "inbox" / name).unlink(missing_ok=True)
 
 
+def test_a_server_split_over_two_gpus_asks_slurm_for_them(b, home):
+    b.start_server("serve-tp", {"model": "Qwen/Qwen3.8-27B"}, hours=8, gpus=2, mem_gb=120)
+    sbatch = b.slurm_calls[0]
+    assert "--gres=gpu:lovelace_l40:2 --cpus-per-task=16" in sbatch
+    assert "--mem-per-cpu=7680M" in sbatch  # 120 GB over 16 CPUs
+
+
 def test_start_add_look_collect_and_stop(b, home):
     request = {"model": "Qwen/Qwen3.8-27B-FP8", "idle_minutes": 20}
     started = b.start_server("serve-1", request, hours=4)

@@ -26,6 +26,9 @@ from __future__ import annotations
 
 import os
 
+# The name calls use. The gateway accepts it whichever model it serves (since 26 Nov 2026,
+# full-precision Qwen/Qwen3.8-27B on two GPUs; gateway/sessions.py PROFILES), because every
+# person's WeKnora model entry uses this name. served_model() says which model really answers.
 MODEL = "Qwen/Qwen3.8-27B-FP8"
 GATEWAY_URL = "http://llm-gateway:8000/v1"  # inside the project server's Docker network
 TIMEOUT_SECONDS = 3600
@@ -102,3 +105,19 @@ def describe_gateway(status: dict) -> str:
         f"model on Blythe (SLURM job {status.get('slurm_job_id') or '-'}): {state}, {now};"
         f" {usage.get('calls', 0):,} calls answered in total"
     )
+
+
+def served_model() -> str:
+    """The model the gateway runs now (for records of which model made a result); MODEL if
+    the gateway can't be asked."""
+    import json
+    import urllib.request
+
+    url, _ = connection()
+    try:
+        with urllib.request.urlopen(
+            url.rstrip("/").removesuffix("/v1") + "/health", timeout=10
+        ) as r:
+            return json.load(r).get("model") or MODEL
+    except (OSError, ValueError):
+        return MODEL

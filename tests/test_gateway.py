@@ -16,9 +16,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from f.dhr.blythe import BlytheError
-from gateway.app import Gateway, Windmill, create_app
+from gateway.app import Gateway, Windmill, create_app, settings_from_env
 from gateway.openai_format import RequestError, parse_tool_calls, to_completion, to_prompt
-from gateway.sessions import Settings
+from gateway.sessions import PROFILES, Settings
 
 TOKENS = {"tok-rowan": "rshields2004", "tok-ks": "ks0610"}
 MODEL = Settings().model
@@ -29,6 +29,7 @@ class Account:
 
     def __init__(self):
         self.runs, self.logins, self.next_job = {}, [], 5000
+        self.resources = {}  # run id -> the gpus and mem_gb start_server asked for
         self.paused = False  # jobs don't answer while paused
         self.fail_every_start = None  # an error every new job fails with
 
@@ -80,8 +81,9 @@ class FakeBlythe:
     def close(self):
         self.open = False
 
-    def start_server(self, run_id, request, hours):
+    def start_server(self, run_id, request, hours, gpus=None, mem_gb=None):
         self.account.next_job += 1
+        self.account.resources[run_id] = {"gpus": gpus, "mem_gb": mem_gb}
         state = "failed" if self.account.fail_every_start else "waiting"
         self.account.runs[run_id] = {
             "request": request,
@@ -502,3 +504,46 @@ def test_a_call_that_timed_out_doesn_t_break_the_session(setup):
         and reply.json()["choices"][0]["message"]["content"] == "echo: hello"
     )
     assert gateway.sessions["ks0610"].thread.is_alive()
+
+
+def test_the_job_is_full_precision_qwen_split_over_two_gpus(setup):
+    """The default profile (26 Nov 2026): Qwen3.8-27B in BF16 on two L40s, with the settings
+    of the first two-GPU job that worked, and 131,072-token prompts."""
+    client, accounts, gateway = setup
+    assert chat(client).status_code == 200
+    ((run_id, run),) = accounts["ks0610"].runs.items()
+    assert MODEL == "Qwen/Qwen3.8-27B"
+    assert accounts["ks0610"].resources[run_id] == {"gpus": 2, "mem_gb": 120}
+    request = run["request"]
+    assert request["model"] == "Qwen/Qwen3.8-27B" and request["max_model_len"] == 131072
+    assert request["max_num_seqs"] == 64
+    assert request["engine"] == {
+        "tensor_parallel_size": 2,
+        "enforce_eager": True,
+        "disable_custom_all_reduce": True,
+    }
+
+
+def test_calls_naming_the_old_fp8_model_still_work(setup):
+    """f/dhr/llm.py and everyone's WeKnora model entry name Qwen/Qwen3.8-27B-FP8."""
+    client, accounts, gateway = setup
+    reply = chat(client, model="Qwen/Qwen3.8-27B-FP8")
+    assert reply.status_code == 200, reply.text
+    assert reply.json()["model"] == "Qwen/Qwen3.8-27B"  # the model that answered
+    assert chat(client, model="gpt-4o").status_code == 404
+
+
+def test_one_setting_switches_back_to_fp8_on_one_gpu(monkeypatch):
+    monkeypatch.setenv("GATEWAY_PROFILE", "fp8-1gpu")
+    settings = settings_from_env()
+    assert settings.model == "Qwen/Qwen3.8-27B-FP8" and settings.max_model_len == 32768
+    assert settings.job_resources == {"gpus": None, "mem_gb": None}  # the job file's own
+    request = settings.server_request()
+    assert "engine" not in request and request["max_num_seqs"] == 128
+
+    monkeypatch.setenv("GATEWAY_MAX_MODEL_LEN", "65536")  # one setting can still be changed
+    assert settings_from_env().max_model_len == 65536
+    monkeypatch.setenv("GATEWAY_PROFILE", "fp16")
+    with pytest.raises(ValueError, match="GATEWAY_PROFILE"):
+        settings_from_env()
+    assert set(PROFILES) == {"bf16-2gpu", "fp8-1gpu"}

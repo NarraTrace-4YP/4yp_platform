@@ -38,7 +38,7 @@ from __future__ import annotations
 import json
 
 from ...db import apply_migrations, connect
-from ...llm import MODEL
+from ...llm import MODEL, served_model
 from ...version import GIT_COMMIT
 from ...weknora import WeKnora, WeKnoraError
 from ..folders import seed_folders
@@ -142,7 +142,7 @@ def main(
                     GIT_COMMIT,
                     dataset,
                     reviews,
-                    MODEL,
+                    served_model(),  # the model that builds it (MODEL is only the name calls use)
                     json.dumps(settings),
                 ),
             )

@@ -31,10 +31,46 @@ class GatewayError(RuntimeError):
     """Blythe or the job failed; becomes an HTTP 502."""
 
 
+# The model jobs the gateway can run (Rowan, 26 Nov 2026). "bf16-2gpu" is the default:
+# Qwen3.8-27B at full precision split over two L40s, with the settings of test job 1389794
+# (25 Nov, the first two-GPU run that loaded and answered): no CUDA graphs, NCCL for every
+# all-reduce. The two cards hold about 275,000 tokens between all prompts in flight, so a
+# prompt may be up to 131,072 tokens. "fp8-1gpu" is the 8-bit model on one L40 the gateway
+# ran before; GATEWAY_PROFILE=fp8-1gpu in compose.yaml switches back to it.
+PROFILES = {
+    "bf16-2gpu": {
+        "model": "Qwen/Qwen3.8-27B",
+        "max_model_len": 131072,
+        "max_num_seqs": 64,
+        "gpu_memory_utilization": 0.85,
+        "gpus": 2,
+        "mem_gb": 120,
+        "engine": {
+            "tensor_parallel_size": 2,
+            "enforce_eager": True,
+            "disable_custom_all_reduce": True,
+        },
+    },
+    "fp8-1gpu": {
+        "model": "Qwen/Qwen3.8-27B-FP8",
+        "max_model_len": 32768,
+        "max_num_seqs": 128,
+        "gpu_memory_utilization": 0.9,
+        "gpus": None,  # the job file's one L40 and its memory
+        "mem_gb": None,
+        "engine": {},
+    },
+}
+# Every profile's model name is accepted in calls, whichever profile is running, so code and
+# WeKnora model entries naming the old FP8 model keep working; answers name the model served.
+ACCEPTED_MODELS = {profile["model"] for profile in PROFILES.values()}
+
+
 @dataclasses.dataclass
 class Settings:
-    model: str = "Qwen/Qwen3.8-27B-FP8"
-    max_model_len: int = 32768
+    profile: str = "bf16-2gpu"  # one of PROFILES
+    model: str = ""  # empty: the profile's
+    max_model_len: int = 0  # 0: the profile's
     idle_minutes: int = 30  # the job stops after this long with nothing to do
     hours: int = 8  # the job's SLURM time limit
     job_poll_seconds: float = 0.5  # how often the job looks in its inbox
@@ -47,20 +83,39 @@ class Settings:
     max_failed_starts: int = 2
     max_errors: int = 3  # Blythe errors in a row before waiting calls are failed
 
+    def __post_init__(self):
+        if self.profile not in PROFILES:
+            raise ValueError(
+                f"GATEWAY_PROFILE must be one of {sorted(PROFILES)}, not {self.profile!r}"
+            )
+        chosen = PROFILES[self.profile]
+        self.model = self.model or chosen["model"]
+        self.max_model_len = self.max_model_len or chosen["max_model_len"]
+
+    @property
+    def job_resources(self) -> dict:
+        """start_server's gpus and mem_gb (None: the job file's own)."""
+        chosen = PROFILES[self.profile]
+        return {"gpus": chosen["gpus"], "mem_gb": chosen["mem_gb"]}
+
     def server_request(self) -> dict:
         """input/request.json for the person's llm_serve job."""
-        return {
+        chosen = PROFILES[self.profile]
+        request = {
             "model": self.model,
             "max_model_len": self.max_model_len,
             "top_logprobs": 20,
             "chunk_size": 64,
-            "gpu_memory_utilization": 0.9,
-            "max_num_seqs": 128,
+            "gpu_memory_utilization": chosen["gpu_memory_utilization"],
+            "max_num_seqs": chosen["max_num_seqs"],
             "seed": 0,
             "idle_minutes": self.idle_minutes,
             "poll_seconds": self.job_poll_seconds,
             "purpose": "gateway",
         }
+        if chosen["engine"]:
+            request["engine"] = dict(chosen["engine"])
+        return request
 
 
 @dataclasses.dataclass(eq=False)  # each call is itself, even with the same prompt
@@ -202,7 +257,12 @@ class Session:
 
     def _start_server(self, b) -> None:
         run_id = f"gw-{stamp()}-{secrets.token_hex(2)}"
-        submitted = b.start_server(run_id, self.settings.server_request(), self.settings.hours)
+        submitted = b.start_server(
+            run_id,
+            self.settings.server_request(),
+            self.settings.hours,
+            **self.settings.job_resources,
+        )
         self.run_id, self.slurm_job_id = run_id, submitted["slurm_job_id"]
         self.offset, self.state = 0, "submitted"
         self.last_slurm_check = self.clock()
