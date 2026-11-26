@@ -18,10 +18,10 @@ from fastapi.testclient import TestClient
 from f.dhr.blythe import BlytheError
 from gateway.app import Gateway, Windmill, create_app, settings_from_env
 from gateway.openai_format import RequestError, parse_tool_calls, to_completion, to_prompt
-from gateway.sessions import PROFILES, Settings
+from gateway.sessions import MODELS, Settings
 
 TOKENS = {"tok-rowan": "rshields2004", "tok-ks": "ks0610"}
-MODEL = Settings().model
+MODEL = Settings().default_model  # qwen-27b-bf16
 
 
 class Account:
@@ -32,6 +32,7 @@ class Account:
         self.resources = {}  # run id -> the gpus and mem_gb start_server asked for
         self.paused = False  # jobs don't answer while paused
         self.fail_every_start = None  # an error every new job fails with
+        self.queued = False  # new jobs wait in SLURM's queue (no status.json yet)
 
     def answer(self, prompt):
         said = prompt["messages"][-1].get("content") or ""
@@ -85,6 +86,8 @@ class FakeBlythe:
         self.account.next_job += 1
         self.account.resources[run_id] = {"gpus": gpus, "mem_gb": mem_gb}
         state = "failed" if self.account.fail_every_start else "waiting"
+        if self.account.queued:
+            state = None
         self.account.runs[run_id] = {
             "request": request,
             "inbox": {},
@@ -111,6 +114,8 @@ class FakeBlythe:
 
     def events(self, run_id, offset=0):
         run = self.account.runs[run_id]
+        if run["status"]["state"] is None:  # still in the queue: no status.json
+            return {"events": [], "offset": offset, "status": None}
         self.account.step(run)
         return {
             "events": run["events"][offset:],
@@ -130,6 +135,11 @@ class FakeBlythe:
         }
 
     def job_state(self, job_id):
+        run = next(r for r in self.account.runs.values() if r["job"] == job_id)
+        if run["status"]["state"] is None:
+            return {"finished": False, "state": "PENDING", "reason": "Resources"}
+        if run["status"]["state"] in ("stopped", "failed"):
+            return {"finished": True, "state": "COMPLETED"}
         return {"finished": False, "state": "RUNNING"}
 
 
@@ -191,7 +201,8 @@ def test_a_call_runs_on_the_caller_s_own_account(setup):
     assert body["usage"] == {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
     assert accounts["ks0610"].logins == ["tok-ks"] and not accounts["rshields2004"].logins
     (run,) = accounts["ks0610"].runs.values()
-    assert run["request"]["model"] == MODEL and run["request"]["idle_minutes"] == 30
+    assert run["request"]["model"] == MODELS[MODEL]["model"]
+    assert run["request"]["idle_minutes"] == 30
     assert all_prompts(accounts["ks0610"])[0]["generate"] == {"max_tokens": 1024}
 
     headers = {"Authorization": "Bearer tok-ks"}
@@ -503,16 +514,16 @@ def test_a_call_that_timed_out_doesn_t_break_the_session(setup):
         reply.status_code == 200
         and reply.json()["choices"][0]["message"]["content"] == "echo: hello"
     )
-    assert gateway.sessions["ks0610"].thread.is_alive()
+    assert gateway.sessions[("ks0610", MODEL)].thread.is_alive()
 
 
-def test_the_job_is_full_precision_qwen_split_over_two_gpus(setup):
-    """The default profile (26 Nov 2026): Qwen3.8-27B in BF16 on two L40s, with the settings
-    of the first two-GPU job that worked, and 131,072-token prompts."""
+def test_the_default_is_full_precision_qwen_split_over_two_gpus(setup):
+    """qwen-27b-bf16 (26 Nov 2026): Qwen3.8-27B in BF16 on two L40s, with the settings of the
+    first two-GPU job that worked, and 131,072-token prompts."""
     client, accounts, gateway = setup
-    assert chat(client).status_code == 200
+    assert chat(client, model="default").status_code == 200
     ((run_id, run),) = accounts["ks0610"].runs.items()
-    assert MODEL == "Qwen/Qwen3.8-27B"
+    assert MODEL == "qwen-27b-bf16"
     assert accounts["ks0610"].resources[run_id] == {"gpus": 2, "mem_gb": 120}
     request = run["request"]
     assert request["model"] == "Qwen/Qwen3.8-27B" and request["max_model_len"] == 131072
@@ -524,26 +535,86 @@ def test_the_job_is_full_precision_qwen_split_over_two_gpus(setup):
     }
 
 
-def test_calls_naming_the_old_fp8_model_still_work(setup):
-    """f/dhr/llm.py and everyone's WeKnora model entry name Qwen/Qwen3.8-27B-FP8."""
+def test_each_model_a_call_names_gets_its_own_job(setup):
+    """Models are chosen per call (so per wiki build): by key, or by Hugging Face name, as
+    WeKnora entries made before 26 Nov do. Two models run side by side, one job each."""
     client, accounts, gateway = setup
-    reply = chat(client, model="Qwen/Qwen3.8-27B-FP8")
-    assert reply.status_code == 200, reply.text
-    assert reply.json()["model"] == "Qwen/Qwen3.8-27B"  # the model that answered
-    assert chat(client, model="gpt-4o").status_code == 404
+    account = accounts["ks0610"]
+    assert chat(client, model="qwen-27b-bf16").json()["model"] == "qwen-27b-bf16"
+    fp8 = chat(client, model="Qwen/Qwen3.8-27B-FP8")
+    assert fp8.status_code == 200, fp8.text
+    assert fp8.json()["model"] == "qwen-27b-fp8"
+    assert chat(client, model="Qwen/Qwen3.8-27B").json()["model"] == "qwen-27b-bf16"  # default
+    requests = sorted(run["request"]["model"] for run in account.runs.values())
+    assert requests == ["Qwen/Qwen3.8-27B", "Qwen/Qwen3.8-27B-FP8"]  # two jobs, not three
+    fp8_run = next(r for r, run in account.runs.items() if "FP8" in run["request"]["model"])
+    assert account.resources[fp8_run] == {"gpus": None, "mem_gb": None}  # the job file's one
+    assert "engine" not in account.runs[fp8_run]["request"]
+    assert account.logins == ["tok-ks", "tok-ks"]  # one login per job, one after the other
+
+    unknown = chat(client, model="gpt-4o")
+    assert unknown.status_code == 404 and "qwen-27b-fp8" in unknown.text
+    listed = client.get("/v1/models", headers={"Authorization": "Bearer tok-ks"}).json()
+    assert listed["default"] == "qwen-27b-bf16"
+    by_id = {m["id"]: m for m in listed["data"]}
+    assert set(by_id) == set(MODELS)
+    assert by_id["qwen-27b-fp8"]["context_window"] == 32768
+    assert by_id["qwen-27b-bf16"] == {
+        "id": "qwen-27b-bf16",
+        "object": "model",
+        "owned_by": "narratrace",
+        "label": "Qwen3.8 27B BF16",
+        "model": "Qwen/Qwen3.8-27B",
+        "context_window": 131072,
+        "concurrency": 64,
+        "gpus": 2,
+    }
 
 
-def test_one_setting_switches_back_to_fp8_on_one_gpu(monkeypatch):
-    monkeypatch.setenv("GATEWAY_PROFILE", "fp8-1gpu")
+def test_the_default_model_is_one_setting(monkeypatch):
+    monkeypatch.setenv("GATEWAY_DEFAULT_MODEL", "qwen-27b-fp8")
     settings = settings_from_env()
-    assert settings.model == "Qwen/Qwen3.8-27B-FP8" and settings.max_model_len == 32768
-    assert settings.job_resources == {"gpus": None, "mem_gb": None}  # the job file's own
-    request = settings.server_request()
-    assert "engine" not in request and request["max_num_seqs"] == 128
-
-    monkeypatch.setenv("GATEWAY_MAX_MODEL_LEN", "65536")  # one setting can still be changed
-    assert settings_from_env().max_model_len == 65536
-    monkeypatch.setenv("GATEWAY_PROFILE", "fp16")
-    with pytest.raises(ValueError, match="GATEWAY_PROFILE"):
+    assert settings.resolve("default") == settings.resolve(None) == "qwen-27b-fp8"
+    assert settings.resolve("Qwen/Qwen3.8-27B") == "qwen-27b-bf16"  # first with that name
+    assert settings.resolve("llama") is None
+    graphs = settings.server_request("qwen-27b-bf16-graphs")  # CUDA graphs on
+    assert graphs["engine"] == {"tensor_parallel_size": 2, "disable_custom_all_reduce": True}
+    monkeypatch.setenv("GATEWAY_DEFAULT_MODEL", "fp16")
+    with pytest.raises(ValueError, match="GATEWAY_DEFAULT_MODEL"):
         settings_from_env()
-    assert set(PROFILES) == {"bf16-2gpu", "fp8-1gpu"}
+
+
+def test_start_returns_at_once_while_the_job_waits_days_for_gpus(setup):
+    """f/dhr/O2/pipeline starts the job, then checks back every few minutes (26 Nov 2026:
+    one call held open for the whole SLURM wait timed out after 70 minutes)."""
+    client, accounts, gateway = setup
+    account, headers = accounts["ks0610"], {"Authorization": "Bearer tok-ks"}
+    account.queued = True
+    started = client.post("/start?model=qwen-27b-bf16", headers=headers).json()
+    assert started["model"] == "qwen-27b-bf16"
+    assert started["job_state"] == "submitted" and started["slurm"]["state"] == "PENDING"
+    assert len(account.runs) == 1
+    waiting = client.get("/status?refresh=true&model=default", headers=headers).json()
+    assert waiting["slurm"] == {"finished": False, "state": "PENDING", "reason": "Resources"}
+    assert client.post("/start", headers=headers).json()["run_id"] == started["run_id"]
+    assert len(account.runs) == 1  # starting again doesn't submit a second job
+
+    account.runs[started["run_id"]]["status"]["state"] = "waiting"  # SLURM gave it GPUs
+    ready = client.get("/status?refresh=true", headers=headers).json()
+    assert ready["job_state"] == "waiting" and ready["slurm"]["state"] == "RUNNING"
+    assert chat(client).status_code == 200
+
+
+def test_start_replaces_a_job_that_has_stopped_and_reports_one_that_failed(setup):
+    client, accounts, gateway = setup
+    account, headers = accounts["ks0610"], {"Authorization": "Bearer tok-ks"}
+    first = client.post("/start", headers=headers).json()["run_id"]
+    account.runs[first]["status"]["state"] = "stopped"  # idle for 30 minutes
+    second = client.post("/start", headers=headers).json()
+    assert second["run_id"] != first and second["job_state"] == "submitted"
+
+    account.runs[second["run_id"]]["status"] = {"state": "failed", "error": "GPUs can't talk"}
+    seen = client.get("/status?refresh=true", headers=headers).json()
+    assert seen["last_failure"] == "GPUs can't talk" and seen["run_id"] is None
+    assert client.get("/status", headers={"Authorization": "Bearer nope"}).status_code == 401
+    assert client.post("/start?model=llama", headers=headers).status_code == 404

@@ -26,10 +26,10 @@ from __future__ import annotations
 
 import os
 
-# The name calls use. The gateway accepts it whichever model it serves (since 26 Nov 2026,
-# full-precision Qwen/Qwen3.8-27B on two GPUs; gateway/sessions.py PROFILES), because every
-# person's WeKnora model entry uses this name. served_model() says which model really answers.
-MODEL = "Qwen/Qwen3.8-27B-FP8"
+# The model a call names when it doesn't choose one: the gateway's default (since 26 Nov 2026,
+# qwen-27b-bf16). Choose another by its key, e.g. model="qwen-27b-fp8"; models() lists them
+# (the catalogue is MODELS in gateway/sessions.py, the only place model names are written).
+MODEL = "default"
 GATEWAY_URL = "http://llm-gateway:8000/v1"  # inside the project server's Docker network
 TIMEOUT_SECONDS = 3600
 
@@ -51,7 +51,8 @@ def client(**options):
     from openai import OpenAI
 
     url, token = connection()
-    return OpenAI(base_url=url, api_key=token, timeout=TIMEOUT_SECONDS, **options)
+    options.setdefault("timeout", TIMEOUT_SECONDS)
+    return OpenAI(base_url=url, api_key=token, **options)
 
 
 def chat_model(**options):
@@ -62,7 +63,32 @@ def chat_model(**options):
     return ChatOpenAI(model=MODEL, base_url=url, api_key=token, timeout=TIMEOUT_SECONDS, **options)
 
 
-def gateway_status() -> dict:
+def models() -> dict:
+    """The gateway's models: {"default": key, "data": [{"id": key, "label", "model" (its Hugging
+    Face name), "context_window", "concurrency", "gpus"}, ...]}."""
+    return _gateway("get", "/v1/models")
+
+
+def model_info(model: str = MODEL) -> dict:
+    """One model's entry from models(): `model` is its key, its Hugging Face name or
+    "default". Raises with the choices if the gateway doesn't serve it."""
+    listed = models()
+    choices = {m["id"]: m for m in listed["data"]}
+    if model in (None, "", "default"):
+        return choices[listed["default"]]
+    if model in choices:
+        return choices[model]
+    by_name = [m for m in listed["data"] if m["model"] == model]
+    if by_name:
+        default = choices[listed["default"]]
+        return default if default in by_name else by_name[0]
+    raise ValueError(
+        f"The LLM gateway has no model {model!r}: choose one of {sorted(choices)} or"
+        f' "default" ({listed["default"]}).'
+    )
+
+
+def gateway_status(model: str = MODEL) -> dict:
     """What the gateway knows of your model right now, without contacting Blythe: your job's
     state (SLURM job id, run folder), calls queued and with the job, and your calls and tokens
     so far. {"error": ...} if the gateway can't be asked."""
@@ -72,11 +98,45 @@ def gateway_status() -> dict:
     base = url.removesuffix("/v1").rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        status = httpx.get(f"{base}/status", headers=headers, timeout=10).json()
+        status = httpx.get(
+            f"{base}/status", params={"model": model}, headers=headers, timeout=10
+        ).json()
         usage = httpx.get(f"{base}/usage", headers=headers, timeout=10).json()
     except (httpx.HTTPError, ValueError) as error:
         return {"error": f"can't ask the gateway: {error}"}
     return {**status, "usage": usage}
+
+
+def gateway_start(model: str = MODEL) -> dict:
+    """Submits your job for one model on Blythe if it isn't there (or has ended) and returns at
+    once with its state: it may then wait in SLURM's queue for hours or days. Raises if the
+    gateway or Blythe can't be asked."""
+    return _gateway("post", "/start", {"model": model})
+
+
+def gateway_refresh(model: str = MODEL) -> dict:
+    """Your job for one model, asking Blythe first: job_state (llm_serve's: None while queued,
+    then loading, waiting = ready, answering), slurm (SLURM's state and reason, e.g. PENDING /
+    Resources) and last_failure (why the last job failed). Raises if it can't be asked."""
+    return _gateway("get", "/status", {"model": model, "refresh": "true"})
+
+
+def _gateway(method: str, path: str, params: dict | None = None) -> dict:
+    import httpx
+
+    url, token = connection()
+    base = url.removesuffix("/v1").rstrip("/")
+    reply = httpx.request(
+        method,
+        base + path,
+        params=params,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=180,
+    )
+    body = reply.json()
+    if reply.status_code != 200:
+        raise RuntimeError(f"the LLM gateway said: {(body.get('error') or {}).get('message')}")
+    return body
 
 
 JOB_STATES = {
@@ -95,6 +155,7 @@ def describe_gateway(status: dict) -> str:
         return f"model: {status['error']}"
     if not status.get("run_id"):
         return "model: not running yet (it starts with the first call)"
+    which = f" {status['model']}" if status.get("model") else ""
     usage = status.get("usage") or {}
     state = JOB_STATES.get(status.get("job_state") or "", status.get("job_state") or "starting")
     working, waiting = status.get("calls_with_the_job", 0), status.get("calls_waiting_to_send", 0)
@@ -102,22 +163,15 @@ def describe_gateway(status: dict) -> str:
     if waiting:
         now += f", {waiting:,} about to be sent"
     return (
-        f"model on Blythe (SLURM job {status.get('slurm_job_id') or '-'}): {state}, {now};"
+        f"model{which} on Blythe (SLURM job {status.get('slurm_job_id') or '-'}): {state}, {now};"
         f" {usage.get('calls', 0):,} calls answered in total"
     )
 
 
-def served_model() -> str:
-    """The model the gateway runs now (for records of which model made a result); MODEL if
-    the gateway can't be asked."""
-    import json
-    import urllib.request
-
-    url, _ = connection()
+def served_model(model: str = MODEL) -> str:
+    """The Hugging Face name of the model a call naming `model` gets (for records of which
+    model made a result); `model` itself if the gateway can't be asked."""
     try:
-        with urllib.request.urlopen(
-            url.rstrip("/").removesuffix("/v1") + "/health", timeout=10
-        ) as r:
-            return json.load(r).get("model") or MODEL
-    except (OSError, ValueError):
-        return MODEL
+        return model_info(model)["model"]
+    except Exception:  # noqa: BLE001 - only a record: never stop the work for it
+        return model

@@ -31,14 +31,22 @@ class GatewayError(RuntimeError):
     """Blythe or the job failed; becomes an HTTP 502."""
 
 
-# The model jobs the gateway can run (Rowan, 26 Nov 2026). "bf16-2gpu" is the default:
-# Qwen3.8-27B at full precision split over two L40s, with the settings of test job 1389794
-# (25 Nov, the first two-GPU run that loaded and answered): no CUDA graphs, NCCL for every
-# all-reduce. The two cards hold about 275,000 tokens between all prompts in flight, so a
-# prompt may be up to 131,072 tokens. "fp8-1gpu" is the 8-bit model on one L40 the gateway
-# ran before; GATEWAY_PROFILE=fp8-1gpu in compose.yaml switches back to it.
-PROFILES = {
-    "bf16-2gpu": {
+# The models the gateway can run, by key (Rowan, 26 Nov 2026: chosen per wiki build, and no
+# model name fixed in WeKnora). A call names one by its key ("qwen-27b-bf16"), by its
+# Hugging Face name, or as "default" (Settings.default_model). Each person gets one llm_serve
+# job per model they use, started when first needed, so two builds on different models run
+# side by side. To add a model: add an entry here (and to the O2 flow's "model" choices) and
+# download it on Blythe (slurm/jobs/setup_env.sbatch <model>); f/dhr/O2/check_setup then
+# makes each person's WeKnora entry for it.
+#
+# label and context_window go into WeKnora's model entry; concurrency is its background
+# concurrency limit (as many calls as the job works on at once).
+MODELS = {
+    # Full precision, split over two L40s, with the settings of test job 1389794 (25 Nov, the
+    # first two-GPU run that loaded and answered): no CUDA graphs, NCCL for every all-reduce.
+    # The two cards hold about 275,000 tokens between all prompts in flight.
+    "qwen-27b-bf16": {
+        "label": "Qwen3.8 27B BF16",
         "model": "Qwen/Qwen3.8-27B",
         "max_model_len": 131072,
         "max_num_seqs": 64,
@@ -51,7 +59,21 @@ PROFILES = {
             "disable_custom_all_reduce": True,
         },
     },
-    "fp8-1gpu": {
+    # The same with CUDA graphs and torch.compile (no enforce_eager): faster per token, a few
+    # more minutes to start (compiled again in every job); untested on Blythe (26 Nov).
+    "qwen-27b-bf16-graphs": {
+        "label": "Qwen3.8 27B BF16 graphs",
+        "model": "Qwen/Qwen3.8-27B",
+        "max_model_len": 131072,
+        "max_num_seqs": 64,
+        "gpu_memory_utilization": 0.85,
+        "gpus": 2,
+        "mem_gb": 120,
+        "engine": {"tensor_parallel_size": 2, "disable_custom_all_reduce": True},
+    },
+    # 8-bit, on one L40 (the gateway's model until 26 Nov).
+    "qwen-27b-fp8": {
+        "label": "Qwen3.8 27B FP8",
         "model": "Qwen/Qwen3.8-27B-FP8",
         "max_model_len": 32768,
         "max_num_seqs": 128,
@@ -61,16 +83,27 @@ PROFILES = {
         "engine": {},
     },
 }
-# Every profile's model name is accepted in calls, whichever profile is running, so code and
-# WeKnora model entries naming the old FP8 model keep working; answers name the model served.
-ACCEPTED_MODELS = {profile["model"] for profile in PROFILES.values()}
+DEFAULT_NAMES = (None, "", "default")
+
+
+def describe(key: str) -> dict:
+    """What /v1/models says of a model: everything a WeKnora entry needs."""
+    m = MODELS[key]
+    return {
+        "id": key,
+        "object": "model",
+        "owned_by": "narratrace",
+        "label": m["label"],
+        "model": m["model"],
+        "context_window": m["max_model_len"],
+        "concurrency": m["max_num_seqs"],
+        "gpus": m["gpus"] or 1,
+    }
 
 
 @dataclasses.dataclass
 class Settings:
-    profile: str = "bf16-2gpu"  # one of PROFILES
-    model: str = ""  # empty: the profile's
-    max_model_len: int = 0  # 0: the profile's
+    default_model: str = "qwen-27b-bf16"  # the model calls naming no model (or "default") get
     idle_minutes: int = 30  # the job stops after this long with nothing to do
     hours: int = 8  # the job's SLURM time limit
     job_poll_seconds: float = 0.5  # how often the job looks in its inbox
@@ -84,37 +117,45 @@ class Settings:
     max_errors: int = 3  # Blythe errors in a row before waiting calls are failed
 
     def __post_init__(self):
-        if self.profile not in PROFILES:
+        if self.default_model not in MODELS:
             raise ValueError(
-                f"GATEWAY_PROFILE must be one of {sorted(PROFILES)}, not {self.profile!r}"
+                f"GATEWAY_DEFAULT_MODEL must be one of {sorted(MODELS)}, not {self.default_model!r}"
             )
-        chosen = PROFILES[self.profile]
-        self.model = self.model or chosen["model"]
-        self.max_model_len = self.max_model_len or chosen["max_model_len"]
 
-    @property
-    def job_resources(self) -> dict:
+    def resolve(self, name: str | None) -> str | None:
+        """The key of the model a call names (its key, its Hugging Face name or "default");
+        None if the gateway doesn't serve it. A Hugging Face name served by several entries
+        means the default if that is one of them, else the first."""
+        if name in DEFAULT_NAMES:
+            return self.default_model
+        if name in MODELS:
+            return name
+        matching = [k for k, m in MODELS.items() if m["model"] == name]
+        if self.default_model in matching:
+            return self.default_model
+        return matching[0] if matching else None
+
+    def job_resources(self, key: str) -> dict:
         """start_server's gpus and mem_gb (None: the job file's own)."""
-        chosen = PROFILES[self.profile]
-        return {"gpus": chosen["gpus"], "mem_gb": chosen["mem_gb"]}
+        return {"gpus": MODELS[key]["gpus"], "mem_gb": MODELS[key]["mem_gb"]}
 
-    def server_request(self) -> dict:
-        """input/request.json for the person's llm_serve job."""
-        chosen = PROFILES[self.profile]
+    def server_request(self, key: str) -> dict:
+        """input/request.json for a person's llm_serve job running model `key`."""
+        m = MODELS[key]
         request = {
-            "model": self.model,
-            "max_model_len": self.max_model_len,
+            "model": m["model"],
+            "max_model_len": m["max_model_len"],
             "top_logprobs": 20,
             "chunk_size": 64,
-            "gpu_memory_utilization": chosen["gpu_memory_utilization"],
-            "max_num_seqs": chosen["max_num_seqs"],
+            "gpu_memory_utilization": m["gpu_memory_utilization"],
+            "max_num_seqs": m["max_num_seqs"],
             "seed": 0,
             "idle_minutes": self.idle_minutes,
             "poll_seconds": self.job_poll_seconds,
             "purpose": "gateway",
         }
-        if chosen["engine"]:
-            request["engine"] = dict(chosen["engine"])
+        if m["engine"]:
+            request["engine"] = dict(m["engine"])
         return request
 
 
@@ -135,8 +176,11 @@ def log(user: str, message: str) -> None:
 class Session:
     """connect() returns a connected Blythe login for this person (blythe.Blythe)."""
 
-    def __init__(self, user: str, connect, settings: Settings, clock=time.monotonic):
+    def __init__(
+        self, user: str, connect, settings: Settings, model: str = "", clock=time.monotonic
+    ):
         self.user, self.connect, self.settings, self.clock = user, connect, settings, clock
+        self.model = model or settings.default_model  # the key in MODELS this job runs
         self.cond = threading.Condition()
         self.queue: list[Call] = []
         self.sent: dict[str, list[Call]] = {}
@@ -151,6 +195,9 @@ class Session:
         self.errors = 0
         self.thread: threading.Thread | None = None
         self.stopped = False
+        self.refreshes: list[tuple[bool, concurrent.futures.Future]] = []  # (start?, reply)
+        self.slurm: dict = {}  # what SLURM last said about the job (state, reason)
+        self.last_failure: str | None = None  # why the last job failed, if it did
 
     # --- what the web app calls
 
@@ -165,16 +212,34 @@ class Session:
             self.cond.notify()
         return future
 
+    def refresh(self, start: bool, timeout: float = 120) -> dict:
+        """Asks Blythe how the job is doing and returns status(). start: also submit a job if
+        there is none (or it has ended), without waiting for SLURM to give it GPUs. This is how
+        a flow waits for days in the SLURM queue: it starts the job once, then checks back now
+        and then, instead of holding one call open (26 Nov 2026)."""
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        with self.cond:
+            self.refreshes.append((start, future))
+            self.last_used = self.clock()
+            if self.thread is None or not self.thread.is_alive():
+                self.thread = threading.Thread(target=self._loop, daemon=True)
+                self.thread.start()
+            self.cond.notify()
+        return future.result(timeout=timeout)
+
     def status(self) -> dict:
         with self.cond:
             return {
                 "user": self.user,
+                "model": self.model,
                 "run_id": self.run_id,
                 "slurm_job_id": self.slurm_job_id,
                 "job_state": self.state,
                 "calls_waiting_to_send": len(self.queue),
                 "calls_with_the_job": sum(len(calls) for calls in self.sent.values()),
                 "logged_in": bool(self.blythe is not None and self.blythe.alive()),
+                "slurm": dict(self.slurm),
+                "last_failure": self.last_failure,
             }
 
     def close(self) -> None:
@@ -189,11 +254,16 @@ class Session:
     def _loop(self) -> None:
         while True:
             with self.cond:
-                while not self.queue and not self.sent and not self.stopped:
+                while not self.queue and not self.sent and not self.refreshes and not self.stopped:
                     if not self.cond.wait(timeout=60):
                         self._close_if_idle()
                 if self.stopped:
                     return
+                refreshes, self.refreshes = self.refreshes, []
+            if refreshes:
+                self._refresh(refreshes)
+                continue
+            with self.cond:
                 if self.queue and not self.sent:
                     # gather calls arriving together into one request: wait out the whole
                     # window (each new call wakes this wait, so keep waiting until it ends)
@@ -216,6 +286,43 @@ class Session:
                 self._trouble(error, batch)
             if self.sent and not self.queue:
                 time.sleep(self.settings.check_seconds)
+
+    def _refresh(self, refreshes: list) -> None:
+        try:
+            b = self._login()
+            if self.run_id is not None:
+                if self.sent:
+                    self._check()  # also delivers answers
+                else:
+                    seen = b.events(self.run_id, self.offset)
+                    self.offset = seen["offset"]
+                    self.state = (seen["status"] or {}).get("state") or self.state
+                    if self.state == "failed":
+                        self.last_failure = (seen["status"] or {}).get("error") or "it failed"
+                if self.run_id is not None and self.state not in ("waiting", "answering"):
+                    self.slurm = b.job_state(self.slurm_job_id) if self.slurm_job_id else {}
+                    self.last_slurm_check = self.clock()
+                    if self.state in ("stopped", "failed") or self.slurm.get("finished"):
+                        log(self.user, f"{self.run_id} has ended ({self.state}, {self.slurm})")
+                        if not self.sent:
+                            self.run_id, self.slurm_job_id, self.state = None, None, None
+            if any(start for start, _ in refreshes) and self.run_id is None:
+                self._start_server(b)
+                self.slurm = {"state": "PENDING", "reason": "just submitted"}
+            if self.state in ("waiting", "answering"):
+                self.slurm, self.last_failure = {"state": "RUNNING"}, None
+            self.errors = 0
+        except Exception as error:  # noqa: BLE001 - reported to the caller
+            log(self.user, f"refresh failed: {error}\n{traceback.format_exc(limit=3)}")
+            if self.blythe is not None:
+                self.blythe.close()
+            self.blythe = None
+            for _, future in refreshes:
+                future.set_exception(GatewayError(f"couldn't ask Blythe: {error}"))
+            return
+        reply = self.status()
+        for _, future in refreshes:
+            future.set_result(reply)
 
     def _trouble(self, error: Exception, batch: list[Call]) -> None:
         self.errors += 1
@@ -259,14 +366,17 @@ class Session:
         run_id = f"gw-{stamp()}-{secrets.token_hex(2)}"
         submitted = b.start_server(
             run_id,
-            self.settings.server_request(),
+            self.settings.server_request(self.model),
             self.settings.hours,
-            **self.settings.job_resources,
+            **self.settings.job_resources(self.model),
         )
         self.run_id, self.slurm_job_id = run_id, submitted["slurm_job_id"]
         self.offset, self.state = 0, "submitted"
         self.last_slurm_check = self.clock()
-        log(self.user, f"Started llm_serve as SLURM job {self.slurm_job_id} in {run_id}")
+        log(
+            self.user,
+            f"Started llm_serve ({self.model}) as SLURM job {self.slurm_job_id} in {run_id}",
+        )
 
     def _send(self, batch: list[Call]) -> None:
         b = self._login()

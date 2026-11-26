@@ -15,7 +15,7 @@ from test_llm_server import LocalBlythe
 from f.dhr import blythe
 from f.dhr.tools import blythe_check as tool
 
-MODEL = tool.MODEL
+MODEL = tool.FALLBACK_MODEL
 
 
 def set_up(home, freeze="vllm==0.34.0\n"):

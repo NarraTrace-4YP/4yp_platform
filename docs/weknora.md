@@ -31,14 +31,22 @@ WeKnora calls the model through the LLM gateway (`gateway/README.md`), using you
 Windmill token. Each call then runs on your own Blythe account, so first make sure your
 Blythe variables are set up and `f/dhr/tools/blythe_check` passes.
 
-In WeKnora's model settings, add a chat model:
+In the team space's model settings, add ONE chat model by hand:
 
-| Setting  | Value                                       |
-| -------- | ------------------------------------------- |
-| Provider | Custom (OpenAI-compatible)                  |
-| Base URL | `http://llm-gateway:8000/v1`                |
-| API key  | your Windmill token (Windmill → Account settings → Tokens) |
-| Model    | `Qwen/Qwen3.8-27B-FP8`                      |
+| Setting      | Value                                                      |
+| ------------ | ---------------------------------------------------------- |
+| Provider     | Custom (OpenAI-compatible)                                 |
+| Base URL     | `http://llm-gateway:8000/v1`                               |
+| API key      | your Windmill token (Windmill → Account settings → Tokens) |
+| Model name   | `default` (any name works: the gateway's default answers)  |
+| Display name | `Qwen (<your Windmill username>)`                          |
+
+That entry is the template for the rest. The first time you build a wiki with a model, the
+O2 pipeline's `check_setup` copies it (so your token comes along) into an entry for that
+model: model name = the gateway's key (e.g. `qwen-27b-bf16`), display name e.g.
+`Qwen3.8 27B BF16 (<you>)`, with the model's context window and background concurrency.
+No model names need typing into WeKnora, and choosing a model is the pipeline's `model`
+input (the gateway's list: `gateway/README.md`, "Models").
 
 Start the model first (run `f/dhr/tools/llm_chat` and wait for an answer). Its first
 request otherwise waits for SLURM to give it a GPU and for the model to load. That takes

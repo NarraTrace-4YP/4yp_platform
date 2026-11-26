@@ -34,7 +34,20 @@ from ..blythe import (
     q,
     windmill_user,
 )
-from ..llm import MODEL
+from ..llm import model_info
+
+# The model checked when the LLM gateway can't be asked which one is its default.
+FALLBACK_MODEL = "Qwen/Qwen3.8-27B"
+
+
+def default_model() -> str:
+    """The Hugging Face name of the gateway's default model (the one wiki builds get unless
+    they choose another); FALLBACK_MODEL if the gateway can't be asked."""
+    try:
+        return model_info("default")["model"]
+    except Exception:  # noqa: BLE001 - this tool only looks; fall back
+        return FALLBACK_MODEL
+
 
 JOB_FILES = ("llm_batch.sbatch", "llm_serve.sbatch", "test_gpu.sbatch")
 SHARE_LINKS = ("env", "models", "hf-home", "uv-cache", "vllm-cache", "python", "cache")
@@ -108,8 +121,8 @@ def log_in(account) -> tuple[Blythe | None, dict]:
     return b, check("Login", True, f"Logged in to {host} as {who}; home folder {b.home}.")
 
 
-def check_setup(b) -> list[dict]:
-    """Step 3: ~/narratrace, read with fixed commands only."""
+def check_setup(b, model: str = FALLBACK_MODEL) -> list[dict]:
+    """Step 3: ~/narratrace, read with fixed commands only. model: the model to look for."""
     checks = []
     base = b.path()
     code = b.path("slurm")
@@ -174,18 +187,19 @@ def check_setup(b) -> list[dict]:
         )
     )
 
-    model = b.path("models", MODEL)
+    folder = b.path("models", model)
     status, out, _ = b.sh(
-        f"test -f {q(model)}/config.json && cat {q(model)}/NARRATRACE_REVISION 2>/dev/null"
+        f"test -f {q(folder)}/config.json && cat {q(folder)}/NARRATRACE_REVISION 2>/dev/null"
     )
     checks.append(
         check(
             "Model",
             status == 0,
-            f"{MODEL} is downloaded (commit {out.strip() or 'unknown'})"
+            f"{model} is downloaded (commit {out.strip() or 'unknown'})"
             if status == 0
-            else f"{MODEL} isn't downloaded.",
-            "setup_env.sbatch downloads it; run it, then check its setup-<job>.out.",
+            else f"{model} isn't downloaded.",
+            f"On Blythe: cd ~/narratrace && bash slurm/jobs/setup_env.sbatch {model}, then"
+            " check its setup-<job>.out.",
         )
     )
     return checks
@@ -219,7 +233,7 @@ def main(offline: bool = False):
         checks.append(login)
         if b is not None:
             try:
-                checks += check_setup(b)
+                checks += check_setup(b, default_model())
                 checks.append(check_slurm(b))
             finally:
                 b.close()

@@ -93,24 +93,44 @@ tunnels). It is never put on the public website. After merging a change, update 
 server with `sudo /opt/dhr/server/update.sh`, which rebuilds the image.
 
 Settings can be changed with environment variables on the service, e.g.
-`GATEWAY_IDLE_MINUTES=45` or `GATEWAY_MAX_MODEL_LEN=16384` (every field of `Settings` in
-`sessions.py`, as `GATEWAY_<NAME>`).
+`GATEWAY_IDLE_MINUTES=45` or `GATEWAY_DEFAULT_MODEL=qwen-27b-fp8` (every field of `Settings`
+in `sessions.py`, as `GATEWAY_<NAME>`).
 
-## The model
+## Models
 
-Since 26 Nov 2026 each person's job runs **Qwen3.8-27B at full precision (BF16), split over
-two L40s** (`PROFILES["bf16-2gpu"]` in `sessions.py`). Prompts may be up to 131,072 tokens
-(the two cards hold about 275,000 tokens between all prompts in flight) and up to 64 are
-worked on at once. It uses the settings of the first two-GPU test job that worked (1389794,
-25 Nov): no CUDA graphs (`enforce_eager`), NCCL for every all-reduce, no direct GPU-to-GPU
-copies (the job file sets that), and a 20-second check that the GPUs can talk before the model
-loads. Loading takes about 5 minutes after the job gets its GPUs; two GPUs may queue longer
-than one.
+The gateway serves several models, listed once, in `MODELS` in `sessions.py`, by key. A call
+chooses one with OpenAI's `model` field: its key, its Hugging Face name, or `default`
+(`GATEWAY_DEFAULT_MODEL`, set in `.env`; `qwen-27b-bf16` unless changed). `GET /v1/models`
+lists them with what a WeKnora entry needs (label, context window, concurrency). Each person
+gets one Blythe job per model they use, so two builds on different models run side by side.
 
-To go back to the 8-bit model on one L40 (32,768-token prompts), set
-`GATEWAY_PROFILE=fp8-1gpu` on the service and restart it. New jobs use it; a job already
-running keeps its model until it stops.
+| Key | Model | GPUs | Prompt limit | At once |
+| --- | --- | --- | --- | --- |
+| `qwen-27b-bf16` (default) | Qwen/Qwen3.8-27B, full precision | 2 | 131,072 | 64 |
+| `qwen-27b-bf16-graphs` | the same, with CUDA graphs (untested) | 2 | 131,072 | 64 |
+| `qwen-27b-fp8` | Qwen/Qwen3.8-27B-FP8, 8-bit | 1 | 32,768 | 128 |
 
-Calls may name `Qwen/Qwen3.8-27B` or `Qwen/Qwen3.8-27B-FP8` (what `f/dhr/llm.py` and
-everyone's WeKnora model entry use): either is answered by the model the gateway runs, and the
-answer's `model` says which. `/health` names it too.
+The two-GPU models use the settings of the first two-GPU test job that worked (1389794,
+25 Nov 2026): NCCL for every all-reduce, no direct GPU-to-GPU copies (the job file sets that),
+and a 20-second check that the GPUs can talk before the model loads. `qwen-27b-bf16` also
+skips CUDA graphs (`enforce_eager`); `qwen-27b-bf16-graphs` doesn't, so it is faster per token
+but takes a few more minutes to start (compiled again in every job). Loading takes about 5
+minutes once a job has its GPUs; two GPUs may queue longer than one.
+
+**Adding a model:** add an entry to `MODELS` (and its key to the O2 flow's `model` choices),
+download it on Blythe with `slurm/jobs/setup_env.sbatch <Hugging Face name>` for each
+person, merge and run `update.sh`. Nobody edits WeKnora: `f/dhr/O2/check_setup` makes each
+person's WeKnora entry for a model the first time they build with it (`docs/weknora.md`).
+
+## Waiting days for GPUs
+
+A two-GPU job can wait in SLURM's queue for hours or days. Rather than holding one call open
+that long, a flow asks the gateway to submit the job and then checks back:
+
+- `POST /start?model=<key>`: submits your job for that model if there is none (or it has
+  ended) and returns at once.
+- `GET /status?model=<key>&refresh=true`: asks Blythe how it is doing: `job_state` (llm_serve's own state,
+  empty while queued), `slurm` (e.g. `PENDING`, reason `Resources`) and `last_failure`.
+
+`f/dhr/llm.py` has `gateway_start()` and `gateway_refresh()`; the O2 flow's `start_model` and
+`wait_for_model` steps use them, sleeping between checks without holding a Windmill worker.

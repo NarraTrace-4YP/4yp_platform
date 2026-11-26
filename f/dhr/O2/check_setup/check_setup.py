@@ -8,11 +8,13 @@
 # ///
 """O2 stage 1: check everything a wiki build needs, before any GPU is used.
 
-Checks, as the person running it: the WeKnora key works (the team space's, f/dhr/
-weknora_api_key), the space has this person's entry for the team model, every
-knowledge-base setting is allowed (f/dhr/O2/kb_settings.py), WeKnora's graph database is on
-when the knowledge graph is wanted, and the chosen reviews are in the database, grouped by
-O1. Starts nothing on Blythe and changes nothing in WeKnora, so it is safe to run on its own.
+Checks, as the person running it: the chosen model is one the LLM gateway serves (its
+catalogue, gateway/sessions.py MODELS; "default" is the gateway's default), the WeKnora key
+works (the team space's, f/dhr/weknora_api_key), every knowledge-base setting is allowed
+(f/dhr/O2/kb_settings.py), WeKnora's graph database is on when the knowledge graph is
+wanted, and the chosen reviews are in the database, grouped by O1. It makes this person's
+WeKnora entry for the chosen model if they have none yet (copied from their own entry, so
+it carries their token: f/dhr/weknora.py). Starts nothing on Blythe.
 
 Returns the WeKnora model id the later steps use, each review's size, how many reviews are
 longer than WeKnora's wiki reads (it uses only the first 32,768 characters of each file;
@@ -23,7 +25,7 @@ will make.
 from __future__ import annotations
 
 from ...db import apply_migrations, connect
-from ...llm import MODEL
+from ...llm import model_info
 from ...weknora import WeKnora, WeKnoraError
 from ..kb_settings import WEKNORA_WIKI_READ_LIMIT, check_settings
 from ..reviews import check_choices, choose_reviews, review_file
@@ -44,8 +46,10 @@ def main(
     ingest_max_inflight: int = 0,
     knowledge_graph: bool = True,
     graph_instructions: str = "",
+    model: str = "default",
 ):
     check_choices(dataset, reviews, doc_ids, template_guidance)
+    chosen_model = model_info(model)  # raises with the choices if the gateway lacks it
     kb = check_settings(
         chunk_strategy,
         chunk_size,
@@ -59,7 +63,7 @@ def main(
         graph_instructions,
     )
     wk = WeKnora()
-    model = wk.chat_model(MODEL)
+    entry = wk.model_entry(chosen_model)
     graph_database = wk.graph_database()
     if knowledge_graph and graph_database.lower() != "neo4j":
         raise WeKnoraError(
@@ -87,8 +91,10 @@ def main(
     n_files = len(sizes)
     chunks = round(total / max(1, kb["chunk_size"] - kb["chunk_overlap"]))
     return {
-        "model_id": model["id"],
-        "model": MODEL,
+        "model_id": entry["id"],
+        "model": chosen_model["id"],  # the gateway's key: what every later step asks for
+        "model_name": chosen_model["model"],
+        "weknora_entry": entry.get("display_name"),
         "graph_database": graph_database,
         "knowledge_base": kb,
         "n_reviews": len(chosen),
