@@ -204,9 +204,9 @@ services:
     environment:
       WINDMILL_URL: http://windmill-server:8000
       WINDMILL_WORKSPACE: dhr
-      # bf16-2gpu: full-precision Qwen3.8-27B on two L40s; fp8-1gpu: the 8-bit one on one
-      # (gateway/README.md, "The model"). Set GATEWAY_PROFILE in .env to switch.
-      GATEWAY_PROFILE: ${GATEWAY_PROFILE:-bf16-2gpu}
+      # The model calls get when they name none (or "default"): a key of MODELS in
+      # gateway/sessions.py (gateway/README.md, "Models"). Set GATEWAY_DEFAULT_MODEL in .env.
+      GATEWAY_DEFAULT_MODEL: ${GATEWAY_DEFAULT_MODEL:-qwen-27b-bf16}
     ports:
       - "127.0.0.1:${LLM_GATEWAY_HOST_PORT:-8100}:8000"
     volumes:

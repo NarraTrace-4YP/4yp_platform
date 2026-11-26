@@ -40,7 +40,7 @@ from __future__ import annotations
 from ...db import apply_migrations, connect
 from ...llm import describe_gateway, gateway_status
 from ...weknora import WeKnora
-from ..folders import english_folders, model_is_up
+from ..folders import ask_model, english_folders, model_is_up
 from ..kgraph import copy_graph
 from ..progress import FINISHED, build_progress, report
 from ..wiki_store import get_instance, runner, save_wiki, set_status
@@ -83,11 +83,13 @@ def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
                 " WHERE instance_id = %s AND doc_id = %s AND part = %s",
                 (status, (d or {}).get("error_message") or None, instance_id, doc_id, part),
             )
-        gateway = gateway_status()
+        gateway = gateway_status(build["model"] or "default")  # the build's own model job
         folders = None
         if build["created_by"] == runner() and model_is_up(gateway):
             try:
-                folders = english_folders(wk, kb_id)
+                folders = english_folders(
+                    wk, kb_id, ask=lambda prompt: ask_model(prompt, build["model"])
+                )
                 if folders["renamed"] or folders["merged"]:
                     print(
                         f"Folders: {folders['renamed']} renamed and {folders['merged']} merged"

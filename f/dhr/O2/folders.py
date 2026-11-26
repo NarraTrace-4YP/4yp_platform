@@ -111,12 +111,13 @@ SCHEMA = {
 }
 
 
-def ask_model(prompt: str) -> str:
-    """One short call to the runner's model through the gateway (waits at most 3 minutes)."""
-    from ..llm import MODEL, client
+def ask_model(prompt: str, model: str = "default") -> str:
+    """One short call to the runner's model through the gateway (waits at most 3 minutes).
+    model: the build's model (wiki.instances.model), so no other model job is started."""
+    from ..llm import client
 
     reply = client(timeout=180, max_retries=0).chat.completions.create(
-        model=MODEL,
+        model=model or "default",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1500,
         temperature=0,

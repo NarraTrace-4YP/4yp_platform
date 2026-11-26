@@ -30,7 +30,9 @@ def main(
     labels: list[str] | None = None,
     json_schema: dict | None = None,
     max_tokens: int = 300,
+    model: str = "default",
 ):
+    """model: a key from the gateway's catalogue (e.g. qwen-27b-fp8), or "default"."""
     messages = [{"role": "system", "content": system}] if system else []
     messages.append({"role": "user", "content": question})
     options: dict = {}
@@ -42,7 +44,7 @@ def main(
             "json_schema": {"name": "answer", "schema": json_schema},
         }
     reply = client().chat.completions.create(
-        model=MODEL, messages=messages, max_tokens=max_tokens, **options
+        model=model or MODEL, messages=messages, max_tokens=max_tokens, **options
     )
     message = reply.choices[0].message
     answer = message.content
@@ -52,6 +54,7 @@ def main(
     return {
         "answer": answer,
         "label_probabilities": extra.get("label_probabilities"),
+        "model": reply.model,
         "finish_reason": reply.choices[0].finish_reason,
         "usage": reply.usage.model_dump() if reply.usage else None,
     }

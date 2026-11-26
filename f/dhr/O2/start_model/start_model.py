@@ -1,33 +1,31 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#     "openai==3.51.0",
+#     "httpx==0.28.1",
 # ]
 # ///
-"""O2 stage 2: start the model and wait until it answers (on your own Blythe account).
+"""O2 stage 2: submit the model job on your own Blythe account (returns at once).
 
-Sends one tiny question through the LLM gateway, as the person running the flow. If their
-model job isn't running, the gateway starts it on Blythe and the answer comes once SLURM has
-given it a GPU and the model has loaded (usually a few minutes; up to an hour is allowed).
-WeKnora's own requests then find the model ready, instead of timing out while it loads.
+Asks the LLM gateway, as the person running the flow, to submit their model job if it isn't
+running. It doesn't wait for it: SLURM may keep the job queued for hours or days when the GPUs
+are busy, so the flow's next step, wait_for_model, checks back every few minutes without
+holding a worker (26 Nov 2026: waiting inside this step timed out after 70 minutes).
 """
 
 from __future__ import annotations
 
-import time
-
-from ...llm import MODEL, client
+from ...llm import gateway_start
 
 
-def main():
-    started = time.monotonic()
-    reply = client().chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": "Reply with the single word: ready"}],
-        max_tokens=5,
-    )
+def main(model: str = "default"):
+    """model: the gateway's key for the build's model (check_setup's "model")."""
+    status = gateway_start(model)
+    slurm = status.get("slurm") or {}
     return {
-        "model": reply.model,  # the model that answered
-        "answer": reply.choices[0].message.content,
-        "seconds_waited": round(time.monotonic() - started),
+        "model": status.get("model"),
+        "run_id": status.get("run_id"),
+        "slurm_job_id": status.get("slurm_job_id"),
+        "job_state": status.get("job_state"),
+        "slurm_state": slurm.get("state"),
+        "slurm_reason": slurm.get("reason"),
     }

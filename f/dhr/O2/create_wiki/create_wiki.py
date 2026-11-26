@@ -24,7 +24,8 @@ stay: chunking, the wiki's throughput settings and the knowledge graph, on by de
 
 Records a new build in wiki.instances, creates a knowledge base in the team's WeKnora space
 (wiki on, knowledge graph on unless turned off, vector and keyword search off) with the
-runner's own entry for the team model and the DHR instructions (f/dhr/O2/instructions.py,
+runner's own WeKnora entry for the chosen model (a key of the LLM gateway's catalogue, or
+"default"; recorded in wiki.instances.model) and the DHR instructions (f/dhr/O2/instructions.py,
 or the text given here), then uploads each chosen review as one Markdown file
 (f/dhr/O2/reviews.py), and records exactly what was uploaded in wiki.documents. WeKnora
 reads each file and builds the wiki (and the graph) in the background.
@@ -38,7 +39,7 @@ from __future__ import annotations
 import json
 
 from ...db import apply_migrations, connect
-from ...llm import MODEL, served_model
+from ...llm import model_info
 from ...version import GIT_COMMIT
 from ...weknora import WeKnora, WeKnoraError
 from ..folders import seed_folders
@@ -70,6 +71,7 @@ def main(
     ingest_max_inflight: int = 0,
     knowledge_graph: bool = True,
     graph_instructions: str = "",
+    model: str = "default",
 ):
     check_choices(dataset, reviews, doc_ids, template_guidance)
     kb = check_settings(
@@ -114,7 +116,8 @@ def main(
                 )
             kb_id = build["kb_id"]
         else:
-            model_id = model_id or wk.chat_model(MODEL)["id"]
+            chosen_model = model_info(model)
+            model_id = model_id or wk.model_entry(chosen_model)["id"]
             instance_id = new_instance_id()
             name = name.strip() or f"{dataset} {reviews} ({instance_id})"
             settings = {
@@ -123,6 +126,7 @@ def main(
                 "extraction_instructions": extraction,
                 "content_instructions": content,
                 "weknora_model_id": model_id,
+                "model": {k: chosen_model[k] for k in ("id", "label", "model", "context_window")},
                 "doc_ids": doc_ids if reviews == "chosen" else None,
                 "knowledge_base": kb,
             }
@@ -142,7 +146,7 @@ def main(
                     GIT_COMMIT,
                     dataset,
                     reviews,
-                    served_model(),  # the model that builds it (MODEL is only the name calls use)
+                    chosen_model["id"],  # the gateway's key: later steps ask for it by this
                     json.dumps(settings),
                 ),
             )

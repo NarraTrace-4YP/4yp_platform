@@ -23,6 +23,7 @@ http://llm-gateway:8000/v1, and from a laptop through an SSH tunnel to 127.0.0.1
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import dataclasses
 import hashlib
 import json
@@ -38,7 +39,7 @@ from fastapi.responses import JSONResponse
 from f.dhr.blythe import Blythe, BlytheError, load_account
 
 from .openai_format import RequestError, to_completion, to_prompt
-from .sessions import ACCEPTED_MODELS, GatewayError, Session, Settings
+from .sessions import MODELS, GatewayError, Session, Settings, describe
 
 
 def error(status: int, message: str, kind: str, code: str | None = None) -> JSONResponse:
@@ -87,8 +88,11 @@ class Windmill:
 class Gateway:
     def __init__(self, windmill: Windmill, settings: Settings, data: Path, connect=None):
         self.windmill, self.settings, self.data = windmill, settings, data
-        self.sessions: dict[str, Session] = {}
+        self.sessions: dict[tuple[str, str], Session] = {}  # (user, model key) -> session
         self.lock = threading.Lock()
+        # One login at a time per person: their sessions (one per model) share a 2FA secret,
+        # and Blythe refuses a code used moments before.
+        self.login_locks: dict[str, threading.Lock] = {}
         # connect(user, token) -> a connected Blythe login; replaced in the tests
         self.connect = connect or self._connect
 
@@ -96,12 +100,22 @@ class Gateway:
         account = load_account(user, self.windmill.variables(token))
         return Blythe(account, keepalive=30).connect()
 
-    def session(self, user: str, token: str) -> Session:
+    def _login(self, user: str, session: Session):
         with self.lock:
-            session = self.sessions.get(user)
+            lock = self.login_locks.setdefault(user, threading.Lock())
+        with lock:
+            return self.connect(user, session.token)
+
+    def session(self, user: str, token: str, model: str | None = None) -> Session:
+        """The person's session for one model (a key in MODELS; the default if None)."""
+        model = model or self.settings.default_model
+        with self.lock:
+            session = self.sessions.get((user, model))
             if session is None:
-                session = Session(user, lambda: self.connect(user, session.token), self.settings)
-                self.sessions[user] = session
+                session = Session(
+                    user, lambda: self._login(user, session), self.settings, model=model
+                )
+                self.sessions[(user, model)] = session
             session.token = token  # the newest, for logging in again later
             return session
 
@@ -127,9 +141,9 @@ def settings_from_env() -> Settings:
     given = {}
     for field in dataclasses.fields(Settings):
         value = os.environ.get(f"GATEWAY_{field.name.upper()}")
-        if value is not None:  # e.g. GATEWAY_IDLE_MINUTES=45, GATEWAY_PROFILE=fp8-1gpu
+        if value is not None:  # e.g. GATEWAY_IDLE_MINUTES=45, GATEWAY_DEFAULT_MODEL=qwen-27b-fp8
             given[field.name] = type(field.default)(value)
-    return Settings(**given)  # the profile fills model and max_model_len unless given
+    return Settings(**given)
 
 
 def create_app(gateway: Gateway | None = None) -> FastAPI:
@@ -158,9 +172,19 @@ def create_app(gateway: Gateway | None = None) -> FastAPI:
             return None, None, error(401, "Windmill didn't accept that token.", "auth")
         return user, token, None
 
+    def unknown_model(name):
+        return error(
+            404,
+            f'Model {name!r} isn\'t served here; use one of {sorted(MODELS)} (or "default",'
+            f" {gateway.settings.default_model}).",
+            "invalid_request_error",
+            "model_not_found",
+        )
+
     @app.get("/health")
     def health():
-        return {"ok": True, "model": gateway.settings.model}
+        default = gateway.settings.default_model
+        return {"ok": True, "default": default, "model": MODELS[default]["model"]}
 
     @app.get("/v1/models")
     def models(request: Request):
@@ -169,16 +193,42 @@ def create_app(gateway: Gateway | None = None) -> FastAPI:
             return problem
         return {
             "object": "list",
-            "data": [{"id": gateway.settings.model, "object": "model", "owned_by": "narratrace"}],
+            "default": gateway.settings.default_model,
+            "data": [describe(key) for key in MODELS],
         }
 
     @app.get("/status")
-    def status(request: Request):
-        user, _, problem = caller(request)
+    async def status(request: Request, model: str = "default", refresh: bool = False):
+        """Your job for one model as the gateway last saw it; refresh=true asks Blythe first."""
+        user, token, problem = caller(request)
         if problem:
             return problem
-        session = gateway.sessions.get(user)
-        return session.status() if session else {"user": user, "run_id": None}
+        key = gateway.settings.resolve(model)
+        if key is None:
+            return unknown_model(model)
+        if refresh:
+            return await refreshed(user, token, key, start=False)
+        session = gateway.sessions.get((user, key))
+        return session.status() if session else {"user": user, "model": key, "run_id": None}
+
+    @app.post("/start")
+    async def start(request: Request, model: str = "default"):
+        """Submits your job for one model if it isn't there, and returns at once (it may then
+        wait in SLURM's queue for hours or days: poll /status?refresh=true&model=...)."""
+        user, token, problem = caller(request)
+        if problem:
+            return problem
+        key = gateway.settings.resolve(model)
+        if key is None:
+            return unknown_model(model)
+        return await refreshed(user, token, key, start=True)
+
+    async def refreshed(user: str, token: str, key: str, start: bool):
+        session = gateway.session(user, token, key)
+        try:
+            return await asyncio.to_thread(session.refresh, start)
+        except (GatewayError, concurrent.futures.TimeoutError) as problem:
+            return JSONResponse({"error": {"message": f"{problem}"}}, status_code=502)
 
     @app.get("/usage")
     def usage(request: Request):
@@ -196,21 +246,16 @@ def create_app(gateway: Gateway | None = None) -> FastAPI:
             body = await request.json()
         except ValueError:
             return error(400, "The body must be JSON.", "invalid_request_error")
-        model = body.get("model")
-        if model not in (None, "", "default", gateway.settings.model, *ACCEPTED_MODELS):
-            return error(
-                404,
-                f"Model {model!r} isn't served here; use {gateway.settings.model!r}.",
-                "invalid_request_error",
-                "model_not_found",
-            )
+        key = gateway.settings.resolve(body.get("model"))
+        if key is None:
+            return unknown_model(body.get("model"))
         try:
             prompt = to_prompt(body, "p")
         except RequestError as problem:
             return error(400, str(problem), "invalid_request_error", problem.code)
 
         started = time.monotonic()
-        future = gateway.session(user, token).submit(prompt)
+        future = gateway.session(user, token, key).submit(prompt)
         try:
             result = await asyncio.wait_for(
                 asyncio.wrap_future(future), timeout=gateway.settings.timeout_seconds
@@ -230,12 +275,12 @@ def create_app(gateway: Gateway | None = None) -> FastAPI:
                     400, result["error"], "invalid_request_error", "context_length_exceeded"
                 )
             return error(502, result["error"], "server")
-        completion = to_completion(result, gateway.settings.model, bool(prompt.get("tools")))
+        completion = to_completion(result, key, bool(prompt.get("tools")))
         gateway.record(
             {
                 "at": int(time.time()),
                 "user": user,
-                "model": gateway.settings.model,
+                "model": key,
                 "kind": "labels" if "labels" in prompt else "chat",
                 "run_id": result.get("run_id"),
                 "seconds": round(time.monotonic() - started, 2),

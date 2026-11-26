@@ -847,14 +847,16 @@ def test_the_model_job_is_tidied_up_unless_another_build_needs_it(monkeypatch):
 
     monkeypatch.setattr(delete_wiki, "Blythe", FakeBlythe)
     status = {"run_id": "gw-1", "slurm_job_id": "42", "job_state": "waiting"}
-    monkeypatch.setattr(delete_wiki, "gateway_status", lambda: status)
+    monkeypatch.setattr(delete_wiki, "gateway_status", lambda model="default": status)
     assert "still use it" in delete_wiki.stop_model(["wiki-2"]) and stopped == []
     assert "SLURM job 42" in delete_wiki.stop_model([]) and stopped == ["gw-1"]
     status.update(job_state="stopped")
     assert "already ended" in delete_wiki.stop_model([])
     status.update(run_id=None)
     assert "no model job" in delete_wiki.stop_model([])
-    monkeypatch.setattr(delete_wiki, "gateway_status", lambda: {"error": "can't ask"})
+    monkeypatch.setattr(
+        delete_wiki, "gateway_status", lambda model="default": {"error": "can't ask"}
+    )
     assert "stops by itself" in delete_wiki.stop_model([]) and stopped == ["gw-1"]
 
 
@@ -1354,3 +1356,78 @@ def test_roles_and_documents_are_not_joined_as_organisations():
     assert joined_key("Ministry of Justice") == "ministry of justice"
     assert joined_key("Magistrates' Court") is None
     assert joined_key("Mental health professionals") is None
+
+
+# --- one WeKnora entry per person per gateway model (26 Nov 2026) -------------------------
+
+BF16 = {
+    "id": "qwen-27b-bf16",
+    "label": "Qwen3.8 27B BF16",
+    "model": "Qwen/Qwen3.8-27B",
+    "context_window": 131072,
+    "concurrency": 64,
+}
+
+
+class FakeModels:
+    """WeKnora's model list, copy and update, as far as WeKnora.model_entry uses them."""
+
+    def __init__(self, models):
+        self.models, self.calls = models, []
+
+    def __call__(self, request):
+        self.calls.append((request.method, request.url.path))
+        if request.method == "GET":
+            return httpx.Response(200, json={"success": True, "data": self.models})
+        body = json.loads(request.content)
+        if request.url.path.endswith("/copy"):
+            source = next(m for m in self.models if request.url.path.split("/")[-2] == m["id"])
+            copy = {**source, "id": f"m{len(self.models) + 1}", **body}
+            self.models.append(copy)
+            return httpx.Response(201, json={"success": True, "data": copy})
+        entry = next(m for m in self.models if m["id"] == request.url.path.split("/")[-1])
+        entry.update(body)
+        return httpx.Response(200, json={"success": True, "data": entry})
+
+
+def test_a_models_entry_is_copied_from_the_persons_own_with_their_token():
+    hand_made = {
+        "id": "m1",
+        "name": "Qwen/Qwen3.8-27B-FP8",
+        "display_name": "Qwen (rshields2004)",
+        "type": "KnowledgeQA",
+        "source": "remote",
+        "parameters": {"base_url": "http://llm-gateway:8000/v1", "context_window": 32768},
+    }
+    someone_elses = {**hand_made, "id": "m9", "display_name": "Qwen (markcoding05)"}
+    fake = FakeModels([someone_elses, hand_made])
+    wk = fake_weknora(fake, shared=True)
+
+    entry = wk.model_entry(BF16, user="rshields2004")
+    assert entry["id"] == "m3" and entry["name"] == "qwen-27b-bf16"
+    assert entry["display_name"] == "Qwen3.8 27B BF16 (rshields2004)"
+    assert entry["parameters"]["context_window"] == 131072
+    assert entry["parameters"]["max_concurrency"] == 64
+    assert ("POST", "/api/v1/models/m1/copy") in fake.calls  # their own, not markcoding05's
+    assert not any(k == "api_key" for k in entry["parameters"])  # the key stays WeKnora's copy
+
+    fake.calls.clear()
+    assert wk.model_entry(BF16, user="rshields2004")["id"] == "m3"
+    assert fake.calls == [("GET", "/api/v1/models")]  # already there: nothing changed
+
+    with pytest.raises(WeKnoraError, match="no model entry of yours to copy"):
+        wk.model_entry(BF16, user="ks0610")
+
+
+def test_a_models_entry_follows_the_gateways_numbers():
+    made = {
+        "id": "m2",
+        "name": "qwen-27b-bf16",
+        "display_name": "Qwen3.8 27B BF16 (rshields2004)",
+        "type": "KnowledgeQA",
+        "parameters": {"context_window": 65536, "max_concurrency": 32},
+    }
+    fake = FakeModels([made])
+    entry = fake_weknora(fake, shared=True).model_entry(BF16, user="rshields2004")
+    assert ("PUT", "/api/v1/models/m2") in fake.calls and entry["id"] == "m2"
+    assert made["parameters"] == {"context_window": 131072, "max_concurrency": 64}

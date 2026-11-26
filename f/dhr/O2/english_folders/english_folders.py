@@ -28,7 +28,7 @@ from __future__ import annotations
 from ...db import apply_migrations, connect
 from ...llm import gateway_status
 from ...weknora import WeKnora
-from ..folders import english_folders, model_is_up
+from ..folders import ask_model, english_folders, model_is_up
 from ..wiki_store import get_instance, runner, save_wiki
 
 
@@ -42,12 +42,14 @@ def main(instance_id: str):
                 f"{instance_id} was made by {build['created_by']}: they need to run this,"
                 " as it uses their model."
             )
-        if not model_is_up(gateway_status()):
+        model = build["model"] or "default"  # the build's own model
+        if not model_is_up(gateway_status(model)):
             raise RuntimeError(
-                "Your model isn't up. Start it with f/dhr/O2/start_model, then run this again."
+                f"Your model job for {model} isn't up. Start it with f/dhr/O2/start_model"
+                f" (model={model}), then run this again."
             )
         kb_id = build["kb_id"]
-        result = english_folders(wk, kb_id)
+        result = english_folders(wk, kb_id, ask=lambda prompt: ask_model(prompt, model))
         if result["renamed"] or result["merged"]:
             stats = conn.execute(
                 "SELECT stats FROM wiki.instances WHERE instance_id = %s", (instance_id,)

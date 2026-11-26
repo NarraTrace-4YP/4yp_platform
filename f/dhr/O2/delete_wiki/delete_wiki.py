@@ -85,14 +85,14 @@ def is_admin() -> bool:
         return False
 
 
-def stop_model(other_builds: list[str]) -> str:
+def stop_model(other_builds: list[str], model: str = "default") -> str:
     """Asks the person's gateway LLM job to stop once its inbox is empty; says what happened."""
     if other_builds:
         return (
             f"left your model job running: your other build(s) {', '.join(other_builds[:3])}"
             " still use it (it stops by itself after 30 idle minutes)"
         )
-    status = gateway_status()
+    status = gateway_status(model)  # the build's own model's job
     if status.get("error"):
         return f"{status['error']}; your model job stops by itself after 30 idle minutes"
     run_id = status.get("run_id")
@@ -167,7 +167,7 @@ def main(instance_id: str, confirm: str = "", stop_model_job: bool = True):
             " it stops by itself after 30 idle minutes)"
         )
     elif stop_model_job:
-        model = stop_model(other_builds)
+        model = stop_model(other_builds, build["model"] or "default")
     else:
         model = "left your model job running"
 
