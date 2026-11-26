@@ -1,0 +1,4 @@
+type: script
+name: Analyse a build's knowledge graph (centrality, communities, similarity)
+fields: {}
+path: f/dhr/O2/run_analysis/run_analysis

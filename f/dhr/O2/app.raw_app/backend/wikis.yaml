@@ -1,0 +1,4 @@
+type: script
+name: Every wiki build
+fields: {}
+path: f/dhr/O2/app_backend/get_wikis
