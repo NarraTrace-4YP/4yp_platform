@@ -31,22 +31,20 @@ WeKnora calls the model through the LLM gateway (`gateway/README.md`), using you
 Windmill token. Each call then runs on your own Blythe account, so first make sure your
 Blythe variables are set up and `f/dhr/tools/blythe_check` passes.
 
-In the team space's model settings, add ONE chat model by hand:
+There is nothing to add by hand. The first time you build a wiki with a model, the O2
+pipeline's `check_setup` makes your entry for it in the team space: model name = the
+gateway's key (e.g. `qwen-27b-bf16`), display name e.g. `Qwen3.8 27B BF16 (<you>)`, base
+URL `http://llm-gateway:8000/v1`, the model's context window and background concurrency,
+and as API key a Windmill token made for you for this (valid a year; the pipeline renews it
+a month before it ends; you can see or delete it in Windmill under Account settings →
+Tokens). Choosing a model is the pipeline's `model` input (the gateway's list:
+`gateway/README.md`, "Models").
 
-| Setting      | Value                                                      |
-| ------------ | ---------------------------------------------------------- |
-| Provider     | Custom (OpenAI-compatible)                                 |
-| Base URL     | `http://llm-gateway:8000/v1`                               |
-| API key      | your Windmill token (Windmill → Account settings → Tokens) |
-| Model name   | `default` (any name works: the gateway's default answers)  |
-| Display name | `Qwen (<your Windmill username>)`                          |
-
-That entry is the template for the rest. The first time you build a wiki with a model, the
-O2 pipeline's `check_setup` copies it (so your token comes along) into an entry for that
-model: model name = the gateway's key (e.g. `qwen-27b-bf16`), display name e.g.
-`Qwen3.8 27B BF16 (<you>)`, with the model's context window and background concurrency.
-No model names need typing into WeKnora, and choosing a model is the pipeline's `model`
-input (the gateway's list: `gateway/README.md`, "Models").
+If you already have an entry of your own named `... (<your Windmill username>)`, it is
+copied instead, with its token. If Windmill won't make the token, `check_setup` says so;
+then add one chat model yourself (Custom (OpenAI-compatible), that base URL, your Windmill
+token as the API key, model name `default`, display name `Qwen (<you>)`) and it is copied
+for each model.
 
 Start the model first (run `f/dhr/tools/llm_chat` and wait for an answer). Its first
 request otherwise waits for SLURM to give it a GPU and for the model to load. That takes
