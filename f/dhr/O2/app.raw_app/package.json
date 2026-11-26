@@ -1,0 +1,18 @@
+{
+  "dependencies": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "windmill-client": "^1",
+    "react-markdown": "^10",
+    "remark-gfm": "^4",
+    "d3-force": "^3",
+    "3d-force-graph": "1.80.2",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.0.0",
+    "@types/d3-force": "^3",
+    "@types/three": "^0.181.0"
+  }
+}
