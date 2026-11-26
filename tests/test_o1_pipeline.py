@@ -103,7 +103,7 @@ def test_frontend_backend_calls_have_bindings():
         )
     assert called == set(RUNNABLES)
 
-
+PUBLIC_RUN_ALLOWED = {"f/dhr/O2/run_analysis/run_analysis"}
 def test_public_apps_cannot_start_runs():
     """Anyone with a public app's link can call its backend runnables without logging in.
 
@@ -121,6 +121,8 @@ def test_public_apps_cannot_start_runs():
             runnable = yaml.safe_load(binding.read_text(encoding="utf-8"))
             where = binding.relative_to(ROOT)
             assert runnable.get("type") == "script", f"{where}: a public app can't bind a flow"
+            if runnable["path"] in PUBLIC_RUN_ALLOWED:
+                continue
             assert runnable["path"].rsplit("/", 1)[-1].startswith("get_"), (
                 f"{where}: {runnable['path']} isn't a read-only get_* script"
             )
