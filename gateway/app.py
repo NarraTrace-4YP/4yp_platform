@@ -38,7 +38,7 @@ from fastapi.responses import JSONResponse
 from f.dhr.blythe import Blythe, BlytheError, load_account
 
 from .openai_format import RequestError, to_completion, to_prompt
-from .sessions import GatewayError, Session, Settings
+from .sessions import ACCEPTED_MODELS, GatewayError, Session, Settings
 
 
 def error(status: int, message: str, kind: str, code: str | None = None) -> JSONResponse:
@@ -124,12 +124,12 @@ class Gateway:
 
 
 def settings_from_env() -> Settings:
-    settings = Settings()
+    given = {}
     for field in dataclasses.fields(Settings):
         value = os.environ.get(f"GATEWAY_{field.name.upper()}")
-        if value is not None:  # e.g. GATEWAY_IDLE_MINUTES=45
-            setattr(settings, field.name, type(field.default)(value))
-    return settings
+        if value is not None:  # e.g. GATEWAY_IDLE_MINUTES=45, GATEWAY_PROFILE=fp8-1gpu
+            given[field.name] = type(field.default)(value)
+    return Settings(**given)  # the profile fills model and max_model_len unless given
 
 
 def create_app(gateway: Gateway | None = None) -> FastAPI:
@@ -197,7 +197,7 @@ def create_app(gateway: Gateway | None = None) -> FastAPI:
         except ValueError:
             return error(400, "The body must be JSON.", "invalid_request_error")
         model = body.get("model")
-        if model not in (None, "", "default", gateway.settings.model):
+        if model not in (None, "", "default", gateway.settings.model, *ACCEPTED_MODELS):
             return error(
                 404,
                 f"Model {model!r} isn't served here; use {gateway.settings.model!r}.",

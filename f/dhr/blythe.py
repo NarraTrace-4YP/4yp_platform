@@ -611,16 +611,26 @@ class Blythe:
     # --- llm_serve: a model kept loaded, answering prompts added while it runs
 
     def start_server(
-        self, run_id: str, request: dict, hours: int, callback_url: str | None = None
+        self,
+        run_id: str,
+        request: dict,
+        hours: int,
+        callback_url: str | None = None,
+        gpus: int | None = None,
+        mem_gb: int | None = None,
     ) -> dict:
         """Submits llm_serve with request.json (the model and its settings), and notes the
-        SLURM job in the run folder, so mailbox() can name it."""
+        SLURM job in the run folder, so mailbox() can name it. gpus and mem_gb ask for more
+        than the job file's one L40 (a model split over several: request["engine"] then sets
+        tensor_parallel_size to match)."""
         submitted = self.submit(
             "llm_serve",
             run_id,
             {"request.json": json.dumps(request, indent=2)},
             callback_url,
             hours=hours,
+            gpus=gpus,
+            mem_gb=mem_gb,
         )
         self.write(posixpath.join(submitted["run_dir"], "slurm_job_id"), submitted["slurm_job_id"])
         return submitted

@@ -27,7 +27,7 @@ def main():
         max_tokens=5,
     )
     return {
-        "model": MODEL,
+        "model": reply.model,  # the model that answered
         "answer": reply.choices[0].message.content,
         "seconds_waited": round(time.monotonic() - started),
     }
