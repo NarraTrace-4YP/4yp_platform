@@ -47,11 +47,25 @@ VALID_UNTIL = re.compile(r"valid until (\d{4}-\d{2}-\d{2})")
 
 def make_gateway_token() -> tuple[str, date]:
     """A new Windmill token for the person running the script, for their WeKnora model
-    entries (the gateway knows them, and reaches their Blythe variables, by it)."""
+    entries (the gateway knows them, and reaches their Blythe variables, by it).
+
+    wmill 1.875 has no module-level create_token (26 Nov 2026): it is the client's, and
+    older clients lack it, so Windmill's API (POST /users/tokens/create) is the fallback."""
+    from datetime import datetime, timezone
+
     import wmill
 
     until = date.today() + timedelta(days=TOKEN_DAYS)
-    return wmill.create_token(duration=timedelta(days=TOKEN_DAYS)), until
+    client = wmill.Windmill()
+    make = getattr(client, "create_token", None)
+    if make is not None:
+        return make(duration=timedelta(days=TOKEN_DAYS)), until
+    expires = datetime.now(timezone.utc) + timedelta(days=TOKEN_DAYS)
+    reply = client.post(
+        "/users/tokens/create",
+        json={"label": "NarraTrace WeKnora model entries", "expiration": expires.isoformat()},
+    )
+    return reply.text.strip().strip('"'), until
 
 
 def _token_note(until: date) -> str:

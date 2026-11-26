@@ -1472,3 +1472,31 @@ def test_a_models_entry_follows_the_gateways_numbers():
     entry = fake_weknora(fake, shared=True).model_entry(BF16, user="rshields2004")
     assert ("PUT", "/api/v1/models/m2") in fake.calls and entry["id"] == "m2"
     assert made["parameters"] == {"context_window": 131072, "max_concurrency": 64}
+
+
+def test_the_token_comes_from_the_windmill_client(monkeypatch):
+    """wmill 1.875 has no wmill.create_token (26 Nov 2026): the client's, else the API."""
+    import sys
+    import types
+
+    from f.dhr import weknora
+
+    posted = []
+
+    class OldClient:
+        def post(self, endpoint, json=None):
+            posted.append((endpoint, json))
+            return types.SimpleNamespace(text='"tok-api"')
+
+    class NewClient(OldClient):
+        def create_token(self, duration):
+            return f"tok-{duration.days}"
+
+    fake = types.ModuleType("wmill")
+    fake.Windmill = NewClient
+    monkeypatch.setitem(sys.modules, "wmill", fake)
+    assert weknora.make_gateway_token()[0] == "tok-365" and posted == []
+    fake.Windmill = OldClient
+    token, until = weknora.make_gateway_token()
+    assert token == "tok-api" and posted[0][0] == "/users/tokens/create"
+    assert posted[0][1]["label"] == "NarraTrace WeKnora model entries"
