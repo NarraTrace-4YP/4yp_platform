@@ -1,0 +1,150 @@
+# /// script
+# requires-python = ">=3.12,<3.13"
+# dependencies = [
+#     "httpx==0.28.1",
+#     "neo4j==5.28.8",
+#     "openai==3.51.0",
+#     "psycopg[binary]==3.3.9",
+#     "wmill==1.875.0",
+# ]
+# ///
+"""O2 stage 4: check how a wiki build is coming on, and save a copy of the wiki so far.
+
+Fix (25 Nov 2026, problem review "O2 wiki folders in Chinese"): some wiki folders came out in
+Chinese (WeKnora's folder prompt has only Chinese examples; f/dhr/O2/folders.py explains).
+Solution: each check, before the wiki is copied, any folder with Chinese in its name is given
+an English name by the build's own model and renamed in WeKnora (or merged into the English
+folder beside it that means the same). Only for the build's creator, and only while their
+model is already up, so a check never starts a model job or waits for one. The result's
+"folders" says what was done.
+
+Asks WeKnora how far each uploaded review has got (read, failed, still waiting) and whether
+its wiki builder still has work queued, records that in wiki.documents, and copies every
+wiki page, link and page source into the database (so the O2 app shows the wiki as it
+grows). It also reports live progress (f/dhr/O2/progress.py): a line in this step's log with
+the files read and finished, WeKnora's follow-up jobs left, the wiki's queue, the pages so
+far and what the model is doing (from the LLM gateway), the whole run's progress bar, and
+the same line in the O2 app.
+
+For a build with the knowledge graph on, it also copies the graph from WeKnora's graph
+database into wiki.kg_nodes / wiki.kg_relations (f/dhr/O2/kgraph.py) for the O2 app. If the
+graph database can't be read, the check says so in its result and carries on.
+
+The flow runs this every few minutes until the build has been quiet (every review finished,
+nothing queued, builder idle) on `quiet_needed` checks in a row, then marks the build
+"built". Safe to run on its own at any time for any build you made.
+"""
+
+from __future__ import annotations
+
+from ...db import apply_migrations, connect
+from ...llm import describe_gateway, gateway_status
+from ...weknora import WeKnora
+from ..folders import ask_model, english_folders, model_is_up
+from ..kgraph import copy_graph
+from ..progress import FINISHED, build_progress, report
+from ..wiki_store import get_instance, runner, save_wiki, set_status
+
+
+def main(instance_id: str, quiet_before: int = 0, quiet_needed: int = 2):
+    wk = WeKnora()
+    with connect() as conn:
+        apply_migrations(conn)
+        build = get_instance(conn, instance_id)
+        # Checking never calls the model, so in the shared space anyone may check any build.
+        if not wk.shared and build["created_by"] != runner():
+            raise ValueError(
+                f"{instance_id} was made by {build['created_by']}: its wiki is in their WeKnora space."
+            )
+        kb_id = build["kb_id"]
+        documents = wk.documents(kb_id)
+        by_id = {d.get("id"): d for d in documents}
+        # One row per uploaded file (one per review).
+        # A file is "completed" only once WeKnora has also finished its knowledge-graph
+        # calls, so the quiet checks below wait for the graph too.
+        expected = conn.execute(
+            "SELECT doc_id, part, knowledge_id FROM wiki.documents WHERE instance_id = %s",
+            (instance_id,),
+        ).fetchall()
+        counts: dict[str, int] = {}
+        failed = []
+        jobs_left = 0  # WeKnora's follow-up jobs still to run (summary, graph chunks, wiki)
+        for doc_id, part, knowledge_id in expected:
+            d = by_id.get(knowledge_id)
+            status = d.get("parse_status") if d else ("missing" if knowledge_id else "not uploaded")
+            counts[status] = counts.get(status, 0) + 1
+            if status == "finalizing":
+                jobs_left += int((d or {}).get("pending_subtasks_count") or 0)
+            if status == "failed":
+                failed.append({"doc_id": doc_id, "error": (d or {}).get("error_message")})
+            conn.execute(
+                "UPDATE wiki.documents SET parse_status = %s,"
+                " error_message = COALESCE(%s, error_message)"
+                " WHERE instance_id = %s AND doc_id = %s AND part = %s",
+                (status, (d or {}).get("error_message") or None, instance_id, doc_id, part),
+            )
+        gateway = gateway_status(build["model"] or "default")  # the build's own model job
+        folders = None
+        if build["created_by"] == runner() and model_is_up(gateway):
+            try:
+                folders = english_folders(
+                    wk, kb_id, ask=lambda prompt: ask_model(prompt, build["model"])
+                )
+                if folders["renamed"] or folders["merged"]:
+                    print(
+                        f"Folders: {folders['renamed']} renamed and {folders['merged']} merged"
+                        " into English (they had Chinese names).",
+                        flush=True,
+                    )
+            except Exception as error:  # never let this stop a check
+                folders = {"error": str(error)[:300]}
+        stats = wk.wiki_stats(kb_id) or {}
+        pages = wk.wiki_pages(kb_id)
+        n_links = sum(len(p.get("out_links") or []) for p in pages)
+        max_pending, max_jobs = conn.execute(
+            "SELECT coalesce((stats -> 'progress' ->> 'max_pending')::int, 0),"
+            " coalesce((stats -> 'progress' ->> 'max_jobs')::int, 0)"
+            " FROM wiki.instances WHERE instance_id = %s",
+            (instance_id,),
+        ).fetchone()
+        progress = build_progress(
+            counts,
+            stats,
+            len(pages),
+            n_links,
+            describe_gateway(gateway),
+            max_pending,
+            jobs_left,
+            max_jobs,
+        )
+        saved = save_wiki(conn, instance_id, pages, {**stats, "progress": progress})
+        kb_settings = (build["settings"] or {}).get("knowledge_base") or {}
+        graph = copy_graph(conn, instance_id, kb_id) if kb_settings.get("knowledge_graph") else None
+
+        all_finished = all(s in FINISHED for s in counts) and bool(expected)
+        idle = not stats.get("is_active") and not stats.get("pending_tasks")
+        quiet = quiet_before + 1 if all_finished and idle else 0
+        done = quiet >= quiet_needed
+        if done:
+            note = f"{len(failed)} file(s) failed in WeKnora" if failed else None
+            set_status(conn, instance_id, "built", note, finished=True)
+        else:
+            set_status(conn, instance_id, "building", None)
+    report(progress, 99 if done else None)
+    if done:
+        print(f"The build is finished: {quiet_needed} quiet checks in a row.", flush=True)
+    return {
+        "instance_id": instance_id,
+        "done": done,
+        "quiet": quiet,
+        "documents": counts,
+        "failed": failed,
+        "wiki_pending_tasks": stats.get("pending_tasks"),
+        "wiki_active": stats.get("is_active"),
+        "pages_by_type": stats.get("pages_by_type"),
+        "saved": saved,
+        "knowledge_graph": graph,
+        "folders": folders,
+        "progress": progress["line"],
+        "percent": 100 if done else progress["percent"],
+    }

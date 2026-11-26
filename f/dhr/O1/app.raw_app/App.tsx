@@ -1,0 +1,138 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { backend } from './wmill'
+import { Status, errorMessage, readStoredValue, writeStoredValue } from './shared'
+import Overview, { STEP_BUILT } from './Overview'
+import DataTab from './DataTab'
+import CasesTab from './CasesTab'
+import AttributesTab from './AttributesTab'
+import SectionsTab from './SectionsTab'
+import CandidatesTab from './CandidatesTab'
+import ChoicesTab from './ChoicesTab'
+import NotesTab from './Notes'
+
+// The views, grouped by what you come to do. Each says in a line what it shows.
+const GROUPS = [
+  {
+    name: 'About O1',
+    tabs: [
+      { id: 'overview', label: 'Overview', hint: 'How the reviews are prepared' },
+      { id: 'data', label: 'Data', hint: 'Datasets, sources and coverage' },
+      { id: 'notes', label: 'Notes', hint: 'Project notes' },
+    ],
+  },
+  {
+    name: 'Results',
+    tabs: [
+      { id: 'cases', label: 'Cases', hint: 'Reviews and recorded case characteristics' },
+      { id: 'attributes', label: 'Attributes', hint: 'Compare recorded case characteristics' },
+      { id: 'sections', label: 'Sections', hint: 'Each review’s outline and text' },
+      {
+        id: 'candidates',
+        label: 'Template candidates',
+        hint: 'Suggested matches to report templates',
+      },
+      {
+        id: 'choices',
+        label: 'Standardised',
+        hint: 'Each review laid out in its template’s order',
+      },
+    ],
+  },
+]
+const TAB_IDS = GROUPS.flatMap((group) => group.tabs.map((t) => t.id))
+
+export default function App() {
+  const contentRef = useRef<HTMLElement>(null)
+  const [tab, setTab] = useState(() => {
+    const stored = readStoredValue<string>('tab')
+    return stored && TAB_IDS.includes(stored) ? stored : 'overview'
+  })
+  const [status, setStatus] = useState<Status | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
+
+  const goTo = useCallback((id: string) => {
+    setTab(id)
+    writeStoredValue('tab', id)
+    requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: 'auto' }))
+  }, [])
+
+  useEffect(() => {
+    document.title = 'O1: Corpus preparation'
+  }, [])
+
+  useEffect(() => {
+    let current = true
+    backend
+      .status()
+      .then((result: Status) => {
+        if (!current) return
+        setStatus(result)
+        setStatusError(null)
+      })
+      .catch((e: unknown) => current && setStatusError(errorMessage(e)))
+    return () => {
+      current = false
+    }
+  }, [])
+
+  const built = STEP_BUILT.filter(Boolean).length
+
+  return (
+    <div className="shell">
+      <aside className="rail">
+        <div className="rail-head">
+          <p className="rail-stage">Stage 1 of 4</p>
+          <h1>
+            <span className="rail-o">O1</span> Corpus preparation
+          </h1>
+          <div
+            className="meter"
+            role="img"
+            aria-label={`${built} of ${STEP_BUILT.length} steps built`}
+          >
+            {STEP_BUILT.map((isBuilt, index) => (
+              <span key={index} className={isBuilt ? 'built' : ''} />
+            ))}
+          </div>
+          <p className="meter-text">
+            {built} of {STEP_BUILT.length} steps built
+          </p>
+        </div>
+        <nav className="rail-nav" aria-label="O1 views">
+          {GROUPS.map((group) => (
+            <div key={group.name} className="rail-group">
+              <p className="rail-group-name">{group.name}</p>
+              <ul>
+                {group.tabs.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      className={t.id === tab ? 'tab selected' : 'tab'}
+                      aria-current={t.id === tab ? 'page' : undefined}
+                      onClick={() => goTo(t.id)}
+                    >
+                      <span className="tab-label">{t.label}</span>
+                      <span className="tab-hint">{t.hint}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </aside>
+      <main className="content" ref={contentRef}>
+        {statusError && tab !== 'data' && (
+          <p className="message error">Couldn’t load the pipeline status: {statusError}</p>
+        )}
+        {tab === 'overview' && <Overview status={status} goTo={goTo} />}
+        {tab === 'data' && <DataTab status={status} error={statusError} />}
+        {tab === 'notes' && <NotesTab />}
+        {tab === 'cases' && <CasesTab />}
+        {tab === 'attributes' && <AttributesTab />}
+        {tab === 'sections' && <SectionsTab />}
+        {tab === 'candidates' && <CandidatesTab />}
+        {tab === 'choices' && <ChoicesTab />}
+      </main>
+    </div>
+  )
+}

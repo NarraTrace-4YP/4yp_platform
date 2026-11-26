@@ -1,0 +1,424 @@
+summary: 'O2: build an LLM wiki (stages 1-4)'
+description: "Builds one LLM wiki from O1's output, as the person running it:
+  checks the set-up (the chosen model, their WeKnora entry for it, made if
+  missing, the chosen reviews), submits the model job on their own Blythe
+  account and checks back every few minutes until it answers (SLURM may keep it
+  queued for days; the flow sleeps meanwhile without holding a worker), makes a
+  fresh wiki-only WeKnora knowledge base and uploads each chosen review as
+  Markdown built from O1 (sections, rejoined paragraphs, stage 5's template
+  labels), then checks every few minutes until WeKnora has finished, copying the
+  wiki's pages, links and sources into the database (schema wiki) each time. The
+  O2 app (f/dhr/O2/app) shows the result."
+value:
+  modules:
+    - id: check_setup
+      summary: Check the set-up (WeKnora key and model, the settings, the graph
+        database, the reviews); no GPU yet
+      value:
+        type: script
+        input_transforms:
+          chunk_overlap:
+            type: javascript
+            expr: flow_input.chunk_overlap
+          chunk_separators:
+            type: javascript
+            expr: flow_input.chunk_separators
+          chunk_size:
+            type: javascript
+            expr: flow_input.chunk_size
+          chunk_strategy:
+            type: javascript
+            expr: flow_input.chunk_strategy
+          dataset:
+            type: javascript
+            expr: flow_input.dataset
+          doc_ids:
+            type: javascript
+            expr: flow_input.doc_ids
+          graph_instructions:
+            type: javascript
+            expr: flow_input.graph_instructions
+          ingest_batch_size:
+            type: javascript
+            expr: flow_input.ingest_batch_size
+          ingest_map_parallel:
+            type: javascript
+            expr: flow_input.ingest_map_parallel
+          ingest_max_inflight:
+            type: javascript
+            expr: flow_input.ingest_max_inflight
+          ingest_reduce_parallel:
+            type: javascript
+            expr: flow_input.ingest_reduce_parallel
+          knowledge_graph:
+            type: javascript
+            expr: flow_input.knowledge_graph
+          model:
+            type: javascript
+            expr: flow_input.model
+          reviews:
+            type: javascript
+            expr: flow_input.reviews
+          template_guidance:
+            type: javascript
+            expr: flow_input.template_guidance
+        path: f/dhr/O2/check_setup/check_setup
+    - id: start_model
+      summary: Submit the model job on your Blythe account (returns at once)
+      value:
+        type: script
+        input_transforms:
+          model:
+            type: javascript
+            expr: results.check_setup.model
+        path: f/dhr/O2/start_model/start_model
+      skip_if:
+        expr: flow_input.start_model === false
+      timeout:
+        type: static
+        value: 300
+    - id: wait_for_model
+      summary: Check every few minutes, without holding a worker, until the model
+        answers (at most 7 days)
+      value:
+        type: whileloopflow
+        modules:
+          - id: model_ready
+            summary: Is the model answering yet? (SLURM may keep it queued for days)
+            value:
+              type: script
+              input_transforms:
+                model:
+                  type: javascript
+                  expr: results.check_setup.model
+              path: f/dhr/O2/wait_for_model/wait_for_model
+            retry:
+              constant:
+                attempts: 2
+                seconds: 60
+            sleep:
+              type: javascript
+              expr: (flow_input.check_every_minutes || 5) * 60
+            stop_after_if:
+              expr: result.ready === true
+              skip_if_stopped: false
+            timeout:
+              type: static
+              value: 900
+        max_duration_secs: 604800
+        skip_failures: false
+    - id: create_wiki
+      summary: Make a new WeKnora knowledge base (wiki and knowledge graph) and upload
+        the reviews, one file each
+      value:
+        type: script
+        input_transforms:
+          name:
+            type: javascript
+            expr: flow_input.name
+          chunk_overlap:
+            type: javascript
+            expr: flow_input.chunk_overlap
+          chunk_separators:
+            type: javascript
+            expr: flow_input.chunk_separators
+          chunk_size:
+            type: javascript
+            expr: flow_input.chunk_size
+          chunk_strategy:
+            type: javascript
+            expr: flow_input.chunk_strategy
+          content_instructions:
+            type: javascript
+            expr: flow_input.content_instructions
+          dataset:
+            type: javascript
+            expr: flow_input.dataset
+          doc_ids:
+            type: javascript
+            expr: flow_input.doc_ids
+          extraction_instructions:
+            type: javascript
+            expr: flow_input.extraction_instructions
+          granularity:
+            type: javascript
+            expr: flow_input.granularity
+          graph_instructions:
+            type: javascript
+            expr: flow_input.graph_instructions
+          ingest_batch_size:
+            type: javascript
+            expr: flow_input.ingest_batch_size
+          ingest_map_parallel:
+            type: javascript
+            expr: flow_input.ingest_map_parallel
+          ingest_max_inflight:
+            type: javascript
+            expr: flow_input.ingest_max_inflight
+          ingest_reduce_parallel:
+            type: javascript
+            expr: flow_input.ingest_reduce_parallel
+          instance_id:
+            type: static
+            value: ''
+          knowledge_graph:
+            type: javascript
+            expr: flow_input.knowledge_graph
+          model:
+            type: javascript
+            expr: results.check_setup.model
+          model_id:
+            type: javascript
+            expr: results.check_setup.model_id
+          reviews:
+            type: javascript
+            expr: flow_input.reviews
+          template_guidance:
+            type: javascript
+            expr: flow_input.template_guidance
+        path: f/dhr/O2/create_wiki/create_wiki
+    - id: wait_for_wiki
+      summary: Check every few minutes until WeKnora has finished, saving the wiki
+        each time
+      value:
+        type: whileloopflow
+        modules:
+          - id: check_wiki
+            summary: Check the build and save the wiki so far
+            value:
+              type: script
+              input_transforms:
+                instance_id:
+                  type: javascript
+                  expr: results.create_wiki.instance_id
+                quiet_before:
+                  type: javascript
+                  expr: results.check_wiki?.quiet ?? 0
+                quiet_needed:
+                  type: static
+                  value: 2
+              path: f/dhr/O2/check_wiki/check_wiki
+            retry:
+              constant:
+                attempts: 2
+                seconds: 60
+            sleep:
+              type: javascript
+              expr: (flow_input.check_every_minutes || 5) * 60
+            stop_after_if:
+              expr: result.done === true
+              skip_if_stopped: false
+            timeout:
+              type: static
+              value: 1800
+        max_duration_secs: 259200
+        skip_failures: false
+    - id: report
+      summary: Report the finished build
+      value:
+        type: rawscript
+        content: '!inline report_the_finished_build.inline_script.ts'
+        input_transforms:
+          checks:
+            type: javascript
+            expr: results.wait_for_wiki
+          created:
+            type: javascript
+            expr: results.create_wiki
+        lock: '!inline report_the_finished_build.inline_script.lock'
+        language: bun
+  groups:
+    - summary: Get ready
+      color: blue
+      end_id: wait_for_model
+      note: Checks first (no GPU), then submits the model job on the runner's own
+        Blythe account and checks back every few minutes until it answers. While
+        SLURM keeps it queued (hours or days when GPUs are busy) the flow sleeps
+        without holding a worker.
+      start_id: check_setup
+    - summary: Build the wiki
+      color: green
+      end_id: wait_for_wiki
+      note: A fresh WeKnora knowledge base per run; the wiki is copied into the
+        database at every check.
+      start_id: create_wiki
+    - summary: Report
+      color: gray
+      end_id: report
+      start_id: report
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - name
+    - model
+    - dataset
+    - reviews
+    - doc_ids
+    - template_guidance
+    - granularity
+    - start_model
+    - check_every_minutes
+    - extraction_instructions
+    - content_instructions
+    - chunk_strategy
+    - chunk_size
+    - chunk_overlap
+    - chunk_separators
+    - knowledge_graph
+    - graph_instructions
+    - ingest_batch_size
+    - ingest_map_parallel
+    - ingest_reduce_parallel
+    - ingest_max_inflight
+  properties:
+    name:
+      type: string
+      description: "A name for this wiki (shown in WeKnora and the O2 app). Empty:
+        dataset, reviews and the build's id."
+      default: ''
+    check_every_minutes:
+      type: integer
+      description: How often to check whether the model is answering yet (at most 7
+        days), then WeKnora, saving the wiki so far. The build ends after two
+        quiet checks in a row (at most 3 days).
+      default: 5
+    chunk_overlap:
+      type: integer
+      description: Characters each chunk shares with the one before it (0 to half of
+        chunk_size).
+      default: 80
+    chunk_separators:
+      type: array
+      description: "Where WeKnora may cut, in the order it tries them (at most 20).
+        Empty: WeKnora's own list."
+      default: []
+      items:
+        type: string
+    chunk_size:
+      type: integer
+      description: 'Chunk size in characters (100 to 10,000). Chunks are what wiki
+        pages cite and what the knowledge graph reads one at a time: smaller
+        gives tighter citations, larger gives more context and far fewer graph
+        calls.'
+      default: 512
+    chunk_strategy:
+      type: string
+      description: "How WeKnora cuts each file into chunks. auto: it picks from the
+        file's shape. heading: at Markdown headings, then by size. recursive: by
+        the separators below, then by size. legacy: WeKnora's original
+        splitter."
+      default: auto
+      enum:
+        - auto
+        - heading
+        - heuristic
+        - recursive
+        - legacy
+    content_instructions:
+      type: string
+      description: 'How WeKnora should write the pages (max 4,000 bytes). Empty: the
+        DHR default in f/dhr/O2/instructions.'
+      default: ''
+    dataset:
+      type: string
+      description: "Which reviews to build from. both: DHRC-100's checked copies plus
+        the DHRC-RAW reviews not in DHRC-100 (no review twice)."
+      default: DHRC-100
+      enum:
+        - DHRC-100
+        - DHRC-RAW
+        - both
+    doc_ids:
+      type: array
+      description: 'Only with reviews = chosen: the reviews to use, e.g. Mary -
+        Bromley - 2018_a - DHR.'
+      default: []
+      items:
+        type: string
+    extraction_instructions:
+      type: string
+      description: 'What WeKnora should make pages for (max 4,000 bytes). Empty: the
+        DHR default in f/dhr/O2/instructions.'
+      customErrorMessage: ''
+      default: ''
+      format: ''
+    granularity:
+      type: string
+      description: How many pages WeKnora makes from each review.
+      default: standard
+      enum:
+        - focused
+        - standard
+        - exhaustive
+    graph_instructions:
+      type: string
+      description: 'Guidance for the knowledge graph (max 4,000 bytes). Empty: the DHR
+        default in f/dhr/O2/graph.'
+      default: ''
+    ingest_batch_size:
+      type: integer
+      description: "Speed only: files per wiki batch (1 to 50). 0: WeKnora's default, 5."
+      default: 0
+    ingest_map_parallel:
+      type: integer
+      description: "Speed only: files a batch reads at once (1 to 32). 0: WeKnora's
+        default, 10. The model entry's concurrency limit still applies."
+      default: 0
+    ingest_max_inflight:
+      type: integer
+      description: "Speed only: batches running at once for this wiki (1 to 16). 0:
+        WeKnora's default, 4."
+      default: 0
+    ingest_reduce_parallel:
+      type: integer
+      description: "Speed only: pages a batch writes at once (1 to 32). 0: WeKnora's
+        default, 10."
+      default: 0
+    knowledge_graph:
+      type: boolean
+      description: "Also build WeKnora's knowledge graph: people, agencies, places and
+        events and the relationships between them (f/dhr/O2/graph). One model
+        call per chunk. Needs the server's graph database (docs/weknora.md)."
+      default: true
+    model:
+      type: string
+      description: "Which model builds the wiki (the LLM gateway's catalogue: MODELS
+        in gateway/sessions.py). default: the gateway's default (qwen-27b-bf16:
+        full precision on two GPUs). qwen-27b-bf16-graphs: the same with CUDA
+        graphs (faster, untested). qwen-27b-fp8: 8-bit on one GPU (queues
+        sooner). Your WeKnora entry for it is made if you have none. Each model
+        you use gets its own job on Blythe."
+      default: default
+      enum:
+        - default
+        - qwen-27b-bf16
+        - qwen-27b-bf16-graphs
+        - qwen-27b-fp8
+    reviews:
+      type: string
+      description: "pilot: the specification's 10 pilot reviews. all: every review in
+        the dataset. chosen: the doc_ids below."
+      default: pilot
+      enum:
+        - pilot
+        - all
+        - chosen
+    start_model:
+      type: boolean
+      description: Submit the model job on your Blythe account first (leave on unless
+        it is already running). Either way the flow waits until the model
+        answers, checking every check_every_minutes; SLURM may keep the job
+        queued for days.
+      default: true
+    template_guidance:
+      type: string
+      description: "Add O1 stage 5's template labels from this guidance to each review
+        (its template, and the template section under each heading). none:
+        original headings only, to compare."
+      default: dhr-2016
+      enum:
+        - dhr-2016
+        - dardr-2026
+        - none
+  required: []

@@ -1,0 +1,4 @@
+type: script
+name: A build's knowledge graph
+fields: {}
+path: f/dhr/O2/app_backend/get_kgraph

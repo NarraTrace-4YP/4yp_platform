@@ -1,0 +1,1 @@
+What Windmill held in f/dhr just after the last deploy (in Windmill's own format), written by .github/windmill_sync.py. Edits made in Windmill are found by comparing with this. Don't change this branch by hand.
